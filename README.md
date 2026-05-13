@@ -33,16 +33,21 @@ Nox targets Go 1.26. Use the latest Go 1.26 patch release for local development 
 
 ## Quick Start
 
+Build the binary:
+
 ```sh
-make test
-make web
 make build
-go run . version
-go run . scan --target https://example.com
-go run . sessions list
-go run . sessions findings <session-id>
-go run . sessions runs <session-id>
-go run . serve --host 127.0.0.1 --port 8080
+```
+
+The compiled binary is written to `bin/`.
+
+```sh
+nox version
+nox scan --target https://example.com
+nox sessions list
+nox sessions findings <session-id>
+nox sessions runs <session-id>
+nox serve --host 127.0.0.1 --port 8080
 ```
 
 The frontend source lives in `web/`. Production frontend assets are built with `npm run build` and embedded into the Go binary from `internal/api/web/dist`.
