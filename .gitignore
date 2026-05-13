@@ -1,0 +1,11 @@
+.DS_Store
+*.db
+*.sqlite
+*.sqlite3
+dist/
+web/dist/
+node_modules/
+coverage/
+.env
+.nox/
+

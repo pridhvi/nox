@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS llm_analyses;
+DROP TABLE IF EXISTS tool_runs;
+DROP TABLE IF EXISTS attack_vectors;
+DROP TABLE IF EXISTS cve_matches;
+DROP TABLE IF EXISTS http_evidence;
+DROP TABLE IF EXISTS findings;
+DROP TABLE IF EXISTS technologies;
+DROP TABLE IF EXISTS targets;
+DROP TABLE IF EXISTS sessions;
+
