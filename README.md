@@ -15,8 +15,11 @@ This repository currently contains the buildable foundation plus the first safe 
 - Persisted tool runs and normalized security header findings.
 - REST APIs for session create/list/detail/targets/findings/tool-runs/stats and scan status.
 - Asynchronous API scan start with polling-friendly status/read endpoints.
+- WebSocket scan lifecycle stream for queued/running/tool/finding/completed progress.
 - Dashboard wired to real session, stats, and finding data.
+- Dashboard live progress feed for the selected session.
 - Subprocess plugin JSON contract and runner.
+- Optional subprocess adapters for `nmap`, `ffuf`, `sqlmap`, and `dalfox`, with graceful degradation when tools are unavailable.
 - React/Vite frontend scaffold for dashboard, graph, LLM, and reports.
 
 ## Toolchain
@@ -39,11 +42,11 @@ The frontend source lives in `web/`. Production frontend assets are built with `
 
 ## Roadmap
 
-1. Add WebSocket scan lifecycle events for live progress.
-2. Add subprocess adapters for tools that can be optional on PATH.
-3. Add CVE correlation with cache/offline mode.
-4. Implement attack vector evaluation and report generation.
-5. Add release packaging and automated frontend build checks in CI.
+1. Add CVE correlation with cache/offline mode.
+2. Implement attack vector evaluation and report generation.
+3. Add release packaging and automated frontend build checks in CI.
+4. Expand dashboard detail views for sessions, tool runs, and evidence.
+5. Add configuration for external tool paths, timeouts, and wordlists.
 
 ## Safety Boundary
 

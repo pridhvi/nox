@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"github.com/kanini/nox/internal/models"
 )
@@ -48,4 +50,55 @@ func RunPlugin(ctx context.Context, binary string, req PluginRequest) (PluginRes
 		return resp, fmt.Errorf("plugin returned error: %s", *resp.Error)
 	}
 	return resp, nil
+}
+
+type CommandResult struct {
+	Stdout     string
+	Stderr     string
+	ExitCode   int
+	DurationMS int64
+	Err        error
+}
+
+func RunCommand(ctx context.Context, timeout time.Duration, binary string, args ...string) CommandResult {
+	started := time.Now().UTC()
+	if _, err := exec.LookPath(binary); err != nil {
+		return CommandResult{
+			Stderr:     err.Error(),
+			ExitCode:   127,
+			DurationMS: time.Since(started).Milliseconds(),
+			Err:        err,
+		}
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, binary, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		exitCode = 1
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+			if stderr.Len() == 0 {
+				stderr.WriteString(err.Error())
+			}
+		}
+	}
+	return CommandResult{
+		Stdout:     stdout.String(),
+		Stderr:     stderr.String(),
+		ExitCode:   exitCode,
+		DurationMS: time.Since(started).Milliseconds(),
+		Err:        err,
+	}
 }

@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/kanini/nox/internal/db"
+	"github.com/kanini/nox/internal/engine"
 	"github.com/kanini/nox/internal/models"
 )
 
@@ -96,8 +99,14 @@ func TestSessionAPI(t *testing.T) {
 	if err := json.NewDecoder(runs.Body).Decode(&decodedRuns); err != nil {
 		t.Fatal(err)
 	}
-	if len(decodedRuns) != 2 {
-		t.Fatalf("expected 2 tool runs, got %d", len(decodedRuns))
+	runIDs := map[string]bool{}
+	for _, run := range decodedRuns {
+		runIDs[run.ToolID] = true
+	}
+	for _, toolID := range []string{"http-probe", "security-headers", "nmap", "ffuf"} {
+		if !runIDs[toolID] {
+			t.Fatalf("expected tool run %s in %#v", toolID, runIDs)
+		}
 	}
 
 	stats := httptest.NewRecorder()
@@ -134,4 +143,62 @@ func waitForCompletedScan(t *testing.T, handler http.Handler, sessionID string) 
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("scan did not complete")
+}
+
+func TestScanEventsWebSocketReplaysLifecycle(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<title>NOX Test</title>"))
+	}))
+	defer targetServer.Close()
+
+	apiServer := httptest.NewServer(NewServer(Config{SessionDir: t.TempDir(), HTTPClient: targetServer.Client()}).Handler())
+	defer apiServer.Close()
+
+	body := bytes.NewBufferString(`{"target":"` + targetServer.URL + `","name":"Events","mode":"active"}`)
+	resp, err := http.Post(apiServer.URL+"/api/scan/start", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("start status = %d", resp.StatusCode)
+	}
+	var created db.SessionRecord
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(apiServer.URL, "http") + "/api/scan/" + created.Session.ID + "/events"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	seen := map[engine.ScanEventType]bool{}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+		var event engine.ScanEvent
+		if err := conn.ReadJSON(&event); err != nil {
+			continue
+		}
+		seen[event.Type] = true
+		if event.Type == engine.ScanEventCompleted || event.Type == engine.ScanEventFailed {
+			break
+		}
+	}
+	for _, eventType := range []engine.ScanEventType{
+		engine.ScanEventQueued,
+		engine.ScanEventRunning,
+		engine.ScanEventToolStarted,
+		engine.ScanEventToolCompleted,
+		engine.ScanEventFindingFound,
+		engine.ScanEventCompleted,
+	} {
+		if !seen[eventType] {
+			t.Fatalf("missing event %s; saw %#v", eventType, seen)
+		}
+	}
 }

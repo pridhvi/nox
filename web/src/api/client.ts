@@ -42,6 +42,30 @@ export type StartScanRequest = {
   out_of_scope?: string[];
 };
 
+export type ScanEventType =
+  | "queued"
+  | "running"
+  | "tool_started"
+  | "tool_completed"
+  | "finding_found"
+  | "failed"
+  | "completed";
+
+export type ScanEvent = {
+  type: ScanEventType;
+  session_id: string;
+  target_id?: string;
+  tool_id?: string;
+  finding_id?: string;
+  finding_title?: string;
+  severity?: string;
+  status?: string;
+  message?: string;
+  finding_count?: number;
+  duration_ms?: number;
+  at: string;
+};
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -73,3 +97,7 @@ export function startScan(request: StartScanRequest) {
   });
 }
 
+export function scanEventsURL(sessionID: string) {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/api/scan/${sessionID}/events`;
+}

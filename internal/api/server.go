@@ -70,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs", s.listToolRuns)
 	mux.HandleFunc("GET /api/sessions/{id}/stats", s.sessionStats)
 	mux.HandleFunc("GET /api/scan/{id}/status", s.scanStatus)
+	mux.HandleFunc("GET /api/scan/{id}/events", s.scanEvents)
 	mux.HandleFunc("POST /api/scan/start", s.startScan)
 	mux.Handle("/", spaHandler())
 	return mux
