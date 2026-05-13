@@ -1,13 +1,14 @@
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Play, RefreshCw } from "lucide-react";
-import { getSessionStats, listFindings, listSessions, startScan } from "../api/client";
+import { getSessionStats, listFindings, listSessions, scanEventsURL, startScan, type ScanEvent } from "../api/client";
 
 export function Dashboard() {
   const queryClient = useQueryClient();
   const [target, setTarget] = useState("");
   const [mode, setMode] = useState("active");
   const [selectedSessionID, setSelectedSessionID] = useState<string | null>(null);
+  const [scanEvents, setScanEvents] = useState<ScanEvent[]>([]);
 
   const sessionsQuery = useQuery({
     queryKey: ["sessions"],
@@ -32,6 +33,7 @@ export function Dashboard() {
     mutationFn: startScan,
     onSuccess: (record) => {
       setSelectedSessionID(record.session.id);
+      setScanEvents([]);
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
     },
   });
@@ -55,6 +57,25 @@ export function Dashboard() {
     }
     scanMutation.mutate({ target: target.trim(), mode });
   }
+
+  useEffect(() => {
+    if (!selected) {
+      setScanEvents([]);
+      return;
+    }
+    setScanEvents([]);
+    const socket = new WebSocket(scanEventsURL(selected));
+    socket.onmessage = (message) => {
+      const event = JSON.parse(message.data) as ScanEvent;
+      setScanEvents((current) => [event, ...current.filter((item) => item.at !== event.at || item.type !== event.type)].slice(0, 12));
+      if (event.type === "finding_found" || event.type === "tool_completed" || event.type === "completed" || event.type === "failed") {
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        queryClient.invalidateQueries({ queryKey: ["session-stats", selected] });
+        queryClient.invalidateQueries({ queryKey: ["findings", selected] });
+      }
+    };
+    return () => socket.close();
+  }, [queryClient, selected]);
 
   return (
     <section className="page">
@@ -133,6 +154,19 @@ export function Dashboard() {
           </div>
         </section>
       </div>
+      <section className="panel event-panel">
+        <h2>Live Progress</h2>
+        <div className="event-list">
+          {scanEvents.map((event) => (
+            <article key={`${event.type}-${event.at}-${event.tool_id ?? ""}-${event.finding_id ?? ""}`} className="event-item">
+              <span className={`event-type ${event.type}`}>{event.type.replace("_", " ")}</span>
+              <strong>{event.message ?? event.finding_title ?? event.tool_id ?? event.status ?? "Scan event"}</strong>
+              <small>{new Date(event.at).toLocaleTimeString()}{event.tool_id ? ` · ${event.tool_id}` : ""}</small>
+            </article>
+          ))}
+          {scanEvents.length === 0 ? <div className="empty-line">No live events for the selected session.</div> : null}
+        </div>
+      </section>
     </section>
   );
 }

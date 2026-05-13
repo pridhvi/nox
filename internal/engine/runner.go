@@ -15,6 +15,7 @@ type Runner struct {
 	store      *db.Store
 	adapters   []adapters.Adapter
 	httpClient adapters.HTTPDoer
+	onEvent    ScanEventHandler
 }
 
 func NewRunner(store *db.Store) *Runner {
@@ -29,6 +30,10 @@ func DefaultSafeAdapters() []adapters.Adapter {
 	return []adapters.Adapter{
 		adapters.NewHTTPProbe(),
 		adapters.NewSecurityHeaders(),
+		adapters.NewNmap(),
+		adapters.NewFFUF(),
+		adapters.NewSQLMap(),
+		adapters.NewDalfox(),
 	}
 }
 
@@ -43,11 +48,22 @@ func NewRunnerWithAdapters(store *db.Store, scanAdapters []adapters.Adapter, cli
 	return &Runner{store: store, adapters: scanAdapters, httpClient: client}
 }
 
+func (r *Runner) OnEvent(handler ScanEventHandler) {
+	r.onEvent = handler
+}
+
 func (r *Runner) Run(ctx context.Context, session models.Session) error {
 	started := time.Now().UTC()
 	if err := r.store.UpdateSessionStatus(ctx, session.ID, models.SessionStatusRunning, &started, nil); err != nil {
 		return err
 	}
+	r.emit(ScanEvent{
+		Type:      ScanEventRunning,
+		SessionID: session.ID,
+		Status:    string(models.SessionStatusRunning),
+		Message:   "Scan running",
+		At:        started,
+	})
 	targets, err := r.store.ListTargets(ctx, session.ID)
 	if err != nil {
 		return err
@@ -73,6 +89,14 @@ func (r *Runner) Run(ctx context.Context, session models.Session) error {
 			if !adapter.ShouldRun(input) {
 				continue
 			}
+			r.emit(ScanEvent{
+				Type:      ScanEventToolStarted,
+				SessionID: session.ID,
+				TargetID:  target.ID,
+				ToolID:    adapter.ID(),
+				Message:   adapter.Name() + " started",
+				At:        time.Now().UTC(),
+			})
 			output, err := adapter.Run(ctx, input)
 			if err != nil && scanErr == nil {
 				scanErr = err
@@ -80,6 +104,23 @@ func (r *Runner) Run(ctx context.Context, session models.Session) error {
 			if persistErr := r.persist(ctx, session.ID, output); persistErr != nil {
 				scanErr = persistErr
 			}
+			status := "completed"
+			message := adapter.Name() + " completed"
+			if err != nil {
+				status = "failed"
+				message = err.Error()
+			}
+			r.emit(ScanEvent{
+				Type:         ScanEventToolCompleted,
+				SessionID:    session.ID,
+				TargetID:     target.ID,
+				ToolID:       adapter.ID(),
+				Status:       status,
+				Message:      message,
+				FindingCount: len(output.Findings),
+				DurationMS:   output.ToolRun.DurationMS,
+				At:           time.Now().UTC(),
+			})
 			for _, updated := range output.NewTargets {
 				for i := range targets {
 					if targets[i].ID == updated.ID {
@@ -101,6 +142,19 @@ func (r *Runner) Run(ctx context.Context, session models.Session) error {
 	if err := r.store.UpdateSessionStatus(ctx, session.ID, status, nil, &completed); err != nil {
 		return err
 	}
+	eventType := ScanEventCompleted
+	message := "Scan completed"
+	if scanErr != nil {
+		eventType = ScanEventFailed
+		message = scanErr.Error()
+	}
+	r.emit(ScanEvent{
+		Type:      eventType,
+		SessionID: session.ID,
+		Status:    string(status),
+		Message:   message,
+		At:        completed,
+	})
 	return scanErr
 }
 
@@ -114,6 +168,17 @@ func (r *Runner) persist(ctx context.Context, sessionID string, output adapters.
 		if err := r.store.InsertFinding(ctx, finding); err != nil {
 			return err
 		}
+		r.emit(ScanEvent{
+			Type:         ScanEventFindingFound,
+			SessionID:    finding.SessionID,
+			TargetID:     finding.TargetID,
+			ToolID:       finding.ToolID,
+			FindingID:    finding.ID,
+			FindingTitle: finding.Title,
+			Severity:     string(finding.Severity),
+			Message:      finding.Title,
+			At:           finding.CreatedAt,
+		})
 	}
 	if output.ToolRun.ID != "" {
 		if err := r.store.InsertToolRun(ctx, output.ToolRun); err != nil {
@@ -121,6 +186,16 @@ func (r *Runner) persist(ctx context.Context, sessionID string, output adapters.
 		}
 	}
 	return r.store.UpdateSessionCounts(ctx, sessionID)
+}
+
+func (r *Runner) emit(event ScanEvent) {
+	if r.onEvent == nil {
+		return
+	}
+	if event.At.IsZero() {
+		event.At = time.Now().UTC()
+	}
+	r.onEvent(event)
 }
 
 func orderAdapters(scanAdapters []adapters.Adapter) ([]adapters.Adapter, error) {

@@ -2,7 +2,10 @@ module github.com/kanini/nox
 
 go 1.26
 
-require modernc.org/sqlite v1.50.1
+require (
+	github.com/gorilla/websocket v1.5.3
+	modernc.org/sqlite v1.50.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
