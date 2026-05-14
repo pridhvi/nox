@@ -37,11 +37,11 @@ specific implementation is proven incompatible with the spec.
 ## Implementation Order
 
 Work should proceed from the lowest-numbered phase that still has remaining
-acceptance criteria. Phases 0 and 1 are complete from the repository
-perspective, so the next implementation focus is Phase 2: Database And
-Persistence. Later phases can be inspected for context, but implementation
-should not skip ahead unless a Phase 2 task explicitly depends on later-phase
-context.
+acceptance criteria. Phases 0, 1, and 2 are complete from the repository
+perspective, so the next implementation focus is Phase 3: Scope Validation And
+Session Lifecycle. Later phases can be inspected for context, but
+implementation should not skip ahead unless a Phase 3 task explicitly depends
+on later-phase context.
 
 ## Current Baseline
 
@@ -50,9 +50,9 @@ must be carried forward:
 
 - **Foundation:** Buildable Go module and CLI entrypoint with `scan`, `serve`,
   `sessions`, `plugins`, `report`, and `version` command surfaces.
-- **Models and migration:** Canonical model structs for sessions, targets,
-  findings, CVEs, tool runs, attack vectors, and report metadata, plus an
-  initial SQLite schema.
+- **Models and persistence:** Canonical model structs for sessions, targets,
+  findings, CVEs, tool runs, attack vectors, report metadata, LLM analyses, and
+  plugin records, plus per-session SQLite migrations and typed store methods.
 - **Session store:** Per-session SQLite persistence in `.nox/sessions`, with
   create/list/show/delete support.
 - **Scope safety:** Scope checker for hosts, URLs, and CIDRs.
@@ -184,7 +184,7 @@ must be carried forward:
 
 ## Phase 2: Database And Persistence
 
-**Status:** Partial  
+**Status:** Implemented  
 **Spec sections covered:** 3.4, 6
 
 ### Existing Baseline
@@ -194,42 +194,29 @@ must be carried forward:
 - Initial migration creates core session, target, finding, and tool run tables.
 - Store methods support create/list/show/delete sessions, targets, findings,
   tool runs, stats, counts, and status updates.
+- Ordered embedded migrations now apply incrementally and record each applied
+  version in `schema_migrations`.
+- Phase 2 persistence covers HTTP evidence, technologies, CVE matches, attack
+  vectors, LLM analyses, and plugin records.
+- Finding reads round-trip nested HTTP evidence and CVE matches.
+- Target reads round-trip detected technologies.
+- Attack vectors round-trip ordered steps and prerequisite finding IDs as
+  structured JSON.
+- LLM analyses round-trip messages and tool-call traces as structured JSON.
+- Plugin records support upsert, list, and delete.
 
 ### Remaining Work
 
-- Expand migrations to cover the complete spec schema:
-  - sessions
-  - targets
-  - findings
-  - HTTP evidence
-  - tool runs
-  - technologies
-  - CVE matches
-  - attack vectors
-  - LLM conversations/history
-  - plugins
-  - schema migrations
-- Persist raw HTTP evidence separately where required:
-  - request raw
-  - response raw
-  - status code
-  - response time
-- Persist technologies detected by fingerprinting adapters.
-- Persist CVE matches linked to technologies or findings.
-- Persist attack vectors and attack steps as structured JSON.
-- Persist LLM conversation history and tool-call traces.
-- Add migration tests for upgrades and rollbacks where practical.
-- Evaluate sqlc adoption:
-  - Spec prefers sqlc-generated typed queries.
-  - Current handwritten store can remain until migration complexity justifies
-    sqlc conversion.
-- Plan optional PostgreSQL support as a later team-deployment feature.
+- None for Phase 2. API endpoints, CLI commands, adapter production of
+  technologies, CVE correlation, attack-vector generation, LLM client behavior,
+  and reporting are handled by later phases.
 
 ### Spec Alignment Follow-ups
 
 - Keep current per-session SQLite path and existing databases compatible.
-- Add migrations incrementally instead of replacing the initial schema.
-- Do not introduce an ORM.
+- Add future migrations incrementally instead of replacing earlier schemas.
+- Continue using the handwritten store until sqlc conversion is justified.
+- Keep optional PostgreSQL support deferred as a later team-deployment feature.
 
 ### Acceptance Criteria
 
@@ -237,7 +224,8 @@ must be carried forward:
 - All scanner evidence, normalized findings, technologies, CVEs, attack vectors,
   and LLM conversations can be persisted and reloaded.
 - Existing API and CLI session commands continue to work with migrated DBs.
-- Tests verify required tables and representative insert/list flows.
+- Tests verify required tables, upgrades from `001_initial`, and representative
+  insert/list flows.
 
 ---
 
@@ -1028,12 +1016,12 @@ must be carried forward:
 | 3.1 Backend Go | Phases 0, 5 | Partial | Current Go target is 1.26; scheduler and embedded tool libs pending. |
 | 3.2 Dependencies | Phases 0, 10, 12, 15, 17, 18 | Partial | SQLite/WebSocket present; many listed deps not yet added. |
 | 3.3 Frontend | Phase 16 | Partial | Dashboard exists; full page set pending. |
-| 3.4 Database | Phase 2 | Partial | SQLite exists; full schema and optional Postgres pending. |
+| 3.4 Database | Phase 2 | Implemented | Per-session SQLite, ordered migrations, and store methods cover Phase 2 persistence; optional Postgres remains later. |
 | 3.5 Plugin System | Phase 4 | Partial | JSON contract exists; install/persist/load flow pending. |
 | 3.6 Packaging | Phase 17 | Partial | Docker, Compose, Makefile, CI build, and snapshot release exist; deeper release hardening pending. |
 | 4. Project Structure | All phases | Partial | Current structure is close but not complete. |
 | 5. Core Data Models | Phase 1 | Implemented | Canonical models, report metadata models, additive CVE version fields, and serialization/validation tests exist. |
-| 6. Database Schema | Phase 2 | Partial | Initial schema exists; complete schema pending. |
+| 6. Database Schema | Phase 2 | Implemented | Schema covers sessions, targets, findings, evidence, technologies, CVEs, vectors, tool runs, LLM analyses, plugins, and migrations. |
 | 7. Tool Adapter System | Phase 4 | Partial | Interface/registry/runners exist; plugin ecosystem pending. |
 | 8. Tool Pipeline | Phases 6-9 | Partial | MVP built-ins and four external wrappers exist; full pipeline pending. |
 | 9. DAG Engine | Phase 5 | Partial | Dependency order exists; concurrency/rate limits/phase engine pending. |

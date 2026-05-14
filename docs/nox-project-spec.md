@@ -635,6 +635,8 @@ CREATE TABLE cve_matches (
     cvss_v3_score     REAL NOT NULL DEFAULT 0.0,
     cvss_v3_vector    TEXT NOT NULL DEFAULT '',
     description       TEXT NOT NULL DEFAULT '',
+    affected_version  TEXT NOT NULL DEFAULT '',
+    fixed_version     TEXT NOT NULL DEFAULT '',
     patch_available   BOOLEAN NOT NULL DEFAULT FALSE,
     exploit_available BOOLEAN NOT NULL DEFAULT FALSE,
     references        TEXT NOT NULL DEFAULT '[]', -- JSON array
@@ -687,6 +689,16 @@ CREATE TABLE llm_analyses (
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_llm_session ON llm_analyses(session_id);
+
+CREATE TABLE plugins (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    binary     TEXT NOT NULL,
+    enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX idx_plugins_name ON plugins(name);
 ```
 
 ---

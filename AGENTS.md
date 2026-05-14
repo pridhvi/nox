@@ -17,10 +17,10 @@ This repo has a buildable backend with per-session SQLite persistence, a synchro
 
 ## Suggested Next Tasks
 
-Proceed in order from the lowest incomplete phase in `docs/implementation-plan.md`. Phases 0 and 1 are complete from the repository perspective; the next focus is Phase 2:
+Proceed in order from the lowest incomplete phase in `docs/implementation-plan.md`. Phases 0, 1, and 2 are complete from the repository perspective; the next focus is Phase 3:
 
-1. Expand SQLite migrations for HTTP evidence, technologies, CVE matches, attack vectors, LLM history, plugins, and schema migration tracking.
-2. Persist raw HTTP request/response evidence separately from normalized findings.
-3. Persist technologies, CVE matches, attack vectors, and attack steps.
-4. Add database repository methods and tests for the expanded schema.
-5. Preserve compatibility for current per-session SQLite databases where possible.
+1. Tighten scope validation coverage for every network-touching adapter.
+2. Add compatibility route `WS /ws/scan/{id}` for scan lifecycle events.
+3. Improve session status transition tests and cancellation behavior.
+4. Preserve the current synchronous CLI safe scan path while extending lifecycle controls.
+5. Keep existing per-session databases compatible with the Phase 2 schema.
