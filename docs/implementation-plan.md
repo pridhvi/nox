@@ -84,9 +84,11 @@ must be carried forward:
 - **WebSocket progress:** Current endpoint is `GET /api/scan/{id}/events` with
   bounded event replay. The spec route `WS /ws/scan/{id}` is also available as
   a compatibility alias.
-- **Reporting and UI:** Markdown/HTML/basic-PDF report generation, CLI/API/UI
-  report access, and React/Vite dashboard, graph, LLM, and report pages backed
-  by real API data. Built assets are embedded into `internal/api/web/dist`.
+- **Reporting and UI:** Markdown/HTML/paginated-PDF report generation,
+  CLI/API/UI report access, and React/Vite dashboard, Recharts severity chart,
+  Cytoscape attack graph, finding evidence/edit workflow, LLM, and report pages
+  backed by real API data. Built assets are embedded into
+  `internal/api/web/dist`.
 - **Verification:** `go test ./...` and `npm run build` pass for the current
   working set.
 
@@ -600,8 +602,9 @@ must be carried forward:
 - CVE identifiers observed in finding evidence are persisted as finding-linked
   `cve_matches`.
 - Exploitable CVEs with CVSS score >= 7.0 create draft attack vectors.
-- Unit tests cover cache reuse, offline source matching, technology matching,
-  finding evidence matching, CVE ID extraction, and draft vector generation.
+- Unit tests cover cache reuse, offline source matching, Exploit-DB CSV mirror
+  matching, technology matching, finding evidence matching, CVE ID extraction,
+  and draft vector generation.
 
 ### Remaining Work
 
@@ -611,9 +614,8 @@ must be carried forward:
 
 - Technology persistence from fingerprinting is a prerequisite for full CVE
   correlation.
-- Expand remote client parsers beyond NVD as API credentials and rate-limit
+- Continue expanding remote client parsers as API credentials and rate-limit
   behavior are configured in Phase 14.
-- Add an Exploit-DB CSV source when a local mirror path is specified.
 - Persist CVE cache to disk if repeated process restarts need cache reuse.
 - Phase 11 should merge CVE-generated draft vectors with deterministic attack
   vector rules.
@@ -649,7 +651,8 @@ must be carried forward:
   - exposed admin panel with weak/default auth indicators
   - CORS wildcard credentials
 - CVE matches with exploit availability and score >= 7 also produce vectors.
-- LLM review fields remain separate and default to unreviewed.
+- LLM review fields remain separate, default to unreviewed, and are annotated
+  after successful LLM analysis.
 - Unit tests cover all default rules, missing prerequisite behavior, and CVE
   vector generation.
 
@@ -662,9 +665,9 @@ must be carried forward:
 - Fix rule references to current tool IDs where needed, while preserving spec
   semantics.
 - Ensure findings include tags required by attack rules.
-- Phase 12 adds persisted LLM analysis only after deterministic vectors are
-  generated, without overwriting rule facts.
-- Phase 13 and Phase 16 should expose vectors through API and UI surfaces.
+- Persisted LLM analysis runs only after deterministic vectors are generated,
+  and annotates review notes without overwriting rule facts.
+- Keep API and UI vector exposure aligned with the deterministic schema.
 
 ### Acceptance Criteria
 
@@ -939,12 +942,14 @@ must be carried forward:
   - severity distribution chart
   - tool coverage matrix
 - Implemented Attack Graph `/sessions/:id/graph`:
-  - target, finding, and vector graph-style columns
+  - interactive Cytoscape graph plus target, finding, and vector columns
   - target, technology, finding, and attack vector nodes
   - severity/category filters
 - Implemented Findings `/sessions/:id/findings`:
   - findings table
   - persisted evidence preview
+  - raw HTTP request/response expansion
+  - persisted severity/remediation edits
   - severity/type/tool/OWASP/CVE/exploit filters
   - CVE matches
 - Implemented LLM Chat `/sessions/:id/llm`:
@@ -959,9 +964,9 @@ must be carried forward:
 
 - Keep current dashboard layout and evolve it into the spec dashboard.
 - Do not add decorative landing pages; the first screen remains the app.
-- Cytoscape-specific rendering, details side panels, suggested LLM prompts, raw
-  evidence expansion, and richer findings bulk actions remain later UI polish;
-  routes and real API data are in place.
+- Suggested LLM prompts and richer bulk finding actions remain later UI polish;
+  routes, real API data, graph rendering, details panels, evidence expansion,
+  and edit workflows are in place.
 
 ### Acceptance Criteria
 
@@ -1005,8 +1010,8 @@ must be carried forward:
 
 - External scanner availability in Docker should be better than single-binary
   mode, but single-binary mode must remain useful with graceful degradation.
-- Fixture-backed vulnerable-target scan tests remain opt-in and should use
-  controlled targets only.
+- Fixture-backed vulnerable-target scan tests are opt-in and use controlled
+  local targets by default.
 
 ### Acceptance Criteria
 
@@ -1014,7 +1019,8 @@ must be carried forward:
 - docker-compose starts Nox and Ollama.
 - Makefile targets work locally and in CI.
 - Release artifacts include embedded frontend.
-- A later fixture-backed smoke test verifies Docker scan execution end to end.
+- An opt-in fixture-backed smoke test verifies local scan and report execution
+  end to end.
 
 ---
 
@@ -1077,9 +1083,9 @@ must be carried forward:
 | 1. Project Overview | Phase 0 | Implemented | Local-first CLI and web UI, scoped sessions, normalized persistence, LLM, reporting, packaging, and CI exist. |
 | 2. Design Principles | Phases 0, 3, 4, 5, 11, 12 | Implemented | Scope/evidence/normalization, DAG scheduling, deterministic vectors, constrained LLM analysis, auth, reports, and UI routes exist. |
 | 3. Tech Stack | Phases 0, 2, 12, 15, 16, 17 | Implemented | Go, SQLite, React/Vite, WebSocket, OpenAI-compatible LLM client, reports, Docker, Compose, Makefile, and GoReleaser exist. |
-| 3.1 Backend Go | Phases 0, 5 | Partial | Current Go target is 1.26; scheduler and embedded tool libs pending. |
-| 3.2 Dependencies | Phases 0, 10, 12, 15, 17, 18 | Partial | SQLite/WebSocket present; many listed deps not yet added. |
-| 3.3 Frontend | Phase 16 | Implemented | Dashboard, findings, graph, LLM, and reports routes use real API data; richer visualization polish remains. |
+| 3.1 Backend Go | Phases 0, 5 | Implemented | Current Go target is 1.26; scheduler exists. ProjectDiscovery Go-library migration remains an optional hardening path. |
+| 3.2 Dependencies | Phases 0, 10, 12, 15, 17, 18 | Implemented | SQLite, WebSocket, Viper, gofpdf, x/sync, testify, Cytoscape, and Recharts are present; chi/cobra/sqlc remain architectural choices deferred until they add value. |
+| 3.3 Frontend | Phase 16 | Implemented | Dashboard, findings, Cytoscape graph, Recharts severity chart, LLM, and reports routes use real API data. |
 | 3.4 Database | Phase 2 | Implemented | Per-session SQLite, ordered migrations, and store methods cover Phase 2 persistence; optional Postgres remains later. |
 | 3.5 Plugin System | Phase 4 | Implemented | JSON contract, CLI install/list, plugin persistence, configured plugin loading, and failed tool-run degradation exist. |
 | 3.6 Packaging | Phase 17 | Implemented | Docker, Compose, Makefile, Docker smoke, deployment notes, CI build, and snapshot release exist. |
@@ -1089,16 +1095,16 @@ must be carried forward:
 | 7. Tool Adapter System | Phase 4 | Implemented | Built-in registry and configured subprocess plugin adapters coexist; broader ecosystem docs remain later. |
 | 8. Tool Pipeline | Phases 6-9 | Implemented | Recon, fingerprinting, enumeration, and vulnerability-scanning adapter slices now cover Phases 6-9; deeper Go-library migrations and richer targeting remain follow-ups. |
 | 9. DAG Engine | Phase 5 | Implemented | Dependency levels, same-level concurrency, semaphores, timeout/delay controls, prior-result propagation, and phase events exist. |
-| 10. LLM Integration | Phase 12 | Implemented | Optional OpenAI-compatible client, config, structured context builder, constrained tools, analyst loop, evidence truncation, persisted audit trails, API endpoints, CLI commands, and UI history/chat exist. |
-| 11. CVE Intelligence | Phase 10 | Implemented | Correlator, offline source, cache, NVD client parser, evidence CVE extraction, persisted matches, and draft vectors exist; richer remote source parsers remain follow-ups. |
-| 12. Attack Vector Engine | Phase 11 | Implemented | Deterministic rule engine, default rules, scoring, steps, persistence integration, CVE vector merging, and rule tests exist; API/UI exposure remains later. |
-| 13. REST API Surface | Phase 13 | Implemented | Spec endpoints for sessions, scans, findings, vectors, CVEs, LLM, reports, health, tools, auth, and WebSocket alias exist. |
+| 10. LLM Integration | Phase 12 | Implemented | Optional OpenAI-compatible client, config, structured context builder, constrained tools, analyst loop, evidence truncation, persisted audit trails, vector annotations, API endpoints, CLI commands, and UI history/chat exist. |
+| 11. CVE Intelligence | Phase 10 | Implemented | Correlator, offline JSON source, Exploit-DB CSV source, cache, NVD/OSV/CIRCL/Vulners/GitHub parsers, evidence CVE extraction, persisted matches, and draft vectors exist. |
+| 12. Attack Vector Engine | Phase 11 | Implemented | Deterministic rule engine, default rules, scoring, steps, persistence integration, CVE vector merging, LLM review annotations, API exposure, and UI graph exposure exist. |
+| 13. REST API Surface | Phase 13 | Implemented | Spec endpoints for sessions, scans, findings, finding updates, vectors, CVEs, LLM, reports, health, tools, auth, and WebSocket alias exist. |
 | 14. CLI Commands | Phase 14 | Implemented | Scan flags, report generation, LLM commands, config init/show, plugins, sessions, serve, and version exist. |
-| 15. Web UI Pages | Phase 16 | Implemented | Dashboard, session route, graph, LLM, and reports pages use real API data; richer graph and findings UX remain polish. |
-| 16. Configuration File | Phase 14 | Implemented | `~/.nox/config.yaml` defaults, config init/show, env overrides, and CLI override paths exist. |
+| 15. Web UI Pages | Phase 16 | Implemented | Dashboard, session route, Cytoscape graph, Recharts severity chart, finding evidence/edit workflow, LLM, and reports pages use real API data. |
+| 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nox/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, tool path maps, plugin directories, CVE settings, and CLI override paths exist. |
 | 17. Scope Validation | Phase 3 | Implemented | Checker, adapter boundary tests, cancellation, and lifecycle status coverage exist; config integration remains later. |
 | 18. Error Handling & Logging | Phases 3, 4, 5 | Partial | Tool failures persist without failing scans; broader structured logging polish remains hardening work. |
-| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM tests, frontend CI build, Docker smoke, and opt-in integration smoke exist. |
+| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM tests, frontend CI build, Docker smoke, and opt-in fixture-backed integration smoke exist. |
 | 20. Docker Setup | Phase 17 | Implemented | Dockerfile, healthcheck, compose, deployment docs, and Docker smoke exist. |
 | 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
 | 22. Build Order Recommendation | This plan | Implemented | This roadmap follows the spec build order while preserving current work. |

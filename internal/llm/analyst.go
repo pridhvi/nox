@@ -100,7 +100,36 @@ func (a Analyst) AnalyzeSession(ctx context.Context, sessionID, prompt string) (
 	if err := a.store.InsertLLMAnalysis(ctx, analysis); err != nil {
 		return models.LLMAnalysis{}, err
 	}
+	_ = a.annotateAttackVectors(ctx, sessionID, sessionContext.AttackVectors, messages)
 	return analysis, nil
+}
+
+func (a Analyst) annotateAttackVectors(ctx context.Context, sessionID string, vectors []models.AttackVector, messages []ChatMessage) error {
+	if len(vectors) == 0 {
+		return nil
+	}
+	note := assistantReviewNote(messages)
+	if note == "" {
+		return nil
+	}
+	for _, vector := range vectors {
+		if vector.SessionID != sessionID || vector.LLMReviewed {
+			continue
+		}
+		if err := a.store.UpdateAttackVectorLLMReview(ctx, vector.ID, true, note); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func assistantReviewNote(messages []ChatMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" && strings.TrimSpace(messages[i].Content) != "" {
+			return truncate(strings.TrimSpace(messages[i].Content), 1200)
+		}
+	}
+	return ""
 }
 
 func executeToolCalls(ctx context.Context, store Store, sessionID string, calls []ChatToolCall) []models.LLMToolCall {

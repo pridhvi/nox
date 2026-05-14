@@ -4,7 +4,7 @@ Use `docs/nox-project-spec.md` as the canonical product specification. Keep `REA
 
 ## Current State
 
-This repo has a buildable backend with per-session SQLite persistence, a synchronous CLI safe scan path, asynchronous API scan start, Docker packaging, CI, and snapshot release configuration. Active scans run built-in `http-probe` and `security-headers` plus optional subprocess adapters for recon (`subfinder`, `dnsx`, `naabu`, `httpx`, `whois`, `waybackurls`), fingerprinting (`whatweb`, `nuclei-tech`, `testssl.sh`, GraphQL introspection, OpenAPI/Swagger discovery, `wpscan`, `droopescan`), enumeration (`ffuf`, `arjun`, `linkfinder`, `gitleaks`, JavaScript secret scanning, CORS checks, scoped cloud bucket checks), vulnerability scanning (`nuclei-vuln`, `sqlmap`, `dalfox`, SSRFmap, `jwt_tool`, OAuth, SSTI, XXE, `nikto`), CVE intelligence, deterministic attack vector generation, optional local-first LLM analysis, reporting, and `nmap`; `crt.sh` is registered but opt-in. API scans publish WebSocket lifecycle events at `GET /api/scan/{id}/events` while keeping polling endpoints as fallback. The API exposes sessions, findings, targets, tool runs, stats, vectors, CVEs, LLM history/analysis, reports, and optional API-key auth. The dashboard and session pages read real API data for findings, graph, LLM, and reports. The React/Vite frontend builds into `internal/api/web/dist` and is embedded into the Go binary. The backend targets Go 1.26; keep it buildable with `go test ./...` after every change.
+This repo has a buildable backend with per-session SQLite persistence, a synchronous CLI safe scan path, asynchronous API scan start, Docker packaging, CI, and snapshot release configuration. Active scans run built-in `http-probe` and `security-headers` plus optional subprocess adapters for recon (`subfinder`, `dnsx`, `naabu`, `httpx`, `whois`, `waybackurls`), fingerprinting (`whatweb`, `nuclei-tech`, `testssl.sh`, GraphQL introspection, OpenAPI/Swagger discovery, `wpscan`, `droopescan`), enumeration (`ffuf`, `arjun`, `linkfinder`, `gitleaks`, JavaScript secret scanning, CORS checks, scoped cloud bucket checks), vulnerability scanning (`nuclei-vuln`, `sqlmap`, `dalfox`, SSRFmap, `jwt_tool`, OAuth, SSTI, XXE, `nikto`), CVE intelligence, deterministic attack vector generation, optional local-first LLM analysis with vector annotations, reporting, and `nmap`; `crt.sh` is registered but opt-in. API scans publish WebSocket lifecycle events at `GET /api/scan/{id}/events` while keeping polling endpoints as fallback. The API exposes sessions, findings, finding updates, targets, tool runs, stats, vectors, CVEs, LLM history/analysis, reports, and optional API-key auth. Configuration uses Viper-backed YAML/TOML/JSON plus env overrides. The dashboard and session pages read real API data for findings, Cytoscape graph views, Recharts severity charts, LLM, and reports. The React/Vite frontend builds into `internal/api/web/dist` and is embedded into the Go binary. The backend targets Go 1.26; keep it buildable with `go test ./...` after every change.
 
 ## Engineering Priorities
 
@@ -20,7 +20,7 @@ This repo has a buildable backend with per-session SQLite persistence, a synchro
 The phase roadmap in `docs/implementation-plan.md` is complete from the repository perspective. Next tasks should be hardening and depth rather than new roadmap phases:
 
 1. Add richer adapter fixtures and parser coverage.
-2. Replace basic report PDF layout with a higher-fidelity renderer.
-3. Deepen UI graph interactions and findings bulk workflows.
-4. Add fixture-backed integration scans for controlled vulnerable targets.
-5. Expand external scanner install/version checks in Docker images.
+2. Expand external scanner install/version checks in Docker images.
+3. Add deeper vulnerable-app integration suites beyond the built-in smoke fixture.
+4. Add optional code-splitting for the larger frontend graph/chart bundle.
+5. Evaluate native ProjectDiscovery Go-library adapters where subprocess behavior is too limiting.

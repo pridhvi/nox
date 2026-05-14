@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
 	mux.HandleFunc("GET /api/sessions/{id}/targets", s.listTargets)
 	mux.HandleFunc("GET /api/sessions/{id}/findings", s.listFindings)
+	mux.HandleFunc("PATCH /api/sessions/{id}/findings/{finding_id}", s.updateFinding)
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs", s.listToolRuns)
 	mux.HandleFunc("GET /api/sessions/{id}/stats", s.sessionStats)
 	mux.HandleFunc("GET /api/sessions/{id}/vectors", s.listAttackVectors)
@@ -221,6 +222,45 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 		findings = paginate(findings, page, limit)
 	}
 	writeJSON(w, findings)
+}
+
+type updateFindingRequest struct {
+	Severity    models.Severity `json:"severity"`
+	Remediation string          `json:"remediation"`
+}
+
+func (s *Server) updateFinding(w http.ResponseWriter, r *http.Request) {
+	store, session, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	findingID := r.PathValue("finding_id")
+	var req updateFindingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Severity != "" && !validSeverity(req.Severity) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid severity %q", req.Severity))
+		return
+	}
+	if err := store.UpdateFinding(r.Context(), findingID, req.Severity, req.Remediation); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	findings, err := store.ListFindings(r.Context(), session.ID, db.FindingFilter{})
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	for _, finding := range findings {
+		if finding.ID == findingID {
+			writeJSON(w, finding)
+			return
+		}
+	}
+	writeDBError(w, db.ErrNotFound)
 }
 
 func (s *Server) listToolRuns(w http.ResponseWriter, r *http.Request) {
@@ -447,6 +487,15 @@ func readiness(ok bool) string {
 		return "ready"
 	}
 	return "unavailable"
+}
+
+func validSeverity(severity models.Severity) bool {
+	switch severity {
+	case models.SeverityCritical, models.SeverityHigh, models.SeverityMedium, models.SeverityLow, models.SeverityInfo:
+		return true
+	default:
+		return false
+	}
 }
 
 func pagination(r *http.Request) (int, int) {

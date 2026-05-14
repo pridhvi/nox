@@ -262,6 +262,33 @@ INSERT INTO findings (
 	return tx.Commit()
 }
 
+func (s *Store) UpdateFinding(ctx context.Context, findingID string, severity models.Severity, remediation string) error {
+	query := `UPDATE findings SET id = id`
+	args := []any{}
+	if severity != "" {
+		query += `, severity = ?`
+		args = append(args, string(severity))
+	}
+	if remediation != "" {
+		query += `, remediation = ?`
+		args = append(args, remediation)
+	}
+	query += ` WHERE id = ?`
+	args = append(args, findingID)
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) InsertHTTPEvidence(ctx context.Context, evidence models.HTTPEvidence) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -327,6 +354,28 @@ INSERT INTO attack_vectors (
 		formatTime(vector.CreatedAt),
 	)
 	return err
+}
+
+func (s *Store) UpdateAttackVectorLLMReview(ctx context.Context, vectorID string, reviewed bool, notes string) error {
+	result, err := s.db.ExecContext(ctx, `
+UPDATE attack_vectors
+SET llm_reviewed = ?, llm_notes = ?
+WHERE id = ?`,
+		reviewed,
+		notes,
+		vectorID,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) InsertLLMAnalysis(ctx context.Context, analysis models.LLMAnalysis) error {

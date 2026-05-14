@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -19,6 +20,51 @@ func TestWriteDefaultAndLoadConfig(t *testing.T) {
 	}
 	if cfg.LLM.Model != "llama3:8b" {
 		t.Fatalf("unexpected LLM default: %#v", cfg.LLM)
+	}
+}
+
+func TestLoadNestedConfigListsAndToolPaths(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	data := []byte(`
+plugins = ["/opt/nox/plugins"]
+
+[llm]
+enabled = true
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5-coder"
+
+[scan]
+phases = ["recon", "fingerprint", "vuln"]
+tools = ["http-probe", "nuclei-vuln"]
+concurrency = 8
+
+[cve]
+sources = ["embedded", "nvd", "github-advisories", "exploitdb"]
+cache_ttl = "12h"
+exploitdb_path = "/opt/exploitdb/files_exploits.csv"
+
+[tools]
+nuclei = "/usr/local/bin/nuclei"
+sqlmap = "/opt/sqlmap/sqlmap.py"
+`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.LLM.Enabled || cfg.LLM.Model != "qwen2.5-coder" {
+		t.Fatalf("unexpected LLM config: %#v", cfg.LLM)
+	}
+	if cfg.Scan.Concurrency != 8 || len(cfg.Scan.Phases) != 3 {
+		t.Fatalf("unexpected scan config: %#v", cfg.Scan)
+	}
+	if cfg.CVE.ExploitDBPath == "" || len(cfg.CVE.Sources) != 4 {
+		t.Fatalf("unexpected CVE config: %#v", cfg.CVE)
+	}
+	if cfg.Tools["nuclei"] == "" || cfg.Plugins[0] != "/opt/nox/plugins" {
+		t.Fatalf("unexpected tool/plugin config: tools=%#v plugins=%#v", cfg.Tools, cfg.Plugins)
 	}
 }
 

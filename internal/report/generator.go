@@ -1,7 +1,6 @@
 package report
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"html"
@@ -9,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jung-kurt/gofpdf"
 	"github.com/kanini/nox/internal/db"
 	"github.com/kanini/nox/internal/models"
 )
@@ -256,40 +256,42 @@ func renderHTML(report models.Report) string {
 }
 
 func renderPDF(text string) []byte {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	var content strings.Builder
-	content.WriteString("BT /F1 10 Tf 50 780 Td 12 TL\n")
-	for i, line := range lines {
-		if i > 58 {
-			break
+	pdf := gofpdf.New("P", "mm", "Letter", "")
+	pdf.SetTitle("Nox Security Report", false)
+	pdf.SetAuthor("nox", false)
+	pdf.SetMargins(18, 16, 18)
+	pdf.SetAutoPageBreak(true, 18)
+	pdf.AddPage()
+	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		line = strings.TrimRight(line, " ")
+		switch {
+		case strings.HasPrefix(line, "# "):
+			pdf.SetFont("Helvetica", "B", 18)
+			pdf.MultiCell(0, 9, strings.TrimPrefix(line, "# "), "", "L", false)
+			pdf.Ln(2)
+		case strings.HasPrefix(line, "## "):
+			pdf.Ln(2)
+			pdf.SetFont("Helvetica", "B", 13)
+			pdf.MultiCell(0, 7, strings.TrimPrefix(line, "## "), "", "L", false)
+			pdf.Ln(1)
+		case strings.HasPrefix(line, "### "):
+			pdf.Ln(1)
+			pdf.SetFont("Helvetica", "B", 11)
+			pdf.MultiCell(0, 6, strings.TrimPrefix(line, "### "), "", "L", false)
+		case strings.TrimSpace(line) == "":
+			pdf.Ln(2)
+		case strings.HasPrefix(line, "```"):
+			continue
+		default:
+			pdf.SetFont("Helvetica", "", 9.5)
+			pdf.MultiCell(0, 5.2, stripMarkdown(line), "", "L", false)
 		}
-		fmt.Fprintf(&content, "(%s) Tj T*\n", pdfEscape(truncate(line, 95)))
 	}
-	content.WriteString("ET")
-	stream := content.String()
-	var b bytes.Buffer
-	offsets := []int{}
-	write := func(s string) {
-		b.WriteString(s)
+	var out strings.Builder
+	if err := pdf.Output(&out); err != nil {
+		return []byte("%PDF-1.4\n% report generation failed\n")
 	}
-	write("%PDF-1.4\n")
-	offsets = append(offsets, b.Len())
-	write("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n")
-	offsets = append(offsets, b.Len())
-	write("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n")
-	offsets = append(offsets, b.Len())
-	write("3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n")
-	offsets = append(offsets, b.Len())
-	write("4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n")
-	offsets = append(offsets, b.Len())
-	fmt.Fprintf(&b, "5 0 obj << /Length %d >> stream\n%s\nendstream endobj\n", len(stream), stream)
-	xref := b.Len()
-	write("xref\n0 6\n0000000000 65535 f \n")
-	for _, offset := range offsets {
-		fmt.Fprintf(&b, "%010d 00000 n \n", offset)
-	}
-	fmt.Fprintf(&b, "trailer << /Size 6 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xref)
-	return b.Bytes()
+	return []byte(out.String())
 }
 
 func splitFindings(findings []models.Finding) ([]models.Finding, []models.Finding) {
@@ -365,8 +367,8 @@ func truncate(value string, limit int) string {
 	return value[:limit] + "...[truncated]"
 }
 
-func pdfEscape(value string) string {
-	value = strings.ReplaceAll(value, "\\", "\\\\")
-	value = strings.ReplaceAll(value, "(", "\\(")
-	return strings.ReplaceAll(value, ")", "\\)")
+func stripMarkdown(value string) string {
+	value = strings.ReplaceAll(value, "**", "")
+	value = strings.ReplaceAll(value, "`", "")
+	return value
 }

@@ -31,13 +31,14 @@ This repository currently contains the buildable foundation plus the first safe 
 - Optional fingerprinting adapters for `whatweb`, `nuclei` technology templates, `testssl.sh`, GraphQL introspection, OpenAPI/Swagger discovery, `wpscan`, and `droopescan`.
 - Optional enumeration adapters for `ffuf`, `arjun`, `linkfinder`, `gitleaks`, JavaScript secret scanning, CORS checks, and scoped cloud bucket checks.
 - Optional vulnerability adapters for `nuclei` vulnerability templates, `sqlmap`, `dalfox`, SSRFmap, `jwt_tool`, OAuth checks, SSTI checks, XXE fuzzing, and `nikto`.
-- CVE intelligence correlator with offline JSON source support, local cache, technology/finding matching, persisted CVE matches, and draft vectors for high-severity exploitable CVEs.
+- CVE intelligence correlator with offline JSON and Exploit-DB CSV source support, local cache, NVD/OSV/CIRCL/Vulners/GitHub advisory parsers, technology/finding matching, persisted CVE matches, and draft vectors for high-severity exploitable CVEs.
 - Deterministic attack vector engine with default rules, confidence scoring, ordered steps, prerequisite findings, and CVE vector merging.
-- Optional local-first OpenAI-compatible LLM analyst for structured session context, constrained tool calls, evidence truncation, and persisted conversation audit trails.
-- Expanded REST API for vectors, CVEs, reports, LLM history/analysis, session deletion, finding filters, and optional API-key auth.
+- Optional local-first OpenAI-compatible LLM analyst for structured session context, constrained tool calls, evidence truncation, persisted conversation audit trails, and post-analysis attack-vector annotations.
+- Expanded REST API for vectors, CVEs, reports, LLM history/analysis, session deletion, finding filters, finding updates, and optional API-key auth.
 - CLI config, LLM, and report commands plus expanded scan flags for phases, LLM settings, concurrency, and rate-limit configuration.
-- Markdown, HTML, and basic PDF report generation from persisted findings, evidence, CVEs, attack vectors, tool runs, and optional LLM analysis.
-- Web UI pages for session detail/dashboard, attack graph, LLM analyst history/chat, and report preview/download.
+- Viper-backed YAML/TOML/JSON configuration with environment overrides, tool path maps, plugin directories, scan controls, and CVE source settings.
+- Markdown, HTML, and paginated PDF report generation from persisted findings, evidence, CVEs, attack vectors, tool runs, and optional LLM analysis.
+- Web UI pages for session detail/dashboard, Recharts severity charts, Cytoscape attack graph, finding evidence/edit workflows, LLM analyst history/chat, and report preview/download.
 - Docker health checks, Compose validation, local Docker smoke scripts, CI frontend verification, and snapshot release packaging.
 - Optional subprocess adapters for `nmap`, `ffuf`, `sqlmap`, and `dalfox`, with graceful degradation when tools are unavailable.
 - React/Vite frontend for dashboard, graph, LLM, and reports.
@@ -81,10 +82,10 @@ The Docker image bundles the Nox binary and common external scanner tools. Singl
 The implementation roadmap in [docs/implementation-plan.md](docs/implementation-plan.md) is complete from the repository perspective. Next work should focus on hardening and depth:
 
 1. Add richer adapter fixtures and parser coverage.
-2. Replace basic report PDF layout with a higher-fidelity renderer.
-3. Deepen UI graph interactions and findings bulk workflows.
-4. Add fixture-backed integration scans for controlled vulnerable targets.
-5. Expand external scanner install/version checks in Docker images.
+2. Expand external scanner install/version checks in Docker images.
+3. Add deeper vulnerable-app integration suites beyond the built-in smoke fixture.
+4. Add optional code-splitting for the larger frontend graph/chart bundle.
+5. Evaluate native ProjectDiscovery Go-library adapters where subprocess behavior is too limiting.
 
 ## Safety Boundary
 

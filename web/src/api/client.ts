@@ -51,6 +51,14 @@ export type CVEMatch = {
   patch_available: boolean;
   exploit_available: boolean;
   source: string;
+  references?: string[];
+};
+
+export type HTTPEvidence = {
+  request_raw: string;
+  response_raw: string;
+  status_code: number;
+  response_time: number;
 };
 
 export type Finding = {
@@ -68,6 +76,7 @@ export type Finding = {
   url: string;
   evidence_raw?: string;
   evidence_normalized?: string;
+  http_evidence?: HTTPEvidence;
   cve_matches?: CVEMatch[];
   created_at: string;
 };
@@ -89,6 +98,8 @@ export type AttackVector = {
   confidence: number;
   steps: AttackStep[];
   prereq_finding_ids: string[];
+  llm_reviewed?: boolean;
+  llm_notes?: string;
 };
 
 export type ToolRun = {
@@ -203,6 +214,13 @@ export function listFindings(sessionID: string, params: Record<string, string> =
   const search = new URLSearchParams(params);
   const suffix = search.toString() ? `?${search}` : "";
   return api<Finding[]>(`/api/sessions/${sessionID}/findings${suffix}`);
+}
+
+export function updateFinding(sessionID: string, findingID: string, payload: { severity?: string; remediation?: string }) {
+  return api<Finding>(`/api/sessions/${sessionID}/findings/${findingID}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function listToolRuns(sessionID: string) {

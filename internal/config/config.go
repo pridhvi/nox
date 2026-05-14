@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/viper"
 )
 
 type Config struct {
@@ -47,8 +49,11 @@ type ScanConfig struct {
 }
 
 type CVEConfig struct {
-	OfflinePath  string `json:"offline_path"`
-	EnableRemote bool   `json:"enable_remote"`
+	OfflinePath   string   `json:"offline_path"`
+	EnableRemote  bool     `json:"enable_remote"`
+	CacheTTL      string   `json:"cache_ttl"`
+	ExploitDBPath string   `json:"exploitdb_path"`
+	Sources       []string `json:"sources"`
 }
 
 func DefaultPath() string {
@@ -73,7 +78,7 @@ func Default() Config {
 		Database: DatabaseConfig{SessionDir: filepath.Join(".nox", "sessions")},
 		Server:   ServerConfig{Host: "127.0.0.1", Port: 8080},
 		Scan:     ScanConfig{Mode: "active", Concurrency: 4},
-		CVE:      CVEConfig{EnableRemote: false},
+		CVE:      CVEConfig{EnableRemote: false, CacheTTL: "24h", Sources: []string{"embedded"}},
 		Tools:    map[string]string{},
 		Plugins:  []string{},
 	}
@@ -84,14 +89,44 @@ func Load(path string) (Config, error) {
 	if strings.TrimSpace(path) == "" {
 		path = DefaultPath()
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ApplyEnv(cfg), nil
-		}
-		return Config{}, err
+	v := viper.New()
+	setDefaults(v, cfg)
+	v.SetConfigFile(path)
+	if filepath.Ext(path) == "" {
+		v.SetConfigType("yaml")
 	}
-	applyYAML(&cfg, string(data))
+	v.SetEnvPrefix("NOX")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	bindEnv(v)
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok && !os.IsNotExist(err) {
+			return Config{}, err
+		}
+	}
+	cfg.LLM.Provider = v.GetString("llm.provider")
+	cfg.LLM.BaseURL = v.GetString("llm.base_url")
+	cfg.LLM.APIKey = v.GetString("llm.api_key")
+	cfg.LLM.Model = v.GetString("llm.model")
+	cfg.LLM.MaxTokens = v.GetInt("llm.max_tokens")
+	cfg.LLM.Temperature = v.GetFloat64("llm.temperature")
+	cfg.LLM.Enabled = v.GetBool("llm.enabled")
+	cfg.Database.SessionDir = v.GetString("database.session_dir")
+	cfg.Server.Host = v.GetString("server.host")
+	cfg.Server.Port = v.GetInt("server.port")
+	cfg.Server.APIKey = v.GetString("server.api_key")
+	cfg.Scan.Mode = v.GetString("scan.mode")
+	cfg.Scan.Phases = getStringSlice(v, "scan.phases")
+	cfg.Scan.Tools = getStringSlice(v, "scan.tools")
+	cfg.Scan.Concurrency = v.GetInt("scan.concurrency")
+	cfg.Scan.RateLimit = v.GetString("scan.rate_limit")
+	cfg.CVE.OfflinePath = v.GetString("cve.offline_path")
+	cfg.CVE.EnableRemote = v.GetBool("cve.enable_remote")
+	cfg.CVE.CacheTTL = v.GetString("cve.cache_ttl")
+	cfg.CVE.ExploitDBPath = v.GetString("cve.exploitdb_path")
+	cfg.CVE.Sources = getStringSlice(v, "cve.sources")
+	cfg.Tools = v.GetStringMapString("tools")
+	cfg.Plugins = getStringSlice(v, "plugins")
 	return ApplyEnv(cfg), nil
 }
 
@@ -113,6 +148,8 @@ func ApplyEnv(cfg Config) Config {
 	cfg.Database.SessionDir = first(os.Getenv("NOX_SESSION_DIR"), cfg.Database.SessionDir)
 	cfg.Server.APIKey = first(os.Getenv("NOX_API_KEY"), cfg.Server.APIKey)
 	cfg.CVE.OfflinePath = first(os.Getenv("NOX_CVE_OFFLINE_PATH"), cfg.CVE.OfflinePath)
+	cfg.CVE.ExploitDBPath = first(os.Getenv("NOX_CVE_EXPLOITDB_PATH"), cfg.CVE.ExploitDBPath)
+	cfg.CVE.CacheTTL = first(os.Getenv("NOX_CVE_CACHE_TTL"), cfg.CVE.CacheTTL)
 	if value := os.Getenv("NOX_CVE_ENABLE_REMOTE"); strings.TrimSpace(value) != "" {
 		cfg.CVE.EnableRemote = parseBool(value)
 	}
@@ -154,77 +191,14 @@ scan:
 cve:
   offline_path: %s
   enable_remote: %t
+  cache_ttl: %s
+  exploitdb_path: %s
+  sources: %s
 tools: {}
 plugins: []
 `, c.LLM.Enabled, c.LLM.Provider, c.LLM.BaseURL, c.LLM.APIKey, c.LLM.Model, c.LLM.MaxTokens, c.LLM.Temperature,
 		c.Database.SessionDir, c.Server.Host, c.Server.Port, c.Server.APIKey, c.Scan.Mode, strings.Join(c.Scan.Phases, ","), strings.Join(c.Scan.Tools, ","), c.Scan.Concurrency, c.Scan.RateLimit,
-		c.CVE.OfflinePath, c.CVE.EnableRemote)
-}
-
-func applyYAML(cfg *Config, data string) {
-	section := ""
-	for _, line := range strings.Split(data, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasSuffix(line, ":") {
-			section = strings.TrimSuffix(line, ":")
-			continue
-		}
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		switch section + "." + key {
-		case "llm.enabled":
-			cfg.LLM.Enabled = parseBool(value)
-		case "llm.provider":
-			cfg.LLM.Provider = value
-		case "llm.base_url":
-			cfg.LLM.BaseURL = value
-		case "llm.api_key":
-			cfg.LLM.APIKey = value
-		case "llm.model":
-			cfg.LLM.Model = value
-		case "llm.max_tokens":
-			if parsed, err := strconv.Atoi(value); err == nil {
-				cfg.LLM.MaxTokens = parsed
-			}
-		case "llm.temperature":
-			if parsed, err := strconv.ParseFloat(value, 64); err == nil {
-				cfg.LLM.Temperature = parsed
-			}
-		case "database.session_dir":
-			cfg.Database.SessionDir = value
-		case "server.host":
-			cfg.Server.Host = value
-		case "server.port":
-			if parsed, err := strconv.Atoi(value); err == nil {
-				cfg.Server.Port = parsed
-			}
-		case "server.api_key":
-			cfg.Server.APIKey = value
-		case "scan.mode":
-			cfg.Scan.Mode = value
-		case "scan.phases":
-			cfg.Scan.Phases = splitCSV(value)
-		case "scan.tools":
-			cfg.Scan.Tools = splitCSV(value)
-		case "scan.concurrency":
-			if parsed, err := strconv.Atoi(value); err == nil {
-				cfg.Scan.Concurrency = parsed
-			}
-		case "scan.rate_limit":
-			cfg.Scan.RateLimit = value
-		case "cve.offline_path":
-			cfg.CVE.OfflinePath = value
-		case "cve.enable_remote":
-			cfg.CVE.EnableRemote = parseBool(value)
-		}
-	}
+		c.CVE.OfflinePath, c.CVE.EnableRemote, c.CVE.CacheTTL, c.CVE.ExploitDBPath, strings.Join(c.CVE.Sources, ","))
 }
 
 func first(value, fallback string) string {
@@ -232,6 +206,53 @@ func first(value, fallback string) string {
 		return strings.TrimSpace(value)
 	}
 	return fallback
+}
+
+func setDefaults(v *viper.Viper, cfg Config) {
+	v.SetDefault("llm.enabled", cfg.LLM.Enabled)
+	v.SetDefault("llm.provider", cfg.LLM.Provider)
+	v.SetDefault("llm.base_url", cfg.LLM.BaseURL)
+	v.SetDefault("llm.api_key", cfg.LLM.APIKey)
+	v.SetDefault("llm.model", cfg.LLM.Model)
+	v.SetDefault("llm.max_tokens", cfg.LLM.MaxTokens)
+	v.SetDefault("llm.temperature", cfg.LLM.Temperature)
+	v.SetDefault("database.session_dir", cfg.Database.SessionDir)
+	v.SetDefault("server.host", cfg.Server.Host)
+	v.SetDefault("server.port", cfg.Server.Port)
+	v.SetDefault("server.api_key", cfg.Server.APIKey)
+	v.SetDefault("scan.mode", cfg.Scan.Mode)
+	v.SetDefault("scan.phases", cfg.Scan.Phases)
+	v.SetDefault("scan.tools", cfg.Scan.Tools)
+	v.SetDefault("scan.concurrency", cfg.Scan.Concurrency)
+	v.SetDefault("scan.rate_limit", cfg.Scan.RateLimit)
+	v.SetDefault("cve.offline_path", cfg.CVE.OfflinePath)
+	v.SetDefault("cve.enable_remote", cfg.CVE.EnableRemote)
+	v.SetDefault("cve.cache_ttl", cfg.CVE.CacheTTL)
+	v.SetDefault("cve.exploitdb_path", cfg.CVE.ExploitDBPath)
+	v.SetDefault("cve.sources", cfg.CVE.Sources)
+	v.SetDefault("tools", cfg.Tools)
+	v.SetDefault("plugins", cfg.Plugins)
+}
+
+func bindEnv(v *viper.Viper) {
+	keys := []string{
+		"llm.enabled", "llm.provider", "llm.base_url", "llm.api_key", "llm.model", "llm.max_tokens", "llm.temperature",
+		"database.session_dir", "server.host", "server.port", "server.api_key",
+		"scan.mode", "scan.phases", "scan.tools", "scan.concurrency", "scan.rate_limit",
+		"cve.offline_path", "cve.enable_remote", "cve.cache_ttl", "cve.exploitdb_path", "cve.sources",
+		"plugins",
+	}
+	for _, key := range keys {
+		_ = v.BindEnv(key)
+	}
+}
+
+func getStringSlice(v *viper.Viper, key string) []string {
+	values := v.GetStringSlice(key)
+	if len(values) == 1 && strings.Contains(values[0], ",") {
+		return splitCSV(values[0])
+	}
+	return values
 }
 
 func parseBool(value string) bool {

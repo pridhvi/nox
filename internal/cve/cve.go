@@ -2,9 +2,11 @@ package cve
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -71,6 +73,9 @@ func NewDefaultCorrelator() *Correlator {
 			NewVulnersClient(client, ""),
 			NewGitHubAdvisoryClient(client, ""),
 		)
+	}
+	if path := strings.TrimSpace(os.Getenv("NOX_CVE_EXPLOITDB_PATH")); path != "" {
+		sources = append(sources, NewExploitDBSource(path))
 	}
 	return NewCorrelator(sources, NewCache(DefaultCacheTTL))
 }
@@ -359,6 +364,102 @@ func (s *OfflineSource) Search(ctx context.Context, product, version string) ([]
 		return nil, s.err
 	}
 	return filterAdvisories(s.data, product, version), ctx.Err()
+}
+
+type ExploitDBSource struct {
+	path string
+	once sync.Once
+	data []Advisory
+	err  error
+}
+
+func NewExploitDBSource(path string) *ExploitDBSource { return &ExploitDBSource{path: path} }
+func (s *ExploitDBSource) Name() string               { return "exploitdb" }
+
+func (s *ExploitDBSource) Search(ctx context.Context, product, version string) ([]Advisory, error) {
+	s.once.Do(func() {
+		file, err := os.Open(s.path)
+		if err != nil {
+			s.err = err
+			return
+		}
+		defer file.Close()
+		records, err := csv.NewReader(file).ReadAll()
+		if err != nil {
+			s.err = err
+			return
+		}
+		s.data = exploitDBAdvisories(records)
+	})
+	if s.err != nil {
+		return nil, s.err
+	}
+	return filterAdvisories(s.data, product, version), ctx.Err()
+}
+
+func exploitDBAdvisories(records [][]string) []Advisory {
+	if len(records) == 0 {
+		return nil
+	}
+	header := map[string]int{}
+	for i, value := range records[0] {
+		header[strings.ToLower(strings.TrimSpace(value))] = i
+	}
+	value := func(record []string, names ...string) string {
+		for _, name := range names {
+			if idx, ok := header[name]; ok && idx < len(record) {
+				return strings.TrimSpace(record[idx])
+			}
+		}
+		return ""
+	}
+	var advisories []Advisory
+	for _, record := range records[1:] {
+		title := value(record, "description", "title")
+		cveID := firstCVE(value(record, "codes", "cve", "cve_id") + " " + title)
+		if cveID == "" {
+			continue
+		}
+		filePath := value(record, "file", "path")
+		ref := value(record, "url")
+		if ref == "" && filePath != "" {
+			base := filepath.Base(filePath)
+			ref = "https://www.exploit-db.com/exploits/" + strings.TrimSuffix(base, filepath.Ext(base))
+		}
+		advisories = append(advisories, Advisory{
+			CVEID:            cveID,
+			Product:          title,
+			AffectedVersion:  "*",
+			Description:      title,
+			CVSSv3Score:      7,
+			ExploitAvailable: true,
+			References:       compactStrings([]string{ref}),
+			Source:           "exploitdb",
+		})
+	}
+	return advisories
+}
+
+func firstCVE(text string) string {
+	ids := CVEIDs(text)
+	if len(ids) == 0 {
+		return ""
+	}
+	return ids[0]
+}
+
+func compactStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 type EmbeddedSource struct{}

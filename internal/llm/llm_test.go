@@ -105,6 +105,13 @@ func TestAnalystPersistsConversationAndToolAuditTrail(t *testing.T) {
 	if !foundToolResult {
 		t.Fatalf("expected visible tool-call result in audit trail, got %#v", analyses[0].Messages)
 	}
+	vectors, err := store.ListAttackVectors(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vectors) != 1 || !vectors[0].LLMReviewed || !strings.Contains(vectors[0].LLMNotes, "persisted evidence") {
+		t.Fatalf("expected LLM-reviewed vector annotation, got %#v", vectors)
+	}
 }
 
 func TestToolRunnerConstrainsScanRequestsToSessionScope(t *testing.T) {

@@ -17,6 +17,7 @@ type Store interface {
 	ListAttackVectors(ctx context.Context, sessionID string) ([]models.AttackVector, error)
 	Stats(ctx context.Context, sessionID string) (db.SessionStats, error)
 	InsertLLMAnalysis(ctx context.Context, analysis models.LLMAnalysis) error
+	UpdateAttackVectorLLMReview(ctx context.Context, vectorID string, reviewed bool, notes string) error
 }
 
 type SessionContext struct {

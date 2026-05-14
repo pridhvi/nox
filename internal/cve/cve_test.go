@@ -2,6 +2,8 @@ package cve
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +15,51 @@ import (
 type countingSource struct {
 	calls int
 	data  []Advisory
+}
+
+func TestRemoteClientParsers(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		client func(*http.Client, string) HTTPClient
+	}{
+		{
+			name:   "osv",
+			body:   `{"vulns":[{"id":"GHSA-x","summary":"CVE-2024-11111 issue","aliases":["CVE-2024-11111"],"references":[{"type":"ADVISORY","url":"https://osv.dev/vulnerability/GHSA-x"}],"affected":[{"package":{"name":"demo"},"ranges":[{"events":[{"fixed":"1.2.3"}]}]}]}]}`,
+			client: NewOSVClient,
+		},
+		{
+			name:   "github",
+			body:   `[{"ghsa_id":"GHSA-x","cve_id":"CVE-2024-22222","summary":"demo issue","html_url":"https://github.com/advisories/GHSA-x","cvss":{"score":8.8,"vector_string":"CVSS:3.1"},"vulnerabilities":[{"package":{"name":"demo"},"vulnerable_version_range":"< 1.2.3","first_patched_version":{"identifier":"1.2.3"}}]}]`,
+			client: NewGitHubAdvisoryClient,
+		},
+		{
+			name:   "circl",
+			body:   `[{"id":"CVE-2024-33333","summary":"demo issue","cvss":7.1,"references":["https://example.test/cve"]}]`,
+			client: NewCIRCLClient,
+		},
+		{
+			name:   "vulners",
+			body:   `{"data":{"search":[{"id":"CVE-2024-44444","title":"demo issue","href":"https://vulners.com/cve/CVE-2024-44444","cvss":{"score":9.1,"vector":"CVSS:3.1"},"bulletinFamily":"exploit"}]}}`,
+			client: NewVulnersClient,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+			advisories, err := tt.client(server.Client(), server.URL).Search(context.Background(), "demo", "1.0.0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(advisories) != 1 || advisories[0].CVEID == "" || advisories[0].Source == "" {
+				t.Fatalf("unexpected advisories: %#v", advisories)
+			}
+		})
+	}
 }
 
 func (s *countingSource) Name() string { return "counting" }
@@ -60,6 +107,22 @@ func TestOfflineSourceMatchesLocalData(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(advisories) != 1 || advisories[0].CVEID != "CVE-2024-0002" {
+		t.Fatalf("unexpected advisories: %#v", advisories)
+	}
+}
+
+func TestExploitDBSourceMatchesCSV(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "files_exploits.csv")
+	body := "id,file,description,codes\n51234,exploits/php/webapps/51234.py,Apache Log4j CVE-2021-44228 RCE,CVE-2021-44228\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := NewExploitDBSource(path)
+	advisories, err := source.Search(context.Background(), "log4j", "2.14.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(advisories) != 1 || advisories[0].CVEID != "CVE-2021-44228" || !advisories[0].ExploitAvailable {
 		t.Fatalf("unexpected advisories: %#v", advisories)
 	}
 }

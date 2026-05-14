@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import { listFindings, listSessions, listTargets, listVectors } from "../api/client";
+import cytoscape from "cytoscape";
+import { listFindings, listSessions, listTargets, listVectors, type AttackVector, type Finding, type Target } from "../api/client";
 
 export function AttackGraph() {
   const params = useParams();
@@ -18,6 +19,32 @@ export function AttackGraph() {
     const vectors = vectorsQuery.data ?? [];
     return { targets, findings, vectors };
   }, [findingsQuery.data, severity, targetsQuery.data, vectorsQuery.data]);
+  const graphRef = useRef<HTMLDivElement | null>(null);
+  const [selectedNode, setSelectedNode] = useState<{ label: string; detail: string } | null>(null);
+
+  useEffect(() => {
+    if (!graphRef.current) {
+      return;
+    }
+    const elements = graphElements(nodes.targets, nodes.findings, nodes.vectors);
+    const graph = cytoscape({
+      container: graphRef.current,
+      elements,
+      layout: { name: "breadthfirst", directed: true, padding: 20, spacingFactor: 1.2 },
+      style: [
+        { selector: "node", style: { label: "data(label)", "font-size": "10px", color: "#111827", "text-valign": "center", "text-halign": "center", width: "72px", height: "72px", "text-wrap": "wrap", "text-max-width": "96px", "border-width": "2px", "border-color": "#d1d5db", "background-color": "#e5e7eb" } },
+        { selector: "node[type='target']", style: { "background-color": "#dbeafe", shape: "round-rectangle" } },
+        { selector: "node[type='finding']", style: { "background-color": "data(color)", color: "#ffffff", "border-color": "#111827" } },
+        { selector: "node[type='vector']", style: { "background-color": "#111827", color: "#ffffff", shape: "hexagon" } },
+        { selector: "edge", style: { width: "2px", "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", "target-arrow-shape": "triangle", "curve-style": "bezier" } },
+      ],
+    });
+    graph.on("tap", "node", (event) => {
+      const node = event.target;
+      setSelectedNode({ label: node.data("label"), detail: node.data("detail") });
+    });
+    return () => graph.destroy();
+  }, [nodes]);
 
   return (
     <section className="page">
@@ -38,6 +65,16 @@ export function AttackGraph() {
           </select>
         </label>
       </header>
+      <section className="panel">
+        <h2>Interactive Graph</h2>
+        <div className="cy-graph" ref={graphRef} />
+        {selectedNode ? (
+          <div className="graph-detail">
+            <strong>{selectedNode.label}</strong>
+            <p>{selectedNode.detail}</p>
+          </div>
+        ) : null}
+      </section>
       <div className="graph-layout">
         <section className="graph-column">
           <h2>Targets</h2>
@@ -75,4 +112,39 @@ export function AttackGraph() {
       </div>
     </section>
   );
+}
+
+function graphElements(targets: Target[], findings: Finding[], vectors: AttackVector[]) {
+  const elements: cytoscape.ElementDefinition[] = [];
+  for (const target of targets) {
+    elements.push({ data: { id: `target:${target.id}`, label: target.host, type: "target", detail: `${target.protocol}:${target.port} discovered by ${target.discovered_by}` } });
+    for (const tech of target.technologies ?? []) {
+      const techID = `tech:${tech.id}`;
+      elements.push({ data: { id: techID, label: `${tech.name} ${tech.version}`.trim(), type: "target", detail: `${tech.category || "technology"} confidence ${Math.round(tech.confidence * 100)}%` } });
+      elements.push({ data: { id: `edge:${target.id}:${tech.id}`, source: `target:${target.id}`, target: techID } });
+    }
+  }
+  for (const finding of findings) {
+    elements.push({ data: { id: `finding:${finding.id}`, label: finding.title, type: "finding", color: severityColor(finding.severity), detail: `${finding.severity} ${finding.type} from ${finding.tool_id}. ${finding.url}` } });
+    if (finding.target_id) {
+      elements.push({ data: { id: `edge:${finding.target_id}:${finding.id}`, source: `target:${finding.target_id}`, target: `finding:${finding.id}` } });
+    }
+  }
+  for (const vector of vectors) {
+    elements.push({ data: { id: `vector:${vector.id}`, label: vector.title, type: "vector", detail: `${vector.severity} confidence ${Math.round(vector.confidence * 100)}%. ${vector.narrative}` } });
+    for (const findingID of vector.prereq_finding_ids ?? []) {
+      elements.push({ data: { id: `edge:${findingID}:${vector.id}`, source: `finding:${findingID}`, target: `vector:${vector.id}` } });
+    }
+  }
+  return elements;
+}
+
+function severityColor(severity: string) {
+  switch (severity) {
+    case "critical": return "#991b1b";
+    case "high": return "#dc2626";
+    case "medium": return "#d97706";
+    case "low": return "#2563eb";
+    default: return "#64748b";
+  }
 }

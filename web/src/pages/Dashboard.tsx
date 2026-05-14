@@ -1,7 +1,16 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Play, RefreshCw } from "lucide-react";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { getSessionStats, listFindings, listSessions, scanEventsURL, startScan, type ScanEvent } from "../api/client";
+
+const severityColors: Record<string, string> = {
+  critical: "#991b1b",
+  high: "#dc2626",
+  medium: "#d97706",
+  low: "#2563eb",
+  info: "#64748b",
+};
 
 export function Dashboard() {
   const queryClient = useQueryClient();
@@ -49,6 +58,13 @@ export function Dashboard() {
       { active: 0, findings: 0 },
     );
   }, [sessions]);
+  const severityData = useMemo(() => {
+    const counts = statsQuery.data?.severity_counts ?? {};
+    return ["critical", "high", "medium", "low", "info"].map((severity) => ({
+      severity,
+      value: counts[severity] ?? 0,
+    })).filter((item) => item.value > 0);
+  }, [statsQuery.data]);
 
   function submitScan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -137,6 +153,18 @@ export function Dashboard() {
         </section>
         <section className="panel">
           <h2>Findings</h2>
+          <div className="chart-panel" aria-label="Findings by severity">
+            {severityData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={severityData} dataKey="value" nameKey="severity" innerRadius={46} outerRadius={72} paddingAngle={2}>
+                    {severityData.map((entry) => <Cell key={entry.severity} fill={severityColors[entry.severity]} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <div className="empty-line">No severity data yet.</div>}
+          </div>
           <div className="severity-strip">
             {["critical", "high", "medium", "low", "info"].map((severity) => (
               <span key={severity}>{severity}: {statsQuery.data?.severity_counts?.[severity] ?? 0}</span>

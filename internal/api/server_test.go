@@ -209,7 +209,8 @@ func TestScanEventsWebSocketReplaysLifecycle(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	apiServer := httptest.NewServer(NewServer(Config{SessionDir: t.TempDir(), HTTPClient: targetServer.Client()}).Handler())
+	handler := NewServer(Config{SessionDir: t.TempDir(), HTTPClient: targetServer.Client()}).Handler()
+	apiServer := httptest.NewServer(handler)
 	defer apiServer.Close()
 
 	body := bytes.NewBufferString(`{"target":"` + targetServer.URL + `","name":"Events","mode":"active"}`)
@@ -225,6 +226,7 @@ func TestScanEventsWebSocketReplaysLifecycle(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		t.Fatal(err)
 	}
+	waitForScanStatus(t, handler, created.Session.ID, models.SessionStatusCompleted)
 
 	wsURL := "ws" + strings.TrimPrefix(apiServer.URL, "http") + "/ws/scan/" + created.Session.ID
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -234,12 +236,11 @@ func TestScanEventsWebSocketReplaysLifecycle(t *testing.T) {
 	defer conn.Close()
 
 	seen := map[engine.ScanEventType]bool{}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		_ = conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
 		var event engine.ScanEvent
 		if err := conn.ReadJSON(&event); err != nil {
-			continue
+			t.Fatalf("read scan event: %v", err)
 		}
 		seen[event.Type] = true
 		if event.Type == engine.ScanEventCompleted || event.Type == engine.ScanEventFailed {
