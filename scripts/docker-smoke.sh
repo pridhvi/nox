@@ -14,8 +14,8 @@ docker build -t "$image" .
 cleanup
 docker run -d --name "$container" -p "127.0.0.1:${port}:8080" "$image" >/dev/null
 
-deadline=$((SECONDS + 45))
-while [ "$SECONDS" -lt "$deadline" ]; do
+deadline=$(($(date +%s) + 45))
+while [ "$(date +%s)" -lt "$deadline" ]; do
   if curl -fsS "http://127.0.0.1:${port}/api/health" >/dev/null; then
     docker exec "$container" nox version
     curl -fsS "http://127.0.0.1:${port}/api/tools" >/dev/null
