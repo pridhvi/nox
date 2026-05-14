@@ -25,6 +25,13 @@ func init() {
 	Register(NewCrtSH())
 	Register(NewNmap())
 	Register(NewFFUF())
+	Register(NewNucleiVuln())
+	Register(NewSSRFMap())
+	Register(NewJWTTool())
+	Register(NewOAuthCheck())
+	Register(NewSSTICheck())
+	Register(NewXXEFuzz())
+	Register(NewNikto())
 	Register(NewSQLMap())
 	Register(NewDalfox())
 }

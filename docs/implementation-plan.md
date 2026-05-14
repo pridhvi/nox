@@ -37,10 +37,10 @@ specific implementation is proven incompatible with the spec.
 ## Implementation Order
 
 Work should proceed from the lowest-numbered phase that still has remaining
-acceptance criteria. Phases 0, 1, 2, 3, 4, 5, 6, 7, and 8 are complete from the
-repository perspective, so the next implementation focus is Phase 9:
-Vulnerability Scanning Adapters. Later phases can be inspected for context, but
-implementation should not skip ahead unless a Phase 9 task explicitly depends
+acceptance criteria. Phases 0, 1, 2, 3, 4, 5, 6, 7, 8, and 9 are complete from
+the repository perspective, so the next implementation focus is Phase 10:
+CVE Intelligence. Later phases can be inspected for context, but
+implementation should not skip ahead unless a Phase 10 task explicitly depends
 on later-phase context.
 
 ## Current Baseline
@@ -63,16 +63,18 @@ must be carried forward:
   `nuclei` technology templates, `testssl.sh`, GraphQL introspection,
   OpenAPI/Swagger discovery, `wpscan`, `droopescan`, and enumeration adapters
   for `ffuf`, `arjun`, `linkfinder`, `gitleaks`, JavaScript secret scanning,
-  CORS checks, and scoped cloud bucket checks.
+  CORS checks, scoped cloud bucket checks, plus vulnerability adapters for
+  `nuclei` vulnerability templates, `sqlmap`, `dalfox`, SSRFmap, `jwt_tool`,
+  OAuth, SSTI, XXE, and `nikto`.
 - **MVP external adapter slice:** Optional subprocess wrappers for `nmap`,
   `subfinder`, `dnsx`, `naabu`, `httpx`, `whois`, `waybackurls`, `ffuf`,
   `whatweb`, `nuclei`, `testssl.sh`, `wpscan`, `droopescan`, `arjun`,
   `linkfinder`, `gitleaks`, `sqlmap`, and `dalfox`, plus HTTP-based
-  GraphQL/OpenAPI/CORS/cloud bucket checks, JavaScript secret scanning, and a
-  passive `crt.sh` HTTP adapter that is registered but not run by default. This
-  is a useful MVP slice across spec reconnaissance, fingerprinting,
-  enumeration, and vulnerability scanning. It is not a replacement for every
-  future spec adapter.
+  GraphQL/OpenAPI/CORS/cloud bucket/OAuth/SSTI/XXE checks, JavaScript secret
+  scanning, and a passive `crt.sh` HTTP adapter that is registered but not run
+  by default. This is a useful MVP slice across spec reconnaissance,
+  fingerprinting, enumeration, and vulnerability scanning. It is not a
+  replacement for every future spec adapter.
 - **Runner:** Simple dependency-ordered runner with persisted tool runs and
   normalized findings. This should be incrementally evolved into the spec DAG
   scheduler instead of being thrown away.
@@ -526,7 +528,7 @@ must be carried forward:
 
 ## Phase 9: Vulnerability Scanning Adapters
 
-**Status:** Partial  
+**Status:** Implemented
 **Spec sections covered:** 8 Phase 4
 
 ### Existing Baseline
@@ -534,29 +536,37 @@ must be carried forward:
 - MVP `sqlmap` subprocess adapter runs against query URLs.
 - MVP `dalfox` subprocess adapter runs against query URLs.
 - Both validate scope and persist `tool_runs`.
+- Optional `nuclei-vuln` subprocess adapter runs vulnerability templates and
+  normalizes matched template findings.
+- Optional SSRFmap subprocess adapter uses query/hidden-parameter targets from
+  Phase 8.
+- Optional `jwt_tool` subprocess adapter runs when a JWT-like token is present
+  in target input or prior evidence.
+- Built-in OAuth check probes untrusted `redirect_uri` behavior on OAuth-like
+  surfaces.
+- Built-in SSTI check sends a bounded arithmetic template probe against query or
+  hidden-parameter targets.
+- Built-in XXE fuzz check sends a bounded XML payload and only reports direct
+  response indicators.
+- Optional `nikto` subprocess adapter parses JSON or text web-server findings.
+- Existing `sqlmap` and `dalfox` wrappers now use Phase 8 hidden-parameter
+  discoveries when the initial target URL has no query string.
+- Parser tests cover nuclei vulnerability output, SSRFmap, JWT, OAuth, SSTI,
+  XXE, Nikto, and hidden-parameter target handoff.
 
 ### Remaining Work
 
-- Implement full vulnerability scanning pipeline:
-  - nuclei vulnerability templates
-  - `sqlmap`
-  - `dalfox`
-  - SSRFmap
-  - `jwt_tool`
-  - OAuth checks
-  - SSTI detection
-  - XXE fuzzing
-  - `nikto`
-- Use enumeration output to target parameters/endpoints safely.
-- Add per-tool active-mode safeguards, timeouts, and rate limits.
-- Normalize confirmed vulnerabilities with confidence, severity, remediation,
-  raw evidence, and relevant tags.
-- Add optional higher-risk modes only when explicitly configured.
+- None for the repository-level Phase 9 acceptance criteria.
 
 ### Spec Alignment Follow-ups
 
-- Keep current `sqlmap` and `dalfox` wrappers, but expand targeting beyond only
-  the initial query URL after parameter discovery exists.
+- Keep current `sqlmap` and `dalfox` wrappers while adding deeper multi-target
+  scheduling when the runner supports multiple tool runs per adapter.
+- Keep subprocess `nuclei` vulnerability templates useful until a Go-library
+  migration is needed for richer streaming output or distribution constraints.
+- Add configuration for higher-risk payload sets, out-of-band callbacks, and
+  stricter per-tool rate limits before enabling more aggressive modes.
+- Phase 11 attack vectors should consume vulnerability tags from this phase.
 
 ### Acceptance Criteria
 
@@ -1039,7 +1049,7 @@ must be carried forward:
 | 5. Core Data Models | Phase 1 | Implemented | Canonical models, report metadata models, additive CVE version fields, and serialization/validation tests exist. |
 | 6. Database Schema | Phase 2 | Implemented | Schema covers sessions, targets, findings, evidence, technologies, CVEs, vectors, tool runs, LLM analyses, plugins, and migrations. |
 | 7. Tool Adapter System | Phase 4 | Implemented | Built-in registry and configured subprocess plugin adapters coexist; broader ecosystem docs remain later. |
-| 8. Tool Pipeline | Phases 6-9 | Partial | Recon, fingerprinting, and enumeration adapters now cover Phases 6-8; vulnerability scanning remains incomplete. |
+| 8. Tool Pipeline | Phases 6-9 | Implemented | Recon, fingerprinting, enumeration, and vulnerability-scanning adapter slices now cover Phases 6-9; deeper Go-library migrations and richer targeting remain follow-ups. |
 | 9. DAG Engine | Phase 5 | Implemented | Dependency levels, same-level concurrency, semaphores, timeout/delay controls, prior-result propagation, and phase events exist. |
 | 10. LLM Integration | Phase 12 | Pending | Session fields/placeholders exist only. |
 | 11. CVE Intelligence | Phase 10 | Pending | Model exists; engine pending. |

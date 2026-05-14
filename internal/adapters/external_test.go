@@ -349,7 +349,7 @@ func TestParseCORSFindings(t *testing.T) {
 	if findings[0].ToolID != "cors-check" || findings[0].Severity != models.SeverityMedium {
 		t.Fatalf("unexpected finding: %#v", findings[0])
 	}
-	if !hasTag(findings[0].Tags, "cors-wildcard-credentials") {
+	if !testHasTag(findings[0].Tags, "cors-wildcard-credentials") {
 		t.Fatalf("expected cors-wildcard-credentials tag, got %#v", findings[0].Tags)
 	}
 }
@@ -365,7 +365,95 @@ func TestParseCloudBucketFindings(t *testing.T) {
 	}
 }
 
-func hasTag(tags []string, want string) bool {
+func TestVulnerabilityTargetURLUsesHiddenParameter(t *testing.T) {
+	input := testExternalInput()
+	input.Session.TargetInput = "https://example.com/"
+	input.PriorFindings = []models.Finding{{
+		ToolID:    "arjun",
+		Parameter: "debug",
+		Tags:      []string{"arjun", "hidden-parameter"},
+	}}
+	got := vulnerabilityTargetURL(input)
+	if got != "https://example.com/?debug=nox" {
+		t.Fatalf("unexpected vulnerability target URL: %s", got)
+	}
+}
+
+func TestParseNucleiVulnFindings(t *testing.T) {
+	raw := `{"template-id":"cves/2024/test","matched-at":"https://example.com","info":{"name":"Example CVE","severity":"high"}}`
+	findings := parseNucleiVulnFindings(testExternalInput(), raw)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "nuclei-vuln" || findings[0].Severity != models.SeverityHigh {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func TestParseSSRFMapFindings(t *testing.T) {
+	findings := parseSSRFMapFindings(testExternalInput(), "Parameter url appears vulnerable to SSRF")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "ssrfmap" || findings[0].Severity != models.SeverityHigh {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func TestParseJWTToolFindings(t *testing.T) {
+	input := testExternalInput()
+	input.Session.TargetInput = "https://example.com/?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature"
+	findings := parseJWTToolFindings(input, "Token appears vulnerable to alg:none")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "jwt-tool" || findings[0].Severity != models.SeverityCritical {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func TestParseOAuthFindings(t *testing.T) {
+	findings := parseOAuthFindings(testExternalInput(), "https://example.com/oauth?redirect_uri=https://nox.invalid/callback", 302, "https://nox.invalid/callback", "")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "oauth-check" || findings[0].Severity != models.SeverityHigh {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func TestParseSSTIFindings(t *testing.T) {
+	findings := parseSSTIFindings(testExternalInput(), "https://example.com/?q={{7*7}}", "result: 49")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "ssti-check" || findings[0].Severity != models.SeverityHigh {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func TestParseXXEFindings(t *testing.T) {
+	findings := parseXXEFindings(testExternalInput(), "https://example.com/", "root:x:0:0:root:/root:/bin/bash")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "xxe-fuzz" || findings[0].Severity != models.SeverityCritical {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func TestParseNiktoFindings(t *testing.T) {
+	raw := `{"vulnerabilities":[{"msg":"OSVDB-1234: Example vulnerable file"}]}`
+	findings := parseNiktoFindings(testExternalInput(), raw)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "nikto" || findings[0].Severity != models.SeverityMedium {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func testHasTag(tags []string, want string) bool {
 	for _, tag := range tags {
 		if tag == want {
 			return true

@@ -24,11 +24,11 @@ func (SQLMap) Phase() Phase { return PhaseVulnScan }
 func (SQLMap) DependsOn() []string { return []string{"ffuf"} }
 
 func (SQLMap) ShouldRun(input AdapterInput) bool {
-	return activeOnly(input) && input.Target.IsAlive && sessionTargetHasQuery(input)
+	return activeOnly(input) && input.Target.IsAlive && hasVulnerabilityTargets(input)
 }
 
 func (a SQLMap) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error) {
-	target := sessionTargetURL(input)
+	target := vulnerabilityTargetURL(input)
 	args := []string{"-u", target, "--batch", "--level", "1", "--risk", "1", "--crawl", "0", "--flush-session"}
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, reason, 1)}, nil
@@ -49,7 +49,8 @@ func parseSQLMapFindings(input AdapterInput, raw string) []models.Finding {
 	if !strings.Contains(lower, "is vulnerable") && !strings.Contains(lower, "appears to be injectable") {
 		return nil
 	}
-	parameter := firstQueryParameter(sessionTargetURL(input))
+	target := vulnerabilityTargetURL(input)
+	parameter := firstQueryParameter(target)
 	finding := externalFinding(
 		input,
 		"sqlmap",
@@ -60,7 +61,7 @@ func parseSQLMapFindings(input AdapterInput, raw string) []models.Finding {
 		"Validate the affected parameter, use parameterized queries, and add regression tests for injection payloads.",
 		raw,
 		map[string]any{
-			"url":       sessionTargetURL(input),
+			"url":       target,
 			"parameter": parameter,
 		},
 		[]string{"sqlmap", "sqli"},

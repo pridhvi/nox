@@ -64,6 +64,13 @@ func DefaultSafeAdapters() []adapters.Adapter {
 		adapters.NewWaybackURLs(),
 		adapters.NewNmap(),
 		adapters.NewFFUF(),
+		adapters.NewNucleiVuln(),
+		adapters.NewSSRFMap(),
+		adapters.NewJWTTool(),
+		adapters.NewOAuthCheck(),
+		adapters.NewSSTICheck(),
+		adapters.NewXXEFuzz(),
+		adapters.NewNikto(),
 		adapters.NewSQLMap(),
 		adapters.NewDalfox(),
 	}

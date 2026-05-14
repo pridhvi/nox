@@ -24,11 +24,11 @@ func (Dalfox) Phase() Phase { return PhaseVulnScan }
 func (Dalfox) DependsOn() []string { return []string{"ffuf"} }
 
 func (Dalfox) ShouldRun(input AdapterInput) bool {
-	return activeOnly(input) && input.Target.IsAlive && sessionTargetHasQuery(input)
+	return activeOnly(input) && input.Target.IsAlive && hasVulnerabilityTargets(input)
 }
 
 func (a Dalfox) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error) {
-	target := sessionTargetURL(input)
+	target := vulnerabilityTargetURL(input)
 	args := []string{"url", target, "--format", "json", "--silence"}
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, reason, 1)}, nil
@@ -99,10 +99,10 @@ func parseDalfoxTextFindings(input AdapterInput, raw string) []models.Finding {
 		"Dalfox output included XSS indicators. Review the raw evidence to confirm the affected parameter and payload.",
 		"Encode untrusted output in the correct browser context and validate or reject dangerous input.",
 		raw,
-		map[string]any{"url": sessionTargetURL(input)},
+		map[string]any{"url": vulnerabilityTargetURL(input)},
 		[]string{"dalfox", "xss"},
 	)
-	finding.Parameter = firstQueryParameter(sessionTargetURL(input))
+	finding.Parameter = firstQueryParameter(vulnerabilityTargetURL(input))
 	return []models.Finding{finding}
 }
 
