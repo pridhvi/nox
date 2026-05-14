@@ -207,6 +207,47 @@ func (s ReportSection) Validate() error {
 	return errors.Join(errs...)
 }
 
+func (a LLMAnalysis) Validate() error {
+	var errs []error
+	errs = appendRequired(errs, "id", a.ID)
+	errs = appendRequired(errs, "session_id", a.SessionID)
+	errs = appendRequired(errs, "model_id", a.ModelID)
+	if a.TotalTokens < 0 {
+		errs = append(errs, errors.New("total_tokens must be non-negative"))
+	}
+	for i, message := range a.Messages {
+		if err := message.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("messages[%d]: %w", i, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (m LLMMessage) Validate() error {
+	var errs []error
+	errs = appendRequired(errs, "role", m.Role)
+	for i, toolCall := range m.ToolCalls {
+		if err := toolCall.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("tool_calls[%d]: %w", i, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (c LLMToolCall) Validate() error {
+	var errs []error
+	errs = appendRequired(errs, "name", c.Name)
+	return errors.Join(errs...)
+}
+
+func (p PluginRecord) Validate() error {
+	var errs []error
+	errs = appendRequired(errs, "id", p.ID)
+	errs = appendRequired(errs, "name", p.Name)
+	errs = appendRequired(errs, "binary", p.Binary)
+	return errors.Join(errs...)
+}
+
 func appendRequired(errs []error, field, value string) []error {
 	if strings.TrimSpace(value) == "" {
 		return append(errs, fmt.Errorf("%s is required", field))

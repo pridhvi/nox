@@ -15,7 +15,7 @@ This repository currently contains the buildable foundation plus the first safe 
 - Report metadata models and model validation helpers for spec-aligned ingestion.
 - Scope validation before scans and per-adapter network requests.
 - Per-session SQLite databases in `.nox/sessions/<session-id>.db`.
-- Embedded SQLite migrations and manual repository methods.
+- Ordered embedded SQLite migrations and manual repository methods for findings, evidence, technologies, CVEs, attack vectors, LLM analyses, plugins, and tool runs.
 - Safe built-in `http-probe` and `security-headers` adapters.
 - Persisted tool runs and normalized security header findings.
 - REST APIs for session create/list/detail/targets/findings/tool-runs/stats and scan status.
@@ -63,13 +63,13 @@ The Docker image bundles the Nox binary and common external scanner tools. Singl
 
 ## Roadmap
 
-Implementation now proceeds in order from the lowest incomplete phase in [docs/implementation-plan.md](docs/implementation-plan.md). Phases 0 and 1 are complete from the repository perspective; the next focus is Phase 2:
+Implementation now proceeds in order from the lowest incomplete phase in [docs/implementation-plan.md](docs/implementation-plan.md). Phases 0, 1, and 2 are complete from the repository perspective; the next focus is Phase 3:
 
-1. Expand SQLite migrations for HTTP evidence, technologies, CVE matches, attack vectors, LLM history, plugins, and schema migration tracking.
-2. Persist raw HTTP request/response evidence separately from normalized findings.
-3. Persist technologies, CVE matches, attack vectors, and attack steps.
-4. Add database repository methods and tests for the expanded schema.
-5. Preserve compatibility for current per-session SQLite databases where possible.
+1. Tighten scope validation coverage for every network-touching adapter.
+2. Add compatibility route `WS /ws/scan/{id}` for scan lifecycle events.
+3. Improve session status transition tests and cancellation behavior.
+4. Preserve the current synchronous CLI safe scan path while extending lifecycle controls.
+5. Keep existing per-session databases compatible with the Phase 2 schema.
 
 ## Safety Boundary
 
