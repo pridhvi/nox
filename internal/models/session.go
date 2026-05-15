@@ -29,6 +29,9 @@ type Session struct {
 	InScope       []string      `json:"in_scope"`
 	OutOfScope    []string      `json:"out_of_scope"`
 	EnabledPhases []string      `json:"enabled_phases"`
+	EnabledTools  []string      `json:"enabled_tools"`
+	ToolParameters map[string]map[string]any `json:"tool_parameters,omitempty"`
+	RunnerOptions  ScanRunnerOptions         `json:"runner_options,omitempty"`
 	LLMModel      string        `json:"llm_model"`
 	LLMBaseURL    string        `json:"llm_base_url"`
 	TargetCount   int           `json:"target_count"`
@@ -36,4 +39,12 @@ type Session struct {
 	StartedAt     *time.Time    `json:"started_at,omitempty"`
 	CompletedAt   *time.Time    `json:"completed_at,omitempty"`
 	CreatedAt     time.Time     `json:"created_at"`
+}
+
+type ScanRunnerOptions struct {
+	Concurrency        int    `json:"concurrency,omitempty"`
+	PerToolConcurrency int    `json:"per_tool_concurrency,omitempty"`
+	ToolTimeoutSeconds int    `json:"tool_timeout_seconds,omitempty"`
+	ToolDelayMS        int    `json:"tool_delay_ms,omitempty"`
+	RateLimit          string `json:"rate_limit,omitempty"`
 }

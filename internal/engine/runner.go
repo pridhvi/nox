@@ -94,7 +94,9 @@ func NewRunnerWithAdapters(store *db.Store, scanAdapters []adapters.Adapter, cli
 }
 
 func NewRunnerWithOptions(store *db.Store, scanAdapters []adapters.Adapter, client adapters.HTTPDoer, options RunnerOptions) *Runner {
-	return &Runner{store: store, adapters: scanAdapters, httpClient: client, options: normalizeRunnerOptions(options)}
+	runner := &Runner{store: store, adapters: scanAdapters, httpClient: client, options: normalizeRunnerOptions(options)}
+	runner.loadConfiguredPlugins(context.Background())
+	return runner
 }
 
 func defaultRunnerOptions() RunnerOptions {
@@ -151,7 +153,11 @@ func (r *Runner) Run(ctx context.Context, session models.Session) error {
 	if err != nil {
 		return err
 	}
-	levels, err := adapterLevels(r.adapters)
+	scanAdapters, err := selectedAdapters(r.adapters, session.EnabledTools, session.EnabledPhases)
+	if err != nil {
+		return err
+	}
+	levels, err := adapterLevels(scanAdapters)
 	if err != nil {
 		return err
 	}
@@ -164,7 +170,7 @@ func (r *Runner) Run(ctx context.Context, session models.Session) error {
 	}
 	globalSem := make(chan struct{}, normalizeRunnerOptions(r.options).GlobalConcurrency)
 	toolSems := map[string]chan struct{}{}
-	for _, adapter := range r.adapters {
+	for _, adapter := range scanAdapters {
 		if toolSems[adapter.ID()] == nil {
 			toolSems[adapter.ID()] = make(chan struct{}, normalizeRunnerOptions(r.options).PerToolConcurrency)
 		}
@@ -411,6 +417,7 @@ func (r *Runner) runLevel(ctx context.Context, session models.Session, level []a
 				Target:            target,
 				PriorFindings:     append([]models.Finding(nil), priorFindings...),
 				PriorTechnologies: append([]models.Technology(nil), priorTechnologies...),
+				ToolParameters:    session.ToolParameters[adapter.ID()],
 				Scope:             scope,
 				HTTPClient:        r.httpClient,
 			}
@@ -560,6 +567,68 @@ func orderAdapters(scanAdapters []adapters.Adapter) ([]adapters.Adapter, error) 
 		ordered = append(ordered, level...)
 	}
 	return ordered, nil
+}
+
+func selectedAdapters(scanAdapters []adapters.Adapter, selectedTools, selectedPhases []string) ([]adapters.Adapter, error) {
+	byID := make(map[string]adapters.Adapter, len(scanAdapters))
+	for _, adapter := range scanAdapters {
+		byID[adapter.ID()] = adapter
+	}
+	phaseSet := stringSet(selectedPhases)
+	toolSet := stringSet(selectedTools)
+	if len(toolSet) == 0 && len(phaseSet) == 0 {
+		return scanAdapters, nil
+	}
+	include := map[string]bool{}
+	if len(toolSet) > 0 {
+		for id := range toolSet {
+			adapter, ok := byID[id]
+			if !ok {
+				return nil, fmt.Errorf("unknown tool %q", id)
+			}
+			includeWithDependencies(adapter, byID, include)
+		}
+	} else {
+		for _, adapter := range scanAdapters {
+			include[adapter.ID()] = true
+		}
+	}
+	var out []adapters.Adapter
+	for _, adapter := range scanAdapters {
+		if !include[adapter.ID()] {
+			continue
+		}
+		if len(phaseSet) > 0 && !phaseSet[string(adapter.Phase())] {
+			if len(toolSet) == 0 || !toolSet[adapter.ID()] {
+				continue
+			}
+		}
+		out = append(out, adapter)
+	}
+	return out, nil
+}
+
+func includeWithDependencies(adapter adapters.Adapter, byID map[string]adapters.Adapter, include map[string]bool) {
+	if include[adapter.ID()] {
+		return
+	}
+	include[adapter.ID()] = true
+	for _, depID := range adapter.DependsOn() {
+		if dep, ok := byID[depID]; ok {
+			includeWithDependencies(dep, byID, include)
+		}
+	}
+}
+
+func stringSet(values []string) map[string]bool {
+	out := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out[value] = true
+		}
+	}
+	return out
 }
 
 func adapterLevels(scanAdapters []adapters.Adapter) ([][]adapters.Adapter, error) {

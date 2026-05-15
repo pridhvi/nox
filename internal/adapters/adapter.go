@@ -22,6 +22,7 @@ type AdapterInput struct {
 	Session           models.Session
 	PriorFindings     []models.Finding
 	PriorTechnologies []models.Technology
+	ToolParameters    map[string]any
 	Scope             ScopeValidator
 	HTTPClient        HTTPDoer
 }

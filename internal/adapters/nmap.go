@@ -37,7 +37,7 @@ func (a Nmap) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, reason, 1)}, nil
 	}
 	run := newToolRun(input, a.ID(), args)
-	result := RunCommand(ctx, 45*time.Second, "nmap", args...)
+	result := RunCommand(ctx, commandTimeout(input, 45*time.Second), "nmap", args...)
 	findings := parseNmapFindings(input, result.Stdout)
 	return AdapterOutput{Findings: findings, ToolRun: finishToolRun(run, result, len(findings))}, nil
 }

@@ -1,14 +1,12 @@
 import { type FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
 import { Bot, Send, Sparkles } from "lucide-react";
-import { listSessions, llmAnalyse, llmChat, llmHistory } from "../api/client";
+import { llmAnalyse, llmChat, llmHistory } from "../api/client";
+import { useSessionContext } from "../session";
 
 export function LLMChat() {
-  const params = useParams();
   const queryClient = useQueryClient();
-  const sessionsQuery = useQuery({ queryKey: ["sessions"], queryFn: listSessions });
-  const selected = params.sessionID ?? sessionsQuery.data?.[0]?.session.id ?? "";
+  const { selectedSessionID: selected } = useSessionContext();
   const [message, setMessage] = useState("");
   const historyQuery = useQuery({ queryKey: ["llm-history", selected], queryFn: () => llmHistory(selected), enabled: selected !== "" });
   const chatMutation = useMutation({

@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,12 +30,15 @@ func (SQLMap) ShouldRun(input AdapterInput) bool {
 
 func (a SQLMap) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error) {
 	target := vulnerabilityTargetURL(input)
-	args := []string{"-u", target, "--batch", "--level", "1", "--risk", "1", "--crawl", "0", "--flush-session"}
+	level := boundedInt(toolParamInt(input, "level", 1), 1, 5)
+	risk := boundedInt(toolParamInt(input, "risk", 1), 1, 3)
+	args := []string{"-u", target, "--batch", "--level", strconv.Itoa(level), "--risk", strconv.Itoa(risk), "--crawl", "0", "--flush-session"}
+	args = append(args, toolParamStringList(input, "extra_args")...)
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, reason, 1)}, nil
 	}
 	run := newToolRun(input, a.ID(), args)
-	result := RunCommand(ctx, 90*time.Second, "sqlmap", args...)
+	result := RunCommand(ctx, commandTimeout(input, 90*time.Second), "sqlmap", args...)
 	findings := parseSQLMapFindings(input, result.Stdout+"\n"+result.Stderr)
 	return AdapterOutput{Findings: findings, ToolRun: finishToolRun(run, result, len(findings))}, nil
 }

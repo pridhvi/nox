@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
 import { Download, RefreshCw } from "lucide-react";
-import { getReport, listSessions } from "../api/client";
+import { getReport } from "../api/client";
+import { useSessionContext } from "../session";
 
 export function Reports() {
-  const params = useParams();
-  const sessionsQuery = useQuery({ queryKey: ["sessions"], queryFn: listSessions });
-  const selected = params.sessionID ?? sessionsQuery.data?.[0]?.session.id ?? "";
+  const { selectedSessionID: selected } = useSessionContext();
   const [format, setFormat] = useState("html");
   const [mode, setMode] = useState("technical");
   const reportQuery = useQuery({

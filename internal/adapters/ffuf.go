@@ -30,8 +30,15 @@ func (FFUF) ShouldRun(input AdapterInput) bool {
 
 func (a FFUF) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error) {
 	wordlist := commonWordlistPath()
+	if configured := toolParamString(input, "wordlist"); configured != "" {
+		wordlist = configured
+	}
 	baseURL := strings.TrimRight(targetBaseURL(input.Target), "/") + "/FUZZ"
 	args := []string{"-u", baseURL, "-w", wordlist, "-of", "json", "-noninteractive", "-t", "5", "-rate", "25"}
+	if matcher := toolParamString(input, "matcher"); matcher != "" {
+		args = append(args, "-mc", matcher)
+	}
+	args = append(args, toolParamStringList(input, "extra_args")...)
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, reason, 1)}, nil
 	}
@@ -39,7 +46,7 @@ func (a FFUF) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, "no ffuf wordlist found in common system locations", 127)}, nil
 	}
 	run := newToolRun(input, a.ID(), args)
-	result := RunCommand(ctx, 45*time.Second, "ffuf", args...)
+	result := RunCommand(ctx, commandTimeout(input, 45*time.Second), "ffuf", args...)
 	findings := parseFFUFFindings(input, result.Stdout)
 	return AdapterOutput{Findings: findings, ToolRun: finishToolRun(run, result, len(findings))}, nil
 }

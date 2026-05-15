@@ -174,6 +174,104 @@ func TestAPIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestOperatorConsoleAPI(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"llama3:8b"},{"id":"codellama"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer targetServer.Close()
+	handler := NewServer(Config{SessionDir: t.TempDir(), HTTPClient: targetServer.Client()}).Handler()
+
+	tools := httptest.NewRecorder()
+	handler.ServeHTTP(tools, httptest.NewRequest(http.MethodGet, "/api/tools", nil))
+	if tools.Code != http.StatusOK {
+		t.Fatalf("tools status = %d body=%s", tools.Code, tools.Body.String())
+	}
+	var records []toolRecord
+	if err := json.NewDecoder(tools.Body).Decode(&records); err != nil {
+		t.Fatal(err)
+	}
+	foundFFUF := false
+	for _, record := range records {
+		if record.ID == "ffuf" {
+			foundFFUF = len(record.Parameters) > 0 && record.Kind == "subprocess"
+		}
+	}
+	if !foundFFUF {
+		t.Fatalf("expected ffuf tool metadata, got %#v", records)
+	}
+
+	body := bytes.NewBufferString(`{"target":"` + targetServer.URL + `","mode":"active","tools":["http-probe"],"tool_parameters":{"ffuf":{"wordlist":"/tmp/words.txt"}},"concurrency":2,"per_tool_concurrency":1,"tool_timeout_seconds":15,"tool_delay_ms":25,"rate_limit":"gentle"}`)
+	start := httptest.NewRecorder()
+	handler.ServeHTTP(start, httptest.NewRequest(http.MethodPost, "/api/scan/start", body))
+	if start.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d body=%s", start.Code, start.Body.String())
+	}
+	var created db.SessionRecord
+	if err := json.NewDecoder(start.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Session.EnabledTools) != 1 || created.Session.EnabledTools[0] != "http-probe" {
+		t.Fatalf("expected enabled tools in response, got %#v", created.Session.EnabledTools)
+	}
+	if created.Session.ToolParameters["ffuf"]["wordlist"] != "/tmp/words.txt" {
+		t.Fatalf("expected tool parameters in response, got %#v", created.Session.ToolParameters)
+	}
+	if created.Session.RunnerOptions.ToolTimeoutSeconds != 15 || created.Session.RunnerOptions.RateLimit != "gentle" {
+		t.Fatalf("expected runner options in response, got %#v", created.Session.RunnerOptions)
+	}
+	waitForCompletedScan(t, handler, created.Session.ID)
+
+	bad := httptest.NewRecorder()
+	handler.ServeHTTP(bad, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"target":"`+targetServer.URL+`","mode":"active","tools":["missing-tool"]}`)))
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for unknown tool, got %d", bad.Code)
+	}
+
+	unsafeArgs := httptest.NewRecorder()
+	handler.ServeHTTP(unsafeArgs, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"target":"`+targetServer.URL+`","mode":"active","tools":["ffuf"],"tool_parameters":{"ffuf":{"extra_args":["--output","/tmp/leak"]}}}`)))
+	if unsafeArgs.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for unsafe extra args, got %d", unsafeArgs.Code)
+	}
+
+	profileBody := bytes.NewBufferString(`{"name":"Web active","description":"Saved","request":{"target":"","mode":"active","tools":["http-probe"],"enabled_phases":["fingerprint"]}}`)
+	profileCreate := httptest.NewRecorder()
+	handler.ServeHTTP(profileCreate, httptest.NewRequest(http.MethodPost, "/api/scan-profiles", profileBody))
+	if profileCreate.Code != http.StatusCreated {
+		t.Fatalf("profile create status = %d body=%s", profileCreate.Code, profileCreate.Body.String())
+	}
+	var profile scanProfileRecord
+	if err := json.NewDecoder(profileCreate.Body).Decode(&profile); err != nil {
+		t.Fatal(err)
+	}
+	profileList := httptest.NewRecorder()
+	handler.ServeHTTP(profileList, httptest.NewRequest(http.MethodGet, "/api/scan-profiles", nil))
+	if profileList.Code != http.StatusOK || !strings.Contains(profileList.Body.String(), profile.ID) {
+		t.Fatalf("profile list status = %d body=%s", profileList.Code, profileList.Body.String())
+	}
+	profileDelete := httptest.NewRecorder()
+	handler.ServeHTTP(profileDelete, httptest.NewRequest(http.MethodDelete, "/api/scan-profiles/"+profile.ID, nil))
+	if profileDelete.Code != http.StatusOK {
+		t.Fatalf("profile delete status = %d body=%s", profileDelete.Code, profileDelete.Body.String())
+	}
+
+	badPlugin := httptest.NewRecorder()
+	handler.ServeHTTP(badPlugin, httptest.NewRequest(http.MethodPost, "/api/sessions/"+created.Session.ID+"/plugins", bytes.NewBufferString(`{"binary":"definitely-not-a-real-plugin-binary"}`)))
+	if badPlugin.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for missing plugin binary, got %d", badPlugin.Code)
+	}
+
+	models := httptest.NewRecorder()
+	handler.ServeHTTP(models, httptest.NewRequest(http.MethodPost, "/api/llm/models", bytes.NewBufferString(`{"base_url":"`+targetServer.URL+`"}`)))
+	if models.Code != http.StatusOK || !strings.Contains(models.Body.String(), "llama3:8b") {
+		t.Fatalf("models status = %d body=%s", models.Code, models.Body.String())
+	}
+}
+
 func waitForCompletedScan(t *testing.T, handler http.Handler, sessionID string) {
 	t.Helper()
 	waitForScanStatus(t, handler, sessionID, models.SessionStatusCompleted)

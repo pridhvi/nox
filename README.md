@@ -35,13 +35,14 @@ This repository currently contains the buildable foundation plus the first safe 
 - Deterministic attack vector engine with default rules, confidence scoring, ordered steps, prerequisite findings, and CVE vector merging.
 - Optional local-first OpenAI-compatible LLM analyst for structured session context, constrained tool calls, evidence truncation, persisted conversation audit trails, and post-analysis attack-vector annotations.
 - Expanded REST API for vectors, CVEs, reports, LLM history/analysis, session deletion, finding filters, finding updates, and optional API-key auth.
+- Operator REST APIs for effective config, structured tool inventory, install/version status, validated plugin registration, API-backed scan profiles, LLM model probing, scan tool selection, validated per-tool parameters, and runner options.
 - CLI config, LLM, and report commands plus expanded scan flags for phases, LLM settings, concurrency, and rate-limit configuration.
 - Viper-backed YAML/TOML/JSON configuration with environment overrides, tool path maps, plugin directories, scan controls, and CVE source settings.
 - Markdown, HTML, and paginated PDF report generation from persisted findings, evidence, CVEs, attack vectors, tool runs, and optional LLM analysis.
-- Web UI pages for session detail/dashboard, Recharts severity charts, Cytoscape attack graph, finding evidence/edit workflows, LLM analyst history/chat, and report preview/download.
+- Web UI pages for global session selection, API-backed scan profiles, scan building, tool inventory/status, tool run evidence, session detail/dashboard, Recharts severity charts, Cytoscape attack graph, sortable finding/CVE tables, bulk finding workflows, finding evidence/edit workflows, CVEs, LLM analyst history/chat/model probing, effective settings, and report preview/download.
 - Docker health checks, Compose validation, local Docker smoke scripts, CI frontend verification, and snapshot release packaging.
 - Optional subprocess adapters for `nmap`, `ffuf`, `sqlmap`, and `dalfox`, with graceful degradation when tools are unavailable.
-- React/Vite frontend for dashboard, graph, LLM, and reports.
+- React/Vite frontend for the operator console, with lazy-loaded route chunks and route-level error recovery for dashboard, graph, LLM, reports, findings, tools, runs, CVEs, scan builder, and settings.
 
 ## Toolchain
 
@@ -81,11 +82,10 @@ The Docker image bundles the Nox binary and common external scanner tools. Singl
 
 The implementation roadmap in [docs/implementation-plan.md](docs/implementation-plan.md) is complete from the repository perspective. Next work should focus on hardening and depth:
 
-1. Add richer adapter fixtures and parser coverage.
-2. Expand external scanner install/version checks in Docker images.
-3. Add deeper vulnerable-app integration suites beyond the built-in smoke fixture.
-4. Add optional code-splitting for the larger frontend graph/chart bundle.
-5. Evaluate native ProjectDiscovery Go-library adapters where subprocess behavior is too limiting.
+1. Expand external scanner install/version checks in Docker images.
+2. Add deeper vulnerable-app integration suites beyond the built-in smoke fixture.
+3. Add optional code-splitting for any remaining large frontend graph/chart bundle paths.
+4. Evaluate native ProjectDiscovery Go-library adapters where subprocess behavior is too limiting.
 
 ## Safety Boundary
 

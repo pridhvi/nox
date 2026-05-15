@@ -1,8 +1,10 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, AlertTriangle, Play, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Activity, AlertTriangle, RefreshCw, TerminalSquare } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { getSessionStats, listFindings, listSessions, scanEventsURL, startScan, type ScanEvent } from "../api/client";
+import { getSessionStats, listFindings, scanEventsURL, type ScanEvent } from "../api/client";
+import { useSessionContext } from "../session";
 
 const severityColors: Record<string, string> = {
   critical: "#991b1b",
@@ -14,18 +16,9 @@ const severityColors: Record<string, string> = {
 
 export function Dashboard() {
   const queryClient = useQueryClient();
-  const [target, setTarget] = useState("");
-  const [mode, setMode] = useState("active");
-  const [selectedSessionID, setSelectedSessionID] = useState<string | null>(null);
+  const { sessions, selectedSessionID, setSelectedSessionID, refreshSessions } = useSessionContext();
   const [scanEvents, setScanEvents] = useState<ScanEvent[]>([]);
-
-  const sessionsQuery = useQuery({
-    queryKey: ["sessions"],
-    queryFn: listSessions,
-    refetchInterval: 2500,
-  });
-  const sessions = sessionsQuery.data ?? [];
-  const selected = selectedSessionID ?? sessions[0]?.session.id ?? "";
+  const selected = selectedSessionID;
   const statsQuery = useQuery({
     queryKey: ["session-stats", selected],
     queryFn: () => getSessionStats(selected),
@@ -37,14 +30,6 @@ export function Dashboard() {
     queryFn: () => listFindings(selected),
     enabled: selected !== "",
     refetchInterval: 2500,
-  });
-  const scanMutation = useMutation({
-    mutationFn: startScan,
-    onSuccess: (record) => {
-      setSelectedSessionID(record.session.id);
-      setScanEvents([]);
-      queryClient.invalidateQueries({ queryKey: ["sessions"] });
-    },
   });
   const totals = useMemo(() => {
     return sessions.reduce(
@@ -65,14 +50,6 @@ export function Dashboard() {
       value: counts[severity] ?? 0,
     })).filter((item) => item.value > 0);
   }, [statsQuery.data]);
-
-  function submitScan(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!target.trim()) {
-      return;
-    }
-    scanMutation.mutate({ target: target.trim(), mode });
-  }
 
   useEffect(() => {
     if (!selected) {
@@ -100,31 +77,16 @@ export function Dashboard() {
           <h1>Engagement Dashboard</h1>
           <p>Start scoped scans, monitor findings, and review attack paths.</p>
         </div>
-        <button className="primary" onClick={() => sessionsQuery.refetch()}><RefreshCw size={16} />Refresh</button>
+        <div className="action-row">
+          <Link className="primary link-button" to="/scan"><TerminalSquare size={16} />New Scan</Link>
+          <button className="secondary" onClick={refreshSessions}><RefreshCw size={16} />Refresh</button>
+        </div>
       </header>
       <div className="metric-grid">
         <article><Activity /><span>Active Sessions</span><strong>{totals.active}</strong></article>
         <article><AlertTriangle /><span>Total Findings</span><strong>{totals.findings}</strong></article>
         <article><Activity /><span>Tool Runs</span><strong>{statsQuery.data?.tool_run_count ?? 0}</strong></article>
       </div>
-      <form className="scan-form" onSubmit={submitScan}>
-        <label>
-          Target
-          <input value={target} onChange={(event) => setTarget(event.target.value)} placeholder="https://example.com" />
-        </label>
-        <label>
-          Mode
-          <select value={mode} onChange={(event) => setMode(event.target.value)}>
-            <option value="passive">Passive</option>
-            <option value="active">Active</option>
-            <option value="stealth">Stealth</option>
-          </select>
-        </label>
-        <button type="submit" className="primary" disabled={scanMutation.isPending}>
-          <Play size={16} />{scanMutation.isPending ? "Starting" : "Start Scan"}
-        </button>
-      </form>
-      {scanMutation.error ? <p className="error-text">{scanMutation.error.message}</p> : null}
       <div className="data-grid">
         <section className="panel">
           <h2>Sessions</h2>

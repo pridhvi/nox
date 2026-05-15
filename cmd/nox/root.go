@@ -90,6 +90,6 @@ func runServe(args []string) error {
 	if *port == 8080 && cfg.Server.Port != 0 {
 		*port = cfg.Server.Port
 	}
-	srv := api.NewServer(api.Config{Host: *host, Port: *port, SessionDir: cfg.Database.SessionDir, APIKey: cfg.Server.APIKey})
+	srv := api.NewServer(api.Config{Host: *host, Port: *port, SessionDir: cfg.Database.SessionDir, APIKey: cfg.Server.APIKey, ToolPaths: cfg.Tools, AppConfig: cfg})
 	return srv.ListenAndServe(context.Background())
 }

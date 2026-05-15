@@ -45,11 +45,18 @@ func (NucleiTech) ShouldRun(input AdapterInput) bool { return liveHTTP(input) }
 func (a NucleiTech) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error) {
 	rawURL := targetURL(input.Target)
 	args := []string{"-silent", "-jsonl", "-tags", "tech", "-u", rawURL}
+	if templates := toolParamString(input, "templates"); templates != "" {
+		args = append(args, "-templates", templates)
+	}
+	if severity := toolParamString(input, "severity"); severity != "" {
+		args = append(args, "-severity", severity)
+	}
+	args = append(args, toolParamStringList(input, "extra_args")...)
 	if ok, reason := targetInScope(input, input.Target.Host); !ok {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, reason, 1)}, nil
 	}
 	run := newToolRun(input, a.ID(), args)
-	result := RunCommand(ctx, 120*time.Second, "nuclei", args...)
+	result := RunCommand(ctx, commandTimeout(input, 120*time.Second), "nuclei", args...)
 	technologies, findings := parseNucleiTechOutput(input, result.Stdout)
 	return AdapterOutput{Technologies: technologies, Findings: findings, ToolRun: finishToolRun(run, result, len(findings))}, nil
 }

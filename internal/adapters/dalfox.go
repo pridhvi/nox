@@ -30,11 +30,18 @@ func (Dalfox) ShouldRun(input AdapterInput) bool {
 func (a Dalfox) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error) {
 	target := vulnerabilityTargetURL(input)
 	args := []string{"url", target, "--format", "json", "--silence"}
+	if blind := toolParamString(input, "blind"); blind != "" {
+		args = append(args, "--blind", blind)
+	}
+	if toolParamBool(input, "skip_grepping") {
+		args = append(args, "--skip-grepping")
+	}
+	args = append(args, toolParamStringList(input, "extra_args")...)
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, reason, 1)}, nil
 	}
 	run := newToolRun(input, a.ID(), args)
-	result := RunCommand(ctx, 90*time.Second, "dalfox", args...)
+	result := RunCommand(ctx, commandTimeout(input, 90*time.Second), "dalfox", args...)
 	findings := parseDalfoxFindings(input, result.Stdout)
 	if len(findings) == 0 {
 		findings = parseDalfoxTextFindings(input, result.Stdout+"\n"+result.Stderr)

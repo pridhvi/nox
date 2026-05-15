@@ -39,7 +39,7 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 			t.Fatalf("expected table %s: %v", table, err)
 		}
 	}
-	for _, version := range []string{"001_initial", "002_phase2_persistence"} {
+	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console"} {
 		var got string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, version).Scan(&got); err != nil {
 			t.Fatalf("expected migration %s: %v", version, err)
@@ -51,13 +51,18 @@ func TestCreateListShowDeleteSessionLifecycle(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	session := models.Session{
-		ID:          models.NewID(),
-		Name:        "Example",
-		Status:      models.SessionStatusPending,
-		Mode:        models.ScanModeActive,
-		TargetInput: "https://example.com",
-		InScope:     []string{"https://example.com"},
-		CreatedAt:   time.Now().UTC(),
+		ID:           models.NewID(),
+		Name:         "Example",
+		Status:       models.SessionStatusPending,
+		Mode:         models.ScanModeActive,
+		TargetInput:  "https://example.com",
+		InScope:      []string{"https://example.com"},
+		EnabledTools: []string{"http-probe", "ffuf"},
+		ToolParameters: map[string]map[string]any{
+			"ffuf": {"wordlist": "/tmp/words.txt"},
+		},
+		RunnerOptions: models.ScanRunnerOptions{Concurrency: 2, PerToolConcurrency: 1, ToolTimeoutSeconds: 30, ToolDelayMS: 50, RateLimit: "gentle"},
+		CreatedAt:     time.Now().UTC(),
 	}
 	target := testTarget(session.ID, "example.com", 443, "https")
 	record, err := CreateSessionDB(ctx, dir, session, target)
@@ -90,6 +95,15 @@ func TestCreateListShowDeleteSessionLifecycle(t *testing.T) {
 	}
 	if got.ID != session.ID || got.TargetInput != session.TargetInput {
 		t.Fatalf("unexpected session: %#v", got)
+	}
+	if len(got.EnabledTools) != 2 || got.EnabledTools[1] != "ffuf" {
+		t.Fatalf("expected enabled tools to round-trip, got %#v", got.EnabledTools)
+	}
+	if got.ToolParameters["ffuf"]["wordlist"] != "/tmp/words.txt" {
+		t.Fatalf("expected tool parameters to round-trip, got %#v", got.ToolParameters)
+	}
+	if got.RunnerOptions.Concurrency != 2 || got.RunnerOptions.RateLimit != "gentle" {
+		t.Fatalf("expected runner options to round-trip, got %#v", got.RunnerOptions)
 	}
 	targets, err := store.ListTargets(ctx, session.ID)
 	if err != nil {
@@ -384,9 +398,11 @@ func TestExistingInitialDatabaseMigratesToPhase2(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plugins'`).Scan(&pluginTable); err != nil {
 		t.Fatalf("expected plugins table after migration: %v", err)
 	}
-	var version string
-	if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = '002_phase2_persistence'`).Scan(&version); err != nil {
-		t.Fatalf("expected 002 migration record: %v", err)
+	for _, expected := range []string{"002_phase2_persistence", "003_operator_console"} {
+		var version string
+		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, expected).Scan(&version); err != nil {
+			t.Fatalf("expected %s migration record: %v", expected, err)
+		}
 	}
 }
 

@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
 import cytoscape from "cytoscape";
-import { listFindings, listSessions, listTargets, listVectors, type AttackVector, type Finding, type Target } from "../api/client";
+import { listFindings, listTargets, listVectors, type AttackVector, type Finding, type Target } from "../api/client";
+import { useSessionContext } from "../session";
 
 export function AttackGraph() {
-  const params = useParams();
-  const sessionsQuery = useQuery({ queryKey: ["sessions"], queryFn: listSessions });
-  const selected = params.sessionID ?? sessionsQuery.data?.[0]?.session.id ?? "";
+  const { selectedSessionID: selected } = useSessionContext();
   const [severity, setSeverity] = useState("");
   const targetsQuery = useQuery({ queryKey: ["targets", selected], queryFn: () => listTargets(selected), enabled: selected !== "" });
   const findingsQuery = useQuery({ queryKey: ["findings", selected], queryFn: () => listFindings(selected), enabled: selected !== "" });
@@ -30,14 +28,17 @@ export function AttackGraph() {
     const graph = cytoscape({
       container: graphRef.current,
       elements,
-      layout: { name: "breadthfirst", directed: true, padding: 20, spacingFactor: 1.2 },
+      layout: { name: "cose", animate: false, padding: 36, nodeRepulsion: 9000, idealEdgeLength: 140, componentSpacing: 90 },
       style: [
-        { selector: "node", style: { label: "data(label)", "font-size": "10px", color: "#111827", "text-valign": "center", "text-halign": "center", width: "72px", height: "72px", "text-wrap": "wrap", "text-max-width": "96px", "border-width": "2px", "border-color": "#d1d5db", "background-color": "#e5e7eb" } },
-        { selector: "node[type='target']", style: { "background-color": "#dbeafe", shape: "round-rectangle" } },
-        { selector: "node[type='finding']", style: { "background-color": "data(color)", color: "#ffffff", "border-color": "#111827" } },
-        { selector: "node[type='vector']", style: { "background-color": "#111827", color: "#ffffff", shape: "hexagon" } },
-        { selector: "edge", style: { width: "2px", "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", "target-arrow-shape": "triangle", "curve-style": "bezier" } },
-      ],
+        { selector: "node", style: { label: "data(label)", "font-size": "11px", "font-weight": "600", color: "#17202a", "text-valign": "bottom", "text-halign": "center", "text-margin-y": "8px", width: "mapData(weight, 1, 5, 54, 86)", height: "mapData(weight, 1, 5, 54, 86)", "text-wrap": "wrap", "text-max-width": "110px", "border-width": "2px", "border-color": "#ffffff", "background-color": "#e5e7eb", "shadow-blur": "8px", "shadow-opacity": 0.18, "shadow-color": "#0f172a" } },
+        { selector: "node[type='target']", style: { "background-color": "#0f766e", color: "#0f766e", shape: "round-rectangle" } },
+        { selector: "node[type='tech']", style: { "background-color": "#2563eb", color: "#2563eb", shape: "ellipse" } },
+        { selector: "node[type='finding']", style: { "background-color": "data(color)", color: "data(color)", shape: "diamond" } },
+        { selector: "node[type='vector']", style: { "background-color": "#111827", color: "#111827", shape: "hexagon" } },
+        { selector: "node:selected", style: { "border-color": "#f59e0b", "border-width": "5px" } },
+        { selector: "edge", style: { width: "2px", "line-color": "#9aa8b7", "target-arrow-color": "#9aa8b7", "target-arrow-shape": "triangle", "curve-style": "bezier", opacity: 0.78 } },
+        { selector: "edge[type='attack']", style: { width: "3px", "line-color": "#111827", "target-arrow-color": "#111827" } },
+      ] as any,
     });
     graph.on("tap", "node", (event) => {
       const node = event.target;
@@ -47,7 +48,7 @@ export function AttackGraph() {
   }, [nodes]);
 
   return (
-    <section className="page">
+    <section className="page wide-page">
       <header className="page-header">
         <div>
           <h1>Attack Graph</h1>
@@ -66,7 +67,15 @@ export function AttackGraph() {
         </label>
       </header>
       <section className="panel">
-        <h2>Interactive Graph</h2>
+        <div className="graph-toolbar">
+          <h2>Interactive Graph</h2>
+          <div className="graph-legend">
+            <span><i className="legend-target" />Target</span>
+            <span><i className="legend-tech" />Technology</span>
+            <span><i className="legend-finding" />Finding</span>
+            <span><i className="legend-vector" />Attack Vector</span>
+          </div>
+        </div>
         <div className="cy-graph" ref={graphRef} />
         {selectedNode ? (
           <div className="graph-detail">
@@ -75,6 +84,11 @@ export function AttackGraph() {
           </div>
         ) : null}
       </section>
+      <div className="graph-summary">
+        <article><span>Targets</span><strong>{nodes.targets.length}</strong></article>
+        <article><span>Findings</span><strong>{nodes.findings.length}</strong></article>
+        <article><span>Attack Vectors</span><strong>{nodes.vectors.length}</strong></article>
+      </div>
       <div className="graph-layout">
         <section className="graph-column">
           <h2>Targets</h2>
@@ -117,23 +131,23 @@ export function AttackGraph() {
 function graphElements(targets: Target[], findings: Finding[], vectors: AttackVector[]) {
   const elements: cytoscape.ElementDefinition[] = [];
   for (const target of targets) {
-    elements.push({ data: { id: `target:${target.id}`, label: target.host, type: "target", detail: `${target.protocol}:${target.port} discovered by ${target.discovered_by}` } });
+    elements.push({ data: { id: `target:${target.id}`, label: target.host, type: "target", weight: 3, detail: `${target.protocol}:${target.port} discovered by ${target.discovered_by}` } });
     for (const tech of target.technologies ?? []) {
       const techID = `tech:${tech.id}`;
-      elements.push({ data: { id: techID, label: `${tech.name} ${tech.version}`.trim(), type: "target", detail: `${tech.category || "technology"} confidence ${Math.round(tech.confidence * 100)}%` } });
+      elements.push({ data: { id: techID, label: `${tech.name} ${tech.version}`.trim(), type: "tech", weight: 2, detail: `${tech.category || "technology"} confidence ${Math.round(tech.confidence * 100)}%` } });
       elements.push({ data: { id: `edge:${target.id}:${tech.id}`, source: `target:${target.id}`, target: techID } });
     }
   }
   for (const finding of findings) {
-    elements.push({ data: { id: `finding:${finding.id}`, label: finding.title, type: "finding", color: severityColor(finding.severity), detail: `${finding.severity} ${finding.type} from ${finding.tool_id}. ${finding.url}` } });
+    elements.push({ data: { id: `finding:${finding.id}`, label: finding.title, type: "finding", weight: severityWeight(finding.severity), color: severityColor(finding.severity), detail: `${finding.severity} ${finding.type} from ${finding.tool_id}. ${finding.url}` } });
     if (finding.target_id) {
       elements.push({ data: { id: `edge:${finding.target_id}:${finding.id}`, source: `target:${finding.target_id}`, target: `finding:${finding.id}` } });
     }
   }
   for (const vector of vectors) {
-    elements.push({ data: { id: `vector:${vector.id}`, label: vector.title, type: "vector", detail: `${vector.severity} confidence ${Math.round(vector.confidence * 100)}%. ${vector.narrative}` } });
+    elements.push({ data: { id: `vector:${vector.id}`, label: vector.title, type: "vector", weight: severityWeight(vector.severity), detail: `${vector.severity} confidence ${Math.round(vector.confidence * 100)}%. ${vector.narrative}` } });
     for (const findingID of vector.prereq_finding_ids ?? []) {
-      elements.push({ data: { id: `edge:${findingID}:${vector.id}`, source: `finding:${findingID}`, target: `vector:${vector.id}` } });
+      elements.push({ data: { id: `edge:${findingID}:${vector.id}`, source: `finding:${findingID}`, target: `vector:${vector.id}`, type: "attack" } });
     }
   }
   return elements;
@@ -146,5 +160,15 @@ function severityColor(severity: string) {
     case "medium": return "#d97706";
     case "low": return "#2563eb";
     default: return "#64748b";
+  }
+}
+
+function severityWeight(severity: string) {
+  switch (severity) {
+    case "critical": return 5;
+    case "high": return 4;
+    case "medium": return 3;
+    case "low": return 2;
+    default: return 1;
   }
 }

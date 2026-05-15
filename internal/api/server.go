@@ -5,14 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/kanini/nox/internal/adapters"
+	appconfig "github.com/kanini/nox/internal/config"
 	"github.com/kanini/nox/internal/db"
 	"github.com/kanini/nox/internal/engine"
 	llmintel "github.com/kanini/nox/internal/llm"
@@ -26,6 +31,8 @@ type Config struct {
 	SessionDir string
 	APIKey     string
 	HTTPClient adapters.HTTPDoer
+	ToolPaths  map[string]string
+	AppConfig  appconfig.Config
 }
 
 type Server struct {
@@ -71,6 +78,11 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/tools", s.tools)
+	mux.HandleFunc("GET /api/config/effective", s.effectiveConfig)
+	mux.HandleFunc("GET /api/scan-profiles", s.listScanProfiles)
+	mux.HandleFunc("POST /api/scan-profiles", s.createScanProfile)
+	mux.HandleFunc("DELETE /api/scan-profiles/{profile_id}", s.deleteScanProfile)
+	mux.HandleFunc("POST /api/llm/models", s.llmModels)
 	mux.HandleFunc("GET /api/sessions", s.listSessions)
 	mux.HandleFunc("GET /api/sessions/{id}", s.getSession)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
@@ -78,6 +90,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/findings", s.listFindings)
 	mux.HandleFunc("PATCH /api/sessions/{id}/findings/{finding_id}", s.updateFinding)
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs", s.listToolRuns)
+	mux.HandleFunc("GET /api/sessions/{id}/plugins", s.listPlugins)
+	mux.HandleFunc("POST /api/sessions/{id}/plugins", s.upsertPlugin)
+	mux.HandleFunc("PATCH /api/sessions/{id}/plugins/{plugin_id}", s.updatePlugin)
 	mux.HandleFunc("GET /api/sessions/{id}/stats", s.sessionStats)
 	mux.HandleFunc("GET /api/sessions/{id}/vectors", s.listAttackVectors)
 	mux.HandleFunc("GET /api/sessions/{id}/cves", s.listCVEs)
@@ -129,17 +144,269 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) effectiveConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := s.cfg.AppConfig
+	if cfg.Database.SessionDir == "" {
+		cfg = appconfig.Default()
+		cfg.Database.SessionDir = s.cfg.SessionDir
+		cfg.Server.APIKey = s.cfg.APIKey
+		cfg.Tools = s.cfg.ToolPaths
+	}
+	writeJSON(w, map[string]any{
+		"database": map[string]any{"session_dir": firstNonEmpty(cfg.Database.SessionDir, s.cfg.SessionDir)},
+		"server": map[string]any{
+			"host":         cfg.Server.Host,
+			"port":         cfg.Server.Port,
+			"auth_enabled": firstNonEmpty(cfg.Server.APIKey, s.cfg.APIKey) != "",
+		},
+		"llm": map[string]any{
+			"enabled":     cfg.LLM.Enabled,
+			"configured":  cfg.LLM.BaseURL != "",
+			"provider":    cfg.LLM.Provider,
+			"base_url":    cfg.LLM.BaseURL,
+			"model":       cfg.LLM.Model,
+			"api_key_set": cfg.LLM.APIKey != "",
+			"max_tokens":  cfg.LLM.MaxTokens,
+			"temperature": cfg.LLM.Temperature,
+		},
+		"scan": cfg.Scan,
+		"cve": map[string]any{
+			"offline_path":   cfg.CVE.OfflinePath,
+			"enable_remote":  cfg.CVE.EnableRemote,
+			"cache_ttl":      cfg.CVE.CacheTTL,
+			"exploitdb_path": cfg.CVE.ExploitDBPath,
+			"sources":        cfg.CVE.Sources,
+		},
+		"tools":   cfg.Tools,
+		"plugins": cfg.Plugins,
+		"runtime": map[string]string{"goos": runtime.GOOS, "goarch": runtime.GOARCH},
+	})
+}
+
+type toolParameter struct {
+	Name        string   `json:"name"`
+	Label       string   `json:"label"`
+	Type        string   `json:"type"`
+	Default     any      `json:"default,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	Description string   `json:"description,omitempty"`
+}
+
+type toolRecord struct {
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Phase          string          `json:"phase"`
+	DependsOn      []string        `json:"depends_on"`
+	Kind           string          `json:"kind"`
+	DefaultEnabled bool            `json:"default_enabled"`
+	Installed      bool            `json:"installed"`
+	BinaryPath     string          `json:"binary_path"`
+	Version        string          `json:"version"`
+	InstallHint    string          `json:"install_hint"`
+	Parameters     []toolParameter `json:"parameters"`
+	LastRun        *models.ToolRun `json:"last_run,omitempty"`
+}
+
 func (s *Server) tools(w http.ResponseWriter, r *http.Request) {
 	registered := adapters.All()
-	tools := make([]map[string]string, 0, len(registered))
+	lastRuns := map[string]models.ToolRun{}
+	if sessionID := strings.TrimSpace(r.URL.Query().Get("session_id")); sessionID != "" {
+		if store, err := db.OpenSession(r.Context(), s.cfg.SessionDir, sessionID); err == nil {
+			if session, err := store.GetSession(r.Context()); err == nil {
+				if runs, err := store.ListToolRuns(r.Context(), session.ID); err == nil {
+					for _, run := range runs {
+						lastRuns[run.ToolID] = run
+					}
+				}
+			}
+			_ = store.Close()
+		}
+	}
+	tools := make([]toolRecord, 0, len(registered))
 	for _, adapter := range registered {
-		tools = append(tools, map[string]string{
-			"id":    adapter.ID(),
-			"name":  adapter.Name(),
-			"phase": string(adapter.Phase()),
-		})
+		record := s.toolRecord(adapter)
+		if run, ok := lastRuns[adapter.ID()]; ok {
+			record.LastRun = &run
+		}
+		tools = append(tools, record)
 	}
 	writeJSON(w, tools)
+}
+
+func (s *Server) toolRecord(adapter adapters.Adapter) toolRecord {
+	id := adapter.ID()
+	deps := adapter.DependsOn()
+	if deps == nil {
+		deps = []string{}
+	}
+	binary := binaryNameForTool(id)
+	parameters := parametersForTool(id)
+	if parameters == nil {
+		parameters = []toolParameter{}
+	}
+	path := ""
+	installed := true
+	version := ""
+	kind := "builtin_http"
+	if binary != "" {
+		kind = "subprocess"
+		path, installed = s.detectToolBinary(id, binary)
+		if installed {
+			version = detectVersion(path)
+		}
+	}
+	return toolRecord{
+		ID:             id,
+		Name:           adapter.Name(),
+		Phase:          string(adapter.Phase()),
+		DependsOn:      deps,
+		Kind:           kind,
+		DefaultEnabled: id != "crtsh",
+		Installed:      installed,
+		BinaryPath:     path,
+		Version:        version,
+		InstallHint:    installHintForTool(id, binary),
+		Parameters:     parameters,
+	}
+}
+
+func (s *Server) detectToolBinary(toolID, binary string) (string, bool) {
+	for _, candidate := range []string{s.cfg.ToolPaths[toolID], s.cfg.ToolPaths[binary]} {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, true
+		}
+	}
+	path, err := exec.LookPath(binary)
+	return path, err == nil
+}
+
+type scanProfileRecord struct {
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Request     startScanRequest `json:"request"`
+	CreatedAt   time.Time        `json:"created_at"`
+	UpdatedAt   time.Time        `json:"updated_at"`
+}
+
+type scanProfileRequest struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Request     startScanRequest `json:"request"`
+}
+
+func (s *Server) listScanProfiles(w http.ResponseWriter, r *http.Request) {
+	profiles, err := s.readScanProfiles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, profiles)
+}
+
+func (s *Server) createScanProfile(w http.ResponseWriter, r *http.Request) {
+	var req scanProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("profile name is required"))
+		return
+	}
+	if err := validateTools(req.Request.Tools); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := validateToolParameters(req.Request.ToolParameters); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	profiles, err := s.readScanProfiles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	now := time.Now().UTC()
+	profile := scanProfileRecord{
+		ID:          models.NewID(),
+		Name:        req.Name,
+		Description: strings.TrimSpace(req.Description),
+		Request:     req.Request,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	profiles = append(profiles, profile)
+	if err := s.writeScanProfiles(profiles); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, profile)
+}
+
+func (s *Server) deleteScanProfile(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("profile_id"))
+	profiles, err := s.readScanProfiles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	next := profiles[:0]
+	deleted := false
+	for _, profile := range profiles {
+		if profile.ID == id {
+			deleted = true
+			continue
+		}
+		next = append(next, profile)
+	}
+	if !deleted {
+		writeDBError(w, db.ErrNotFound)
+		return
+	}
+	if err := s.writeScanProfiles(next); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]string{"deleted": id})
+}
+
+func (s *Server) scanProfilesPath() string {
+	return filepath.Join(s.cfg.SessionDir, "scan-profiles.json")
+}
+
+func (s *Server) readScanProfiles() ([]scanProfileRecord, error) {
+	path := s.scanProfilesPath()
+	body, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return []scanProfileRecord{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var profiles []scanProfileRecord
+	if err := json.Unmarshal(body, &profiles); err != nil {
+		return nil, err
+	}
+	if profiles == nil {
+		profiles = []scanProfileRecord{}
+	}
+	return profiles, nil
+}
+
+func (s *Server) writeScanProfiles(profiles []scanProfileRecord) error {
+	if err := db.EnsureSessionsDir(s.cfg.SessionDir); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(profiles, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.scanProfilesPath(), body, 0o600)
 }
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
@@ -263,6 +530,139 @@ func (s *Server) updateFinding(w http.ResponseWriter, r *http.Request) {
 	writeDBError(w, db.ErrNotFound)
 }
 
+func (s *Server) listPlugins(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	plugins, err := store.ListPlugins(r.Context())
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, plugins)
+}
+
+type pluginRequest struct {
+	Name    string `json:"name"`
+	Binary  string `json:"binary"`
+	Enabled *bool  `json:"enabled"`
+}
+
+func (s *Server) upsertPlugin(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	var req pluginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	req.Binary = strings.TrimSpace(req.Binary)
+	if req.Binary == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("binary is required"))
+		return
+	}
+	if err := validatePluginBinary(req.Binary); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = strings.TrimSuffix(filepath.Base(req.Binary), filepath.Ext(req.Binary))
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	now := time.Now().UTC()
+	plugin := models.PluginRecord{ID: models.NewID(), Name: name, Binary: req.Binary, Enabled: enabled, CreatedAt: now, UpdatedAt: now}
+	if err := store.UpsertPlugin(r.Context(), plugin); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, plugin)
+}
+
+func (s *Server) updatePlugin(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	plugins, err := store.ListPlugins(r.Context())
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	var existing *models.PluginRecord
+	for i := range plugins {
+		if plugins[i].ID == r.PathValue("plugin_id") {
+			existing = &plugins[i]
+			break
+		}
+	}
+	if existing == nil {
+		writeDBError(w, db.ErrNotFound)
+		return
+	}
+	var req pluginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(req.Name) != "" {
+		existing.Name = strings.TrimSpace(req.Name)
+	}
+	if strings.TrimSpace(req.Binary) != "" {
+		binary := strings.TrimSpace(req.Binary)
+		if err := validatePluginBinary(binary); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		existing.Binary = binary
+	}
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.UpdatedAt = time.Now().UTC()
+	if err := store.UpsertPlugin(r.Context(), *existing); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, existing)
+}
+
+func validatePluginBinary(binary string) error {
+	binary = strings.TrimSpace(binary)
+	if binary == "" {
+		return fmt.Errorf("binary is required")
+	}
+	if strings.ContainsAny(binary, "\x00\r\n") || strings.Contains(binary, " ") {
+		return fmt.Errorf("plugin binary must be a single executable path or PATH-resolvable command")
+	}
+	if filepath.IsAbs(binary) || strings.Contains(binary, string(filepath.Separator)) {
+		info, err := os.Stat(binary)
+		if err != nil {
+			return fmt.Errorf("plugin binary is not accessible: %w", err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("plugin binary points to a directory")
+		}
+		if info.Mode()&0o111 == 0 {
+			return fmt.Errorf("plugin binary is not executable")
+		}
+		return nil
+	}
+	if _, err := exec.LookPath(binary); err != nil {
+		return fmt.Errorf("plugin binary %q was not found on PATH", binary)
+	}
+	return nil
+}
+
 func (s *Server) listToolRuns(w http.ResponseWriter, r *http.Request) {
 	store, err := db.OpenSession(r.Context(), s.cfg.SessionDir, r.PathValue("id"))
 	if err != nil {
@@ -354,6 +754,110 @@ type llmRequest struct {
 	Message string `json:"message"`
 }
 
+type llmModelsRequest struct {
+	BaseURL string `json:"base_url"`
+	APIKey  string `json:"api_key"`
+}
+
+type llmModelsResponse struct {
+	Models []string `json:"models"`
+}
+
+func (s *Server) llmModels(w http.ResponseWriter, r *http.Request) {
+	var req llmModelsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	baseURL := strings.TrimSpace(req.BaseURL)
+	if baseURL == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("base_url is required"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, llmModelsURL(baseURL), nil)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	apiKey := firstNonEmpty(req.APIKey, s.cfg.AppConfig.LLM.APIKey, os.Getenv("NOX_LLM_API_KEY"))
+	if apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	var client interface {
+		Do(*http.Request) (*http.Response, error)
+	} = http.DefaultClient
+	if s.cfg.HTTPClient != nil {
+		client = httpClientAdapter{s.cfg.HTTPClient}
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("llm models request failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body))))
+		return
+	}
+	var decoded struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Models []string `json:"models"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	seen := map[string]bool{}
+	var models []string
+	for _, model := range decoded.Data {
+		id := strings.TrimSpace(model.ID)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			models = append(models, id)
+		}
+	}
+	for _, id := range decoded.Models {
+		id = strings.TrimSpace(id)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			models = append(models, id)
+		}
+	}
+	if len(models) == 0 {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("llm endpoint returned no models"))
+		return
+	}
+	writeJSON(w, llmModelsResponse{Models: models})
+}
+
+type httpClientAdapter struct {
+	client adapters.HTTPDoer
+}
+
+func (a httpClientAdapter) Do(req *http.Request) (*http.Response, error) {
+	return a.client.Do(req)
+}
+
+func llmModelsURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.HasSuffix(base, "/models") {
+		return base
+	}
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/models"
+	}
+	return base + "/v1/models"
+}
+
 func (s *Server) llmChat(w http.ResponseWriter, r *http.Request) {
 	var req llmRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -405,13 +909,20 @@ func (s *Server) runLLM(w http.ResponseWriter, r *http.Request, prompt string) {
 }
 
 type startScanRequest struct {
-	Target        string          `json:"target"`
-	Name          string          `json:"name"`
-	Mode          models.ScanMode `json:"mode"`
-	OutOfScope    []string        `json:"out_of_scope"`
-	EnabledPhases []string        `json:"enabled_phases"`
-	LLMModel      string          `json:"llm_model"`
-	LLMBaseURL    string          `json:"llm_base_url"`
+	Target             string                    `json:"target"`
+	Name               string                    `json:"name"`
+	Mode               models.ScanMode           `json:"mode"`
+	OutOfScope         []string                  `json:"out_of_scope"`
+	EnabledPhases      []string                  `json:"enabled_phases"`
+	Tools              []string                  `json:"tools"`
+	ToolParameters     map[string]map[string]any `json:"tool_parameters"`
+	Concurrency        int                       `json:"concurrency"`
+	PerToolConcurrency int                       `json:"per_tool_concurrency"`
+	ToolTimeoutSeconds int                       `json:"tool_timeout_seconds"`
+	ToolDelayMS        int                       `json:"tool_delay_ms"`
+	RateLimit          string                    `json:"rate_limit"`
+	LLMModel           string                    `json:"llm_model"`
+	LLMBaseURL         string                    `json:"llm_base_url"`
 }
 
 func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
@@ -421,14 +932,31 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Target = strings.TrimSpace(req.Target)
+	if err := validateTools(req.Tools); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := validateToolParameters(req.ToolParameters); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	session, target, err := engine.NewPendingSession(engine.NewSessionInput{
-		Target:        req.Target,
-		Name:          req.Name,
-		Mode:          req.Mode,
-		OutOfScope:    req.OutOfScope,
-		EnabledPhases: req.EnabledPhases,
-		LLMModel:      req.LLMModel,
-		LLMBaseURL:    req.LLMBaseURL,
+		Target:         req.Target,
+		Name:           req.Name,
+		Mode:           req.Mode,
+		OutOfScope:     req.OutOfScope,
+		EnabledPhases:  req.EnabledPhases,
+		EnabledTools:   req.Tools,
+		ToolParameters: req.ToolParameters,
+		RunnerOptions: models.ScanRunnerOptions{
+			Concurrency:        req.Concurrency,
+			PerToolConcurrency: req.PerToolConcurrency,
+			ToolTimeoutSeconds: req.ToolTimeoutSeconds,
+			ToolDelayMS:        req.ToolDelayMS,
+			RateLimit:          req.RateLimit,
+		},
+		LLMModel:   req.LLMModel,
+		LLMBaseURL: req.LLMBaseURL,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -487,6 +1015,227 @@ func readiness(ok bool) string {
 		return "ready"
 	}
 	return "unavailable"
+}
+
+func validateTools(toolIDs []string) error {
+	for _, id := range toolIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if strings.HasPrefix(id, "plugin:") {
+			continue
+		}
+		if _, ok := adapters.Get(id); !ok {
+			return fmt.Errorf("unknown tool %q", id)
+		}
+	}
+	return nil
+}
+
+func validateToolParameters(parameters map[string]map[string]any) error {
+	for toolID, values := range parameters {
+		toolID = strings.TrimSpace(toolID)
+		if toolID == "" {
+			return fmt.Errorf("tool parameter entry is missing a tool id")
+		}
+		if strings.HasPrefix(toolID, "plugin:") {
+			continue
+		}
+		if _, ok := adapters.Get(toolID); !ok {
+			return fmt.Errorf("tool parameters reference unknown tool %q", toolID)
+		}
+		allowed := toolParameterSet(toolID)
+		for name, value := range values {
+			if !allowed[name] {
+				return fmt.Errorf("tool %q does not support parameter %q", toolID, name)
+			}
+			if name == "extra_args" {
+				if err := validateExtraArgs(toolID, value); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func toolParameterSet(toolID string) map[string]bool {
+	out := map[string]bool{}
+	for _, parameter := range parametersForTool(toolID) {
+		out[parameter.Name] = true
+	}
+	return out
+}
+
+func validateExtraArgs(toolID string, value any) error {
+	args := parameterStringList(value)
+	allowedFlags := safeExtraArgFlags(toolID)
+	if len(allowedFlags) == 0 && len(args) > 0 {
+		return fmt.Errorf("tool %q does not accept extra args", toolID)
+	}
+	for _, arg := range args {
+		if len(arg) > 200 || strings.ContainsAny(arg, "\x00\r\n") {
+			return fmt.Errorf("tool %q extra args contain an invalid argument", toolID)
+		}
+		if strings.HasPrefix(arg, "-") && !allowedFlags[arg] {
+			return fmt.Errorf("tool %q extra arg %q is not in the safe allow-list", toolID, arg)
+		}
+	}
+	return nil
+}
+
+func parameterStringList(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return compactParameterStrings(typed)
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	case string:
+		return compactParameterStrings(strings.Fields(typed))
+	default:
+		text := strings.TrimSpace(fmt.Sprint(typed))
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
+}
+
+func compactParameterStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func safeExtraArgFlags(toolID string) map[string]bool {
+	flags := map[string][]string{
+		"ffuf":        {"-ac", "-b", "-fc", "-fl", "-fs", "-fw", "-H", "-mc", "-rate", "-recursion", "-recursion-depth", "-t", "-timeout"},
+		"nuclei-tech": {"-c", "-exclude-tags", "-headless", "-retries", "-rl", "-tags", "-timeout"},
+		"nuclei-vuln": {"-c", "-exclude-tags", "-headless", "-retries", "-rl", "-tags", "-timeout"},
+		"sqlmap":      {"--delay", "--param-filter", "--random-agent", "--technique", "--threads", "--timeout"},
+		"dalfox":      {"--delay", "--follow-redirects", "--only-poc", "--timeout", "--worker"},
+	}
+	out := map[string]bool{}
+	for _, flag := range flags[toolID] {
+		out[flag] = true
+	}
+	return out
+}
+
+func binaryNameForTool(id string) string {
+	switch id {
+	case "subfinder":
+		return "subfinder"
+	case "dnsx":
+		return "dnsx"
+	case "naabu":
+		return "naabu"
+	case "httpx":
+		return "httpx"
+	case "whois":
+		return "whois"
+	case "waybackurls":
+		return "waybackurls"
+	case "nmap":
+		return "nmap"
+	case "ffuf":
+		return "ffuf"
+	case "whatweb":
+		return "whatweb"
+	case "nuclei-tech", "nuclei-vuln":
+		return "nuclei"
+	case "testssl":
+		return "testssl.sh"
+	case "wpscan":
+		return "wpscan"
+	case "droopescan":
+		return "droopescan"
+	case "arjun":
+		return "arjun"
+	case "linkfinder":
+		return "linkfinder"
+	case "gitleaks":
+		return "gitleaks"
+	case "sqlmap":
+		return "sqlmap"
+	case "dalfox":
+		return "dalfox"
+	case "ssrfmap":
+		return "ssrfmap"
+	case "jwt-tool":
+		return "jwt_tool"
+	case "nikto":
+		return "nikto"
+	default:
+		return ""
+	}
+}
+
+func installHintForTool(id, binary string) string {
+	if binary == "" {
+		return "Built into Nox."
+	}
+	return "Install " + binary + " or configure tools." + id + " in the Nox config."
+}
+
+func detectVersion(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--version").CombinedOutput()
+	if err != nil || len(out) == 0 {
+		out, err = exec.CommandContext(ctx, path, "-version").CombinedOutput()
+		if err != nil || len(out) == 0 {
+			return ""
+		}
+	}
+	line := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+	return truncateString(line, 120)
+}
+
+func parametersForTool(id string) []toolParameter {
+	common := []toolParameter{
+		{Name: "timeout_seconds", Label: "Timeout", Type: "number", Default: 60, Description: "Per-tool timeout in seconds."},
+		{Name: "extra_args", Label: "Extra Safe Args", Type: "list", Description: "Additional safe arguments for compatible subprocess tools."},
+	}
+	switch id {
+	case "nmap":
+		return []toolParameter{{Name: "timeout_seconds", Label: "Timeout", Type: "number", Default: 45, Description: "Per-tool timeout in seconds."}}
+	case "ffuf":
+		return append([]toolParameter{
+			{Name: "wordlist", Label: "Wordlist", Type: "path", Description: "Content discovery wordlist path."},
+			{Name: "matcher", Label: "Matcher", Type: "string", Description: "Use extra args for ffuf matchers such as -mc 200,204,301."},
+		}, common...)
+	case "nuclei-tech", "nuclei-vuln":
+		return append([]toolParameter{{Name: "templates", Label: "Templates", Type: "path", Description: "Nuclei templates directory."}, {Name: "severity", Label: "Severity", Type: "enum", Options: []string{"info", "low", "medium", "high", "critical", "low,medium,high,critical", "medium,high,critical"}}}, common...)
+	case "sqlmap":
+		return append([]toolParameter{{Name: "level", Label: "Level", Type: "number", Default: 1, Description: "sqlmap level, clamped to 1-5."}, {Name: "risk", Label: "Risk", Type: "number", Default: 1, Description: "sqlmap risk, clamped to 1-3."}}, common...)
+	case "dalfox":
+		return append([]toolParameter{{Name: "blind", Label: "Blind Callback", Type: "string"}, {Name: "skip_grepping", Label: "Skip Grepping", Type: "boolean"}}, common...)
+	default:
+		return nil
+	}
+}
+
+func truncateString(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit]
 }
 
 func validSeverity(severity models.Severity) bool {

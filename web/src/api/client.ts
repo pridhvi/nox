@@ -6,6 +6,12 @@ export type Session = {
   status: SessionStatus;
   mode: string;
   target_input: string;
+  in_scope?: string[];
+  out_of_scope?: string[];
+  enabled_phases?: string[];
+  enabled_tools?: string[];
+  tool_parameters?: Record<string, Record<string, unknown>>;
+  runner_options?: RunnerOptions;
   target_count: number;
   finding_count: number;
   llm_model?: string;
@@ -13,6 +19,14 @@ export type Session = {
   created_at: string;
   started_at?: string;
   completed_at?: string;
+};
+
+export type RunnerOptions = {
+  concurrency?: number;
+  per_tool_concurrency?: number;
+  tool_timeout_seconds?: number;
+  tool_delay_ms?: number;
+  rate_limit?: string;
 };
 
 export type SessionRecord = {
@@ -104,7 +118,12 @@ export type AttackVector = {
 
 export type ToolRun = {
   id: string;
+  session_id: string;
+  target_id?: string;
   tool_id: string;
+  args: string[];
+  stdout_raw: string;
+  stderr_raw: string;
   exit_code: number;
   duration_ms: number;
   finding_count: number;
@@ -149,8 +168,72 @@ export type StartScanRequest = {
   mode: string;
   out_of_scope?: string[];
   enabled_phases?: string[];
+  tools?: string[];
+  tool_parameters?: Record<string, Record<string, unknown>>;
+  concurrency?: number;
+  per_tool_concurrency?: number;
+  tool_timeout_seconds?: number;
+  tool_delay_ms?: number;
+  rate_limit?: string;
   llm_model?: string;
   llm_base_url?: string;
+};
+
+export type ScanProfileRecord = {
+  id: string;
+  name: string;
+  description: string;
+  request: StartScanRequest;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ToolParameter = {
+  name: string;
+  label: string;
+  type: "string" | "number" | "boolean" | "enum" | "path" | "list";
+  default?: unknown;
+  options?: string[];
+  description?: string;
+};
+
+export type ToolRecord = {
+  id: string;
+  name: string;
+  phase: string;
+  depends_on: string[];
+  kind: "builtin_http" | "subprocess" | "plugin";
+  default_enabled: boolean;
+  installed: boolean;
+  binary_path: string;
+  version: string;
+  install_hint: string;
+  parameters: ToolParameter[];
+  last_run?: ToolRun;
+};
+
+export type PluginRecord = {
+  id: string;
+  name: string;
+  binary: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LLMModelsResponse = {
+  models: string[];
+};
+
+export type EffectiveConfig = {
+  database: { session_dir: string };
+  server: { host: string; port: number; auth_enabled: boolean };
+  llm: { enabled: boolean; configured: boolean; provider: string; base_url: string; model: string; api_key_set: boolean; max_tokens: number; temperature: number };
+  scan: Record<string, unknown>;
+  cve: Record<string, unknown>;
+  tools: Record<string, string>;
+  plugins: string[];
+  runtime: Record<string, string>;
 };
 
 export type ScanEventType =
@@ -227,6 +310,39 @@ export function listToolRuns(sessionID: string) {
   return api<ToolRun[]>(`/api/sessions/${sessionID}/tool-runs`);
 }
 
+export function listTools(sessionID?: string) {
+  const suffix = sessionID ? `?session_id=${encodeURIComponent(sessionID)}` : "";
+  return api<ToolRecord[]>(`/api/tools${suffix}`);
+}
+
+export function effectiveConfig() {
+  return api<EffectiveConfig>("/api/config/effective");
+}
+
+export function listScanProfiles() {
+  return api<ScanProfileRecord[]>("/api/scan-profiles");
+}
+
+export function createScanProfile(payload: { name: string; description?: string; request: StartScanRequest }) {
+  return api<ScanProfileRecord>("/api/scan-profiles", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function deleteScanProfile(profileID: string) {
+  return api<{ deleted: string }>(`/api/scan-profiles/${profileID}`, { method: "DELETE" });
+}
+
+export function listPlugins(sessionID: string) {
+  return api<PluginRecord[]>(`/api/sessions/${sessionID}/plugins`);
+}
+
+export function createPlugin(sessionID: string, payload: { name?: string; binary: string; enabled?: boolean }) {
+  return api<PluginRecord>(`/api/sessions/${sessionID}/plugins`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updatePlugin(sessionID: string, pluginID: string, payload: { name?: string; binary?: string; enabled?: boolean }) {
+  return api<PluginRecord>(`/api/sessions/${sessionID}/plugins/${pluginID}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
 export function listVectors(sessionID: string) {
   return api<AttackVector[]>(`/api/sessions/${sessionID}/vectors`);
 }
@@ -248,6 +364,10 @@ export function llmChat(sessionID: string, message: string) {
     method: "POST",
     body: JSON.stringify({ message }),
   });
+}
+
+export function listLLMModels(baseURL: string) {
+  return api<LLMModelsResponse>("/api/llm/models", { method: "POST", body: JSON.stringify({ base_url: baseURL }) });
 }
 
 export async function getReport(sessionID: string, format: string, mode: string) {

@@ -1,0 +1,1 @@
+-- SQLite cannot drop columns without table rebuild; keep operator-console columns.

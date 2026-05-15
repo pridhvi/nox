@@ -80,15 +80,17 @@ must be carried forward:
   persisted conversation/tool-call audit trails.
 - **API:** Health, tools, sessions, targets, findings, tool runs, stats, scan
   start/status/stop, vectors, CVEs, reports, LLM history/analysis/chat, session
-  deletion, optional API-key auth, and scan lifecycle WebSocket event stream.
+  deletion, scan profiles, LLM model probing, optional API-key auth, and scan
+  lifecycle WebSocket event stream.
 - **WebSocket progress:** Current endpoint is `GET /api/scan/{id}/events` with
   bounded event replay. The spec route `WS /ws/scan/{id}` is also available as
   a compatibility alias.
 - **Reporting and UI:** Markdown/HTML/paginated-PDF report generation,
   CLI/API/UI report access, and React/Vite dashboard, Recharts severity chart,
-  Cytoscape attack graph, finding evidence/edit workflow, LLM, and report pages
-  backed by real API data. Built assets are embedded into
-  `internal/api/web/dist`.
+  Cytoscape attack graph, sortable finding/CVE tables, bulk finding workflow,
+  finding evidence/edit workflow, validated plugin registration, LLM model
+  probing, and report pages backed by real API data. Built assets are embedded
+  into `internal/api/web/dist`.
 - **Verification:** `go test ./...` and `npm run build` pass for the current
   working set.
 
@@ -927,10 +929,42 @@ must be carried forward:
 ### Implemented Work
 
 - React/Vite app exists.
+- Implemented operator shell with global session selection that drives
+  dashboard, findings, tools, runs, graph, CVEs, LLM, and report pages.
+- Implemented Scan Builder `/scan`:
+  - target, name, mode, and out-of-scope controls
+  - built-in and API-backed saved scan profiles
+  - phase cards with short descriptions
+  - phase-aware tool selection with status icons for built-in, installed, and
+    missing subprocess tools
+  - automatic dependency selection when dependent tools are enabled
+  - start guard requiring at least one runnable selected tool
+  - concurrency, per-tool concurrency, timeout, delay, and rate-limit controls
+  - hover help for scan mode and runtime fields
+  - LLM base URL controls, connection probing, and discovered model selection
+  - per-tool parameter editors backed by API metadata and backend validation
+- Implemented Tools `/tools` and `/sessions/:id/tools`:
+  - structured tool inventory
+  - installed/missing status
+  - configured binary path and version detection
+  - phase, adapter kind, dependencies, install hints, and last run status
+  - session-scoped plugin registration and enable/disable controls
+  - plugin binary validation that rejects random text, directories, missing
+    executables, and non-executable paths before registration
+- Implemented Tool Runs `/runs` and `/sessions/:id/runs`:
+  - per-session tool run table
+  - stdout/stderr/raw argument detail view
+- Implemented Settings `/settings` for effective local config visibility without
+  exposing API-key values.
+- Added lazy-loaded route chunks for graph, chart, report, LLM, findings, tools,
+  runs, CVEs, settings, and scan-builder surfaces.
+- Added route-level error recovery so transient route chunk failures do not
+  leave the operator console as a blank white page.
+- Added frontend unit tests for route scoping and scan-profile payload helpers.
 - Dashboard lists sessions, stats, findings, and live progress.
-- Implemented Dashboard `/`:
+- Implemented Dashboard `/` and `/sessions/:id`:
   - active/recent sessions
-  - quick-start scan form
+  - selected-session stats
   - global finding stats
 - Implemented Session Detail `/sessions/:id` using the dashboard/detail data
   surface:
@@ -942,16 +976,23 @@ must be carried forward:
   - severity distribution chart
   - tool coverage matrix
 - Implemented Attack Graph `/sessions/:id/graph`:
-  - interactive Cytoscape graph plus target, finding, and vector columns
+  - interactive Cytoscape graph plus target, finding, technology, and vector
+    columns
   - target, technology, finding, and attack vector nodes
   - severity/category filters
+  - weighted severity styling, attack/finding edge styling, legend, and summary
+    counters
 - Implemented Findings `/sessions/:id/findings`:
-  - findings table
+  - sortable findings table
+  - bulk severity/remediation workflow for selected findings
   - persisted evidence preview
   - raw HTTP request/response expansion
   - persisted severity/remediation edits
   - severity/type/tool/OWASP/CVE/exploit filters
   - CVE matches
+- Implemented CVEs `/sessions/:id/cves`:
+  - sortable CVE table
+  - CVSS, source, patch, exploit, and description columns
 - Implemented LLM Chat `/sessions/:id/llm`:
   - conversation history
   - visible LLM tool calls
@@ -963,10 +1004,11 @@ must be carried forward:
 ### Spec Alignment Follow-ups
 
 - Keep current dashboard layout and evolve it into the spec dashboard.
+- Continue improving plugin editing ergonomics after validated registration.
 - Do not add decorative landing pages; the first screen remains the app.
-- Suggested LLM prompts and richer bulk finding actions remain later UI polish;
-  routes, real API data, graph rendering, details panels, evidence expansion,
-  and edit workflows are in place.
+- Suggested LLM prompts remain later UI polish; routes, real API data, graph
+  rendering, details panels, evidence expansion, and edit workflows are in
+  place.
 
 ### Acceptance Criteria
 
@@ -1049,7 +1091,9 @@ must be carried forward:
   - report generation
   - config defaults and env overrides
 - Adapter parser tests cover the current external adapter slice without
-  requiring scanner binaries.
+  requiring scanner binaries, including messy scanner output, negative SQLMap
+  output, Dalfox text fallback output, ignored 404 FFUF rows, service-less Nmap
+  ports, and normalized raw evidence retention.
 - API tests cover core REST endpoints, expanded vector/CVE/report/LLM endpoints,
   auth behavior, scan stop, and WebSocket lifecycle replay.
 - Frontend build verification is part of CI.

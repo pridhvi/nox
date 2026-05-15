@@ -122,11 +122,24 @@ func (s *Store) InsertSession(ctx context.Context, session models.Session) error
 	if err != nil {
 		return err
 	}
+	tools, err := json.Marshal(session.EnabledTools)
+	if err != nil {
+		return err
+	}
+	parameters, err := json.Marshal(session.ToolParameters)
+	if err != nil {
+		return err
+	}
+	runnerOptions, err := json.Marshal(session.RunnerOptions)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO sessions (
 	id, name, status, mode, target_input, in_scope, out_of_scope, enabled_phases,
-	llm_model, llm_base_url, target_count, finding_count, started_at, completed_at, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	enabled_tools, tool_parameters, runner_options, llm_model, llm_base_url,
+	target_count, finding_count, started_at, completed_at, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.ID,
 		session.Name,
 		string(session.Status),
@@ -135,6 +148,9 @@ INSERT INTO sessions (
 		string(inScope),
 		string(outOfScope),
 		string(phases),
+		string(tools),
+		string(parameters),
+		string(runnerOptions),
 		session.LLMModel,
 		session.LLMBaseURL,
 		session.TargetCount,
@@ -523,7 +539,8 @@ WHERE id = ?`,
 func (s *Store) GetSession(ctx context.Context) (models.Session, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT id, name, status, mode, target_input, in_scope, out_of_scope, enabled_phases,
-       llm_model, llm_base_url, target_count, finding_count, started_at, completed_at, created_at
+       enabled_tools, tool_parameters, runner_options, llm_model, llm_base_url,
+       target_count, finding_count, started_at, completed_at, created_at
 FROM sessions
 ORDER BY created_at ASC
 LIMIT 1`)
@@ -945,7 +962,7 @@ type rowScanner interface {
 
 func scanSession(row rowScanner) (models.Session, error) {
 	var session models.Session
-	var inScope, outOfScope, phases string
+	var inScope, outOfScope, phases, tools, parameters, runnerOptions string
 	var startedAt, completedAt sql.NullString
 	var createdAt string
 	err := row.Scan(
@@ -957,6 +974,9 @@ func scanSession(row rowScanner) (models.Session, error) {
 		&inScope,
 		&outOfScope,
 		&phases,
+		&tools,
+		&parameters,
+		&runnerOptions,
 		&session.LLMModel,
 		&session.LLMBaseURL,
 		&session.TargetCount,
@@ -978,6 +998,15 @@ func scanSession(row rowScanner) (models.Session, error) {
 		return models.Session{}, err
 	}
 	if err := json.Unmarshal([]byte(phases), &session.EnabledPhases); err != nil {
+		return models.Session{}, err
+	}
+	if err := json.Unmarshal([]byte(firstJSON(tools, "[]")), &session.EnabledTools); err != nil {
+		return models.Session{}, err
+	}
+	if err := json.Unmarshal([]byte(firstJSON(parameters, "{}")), &session.ToolParameters); err != nil {
+		return models.Session{}, err
+	}
+	if err := json.Unmarshal([]byte(firstJSON(runnerOptions, "{}")), &session.RunnerOptions); err != nil {
 		return models.Session{}, err
 	}
 	created, err := parseTime(createdAt)
@@ -1270,6 +1299,13 @@ func formatTimePtr(t *time.Time) any {
 func nullableString(value string) any {
 	if value == "" {
 		return nil
+	}
+	return value
+}
+
+func firstJSON(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
 	}
 	return value
 }

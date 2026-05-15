@@ -44,8 +44,8 @@ func runScan(args []string) error {
 		selectedLLMModel = ""
 	}
 	selectedPhases := splitCSV(firstNonEmpty(*phases, strings.Join(cfg.Scan.Phases, ",")))
-	_ = splitCSV(firstNonEmpty(*tools, strings.Join(cfg.Scan.Tools, ",")))
-	_ = firstNonEmpty(*rateLimit, cfg.Scan.RateLimit)
+	selectedTools := splitCSV(firstNonEmpty(*tools, strings.Join(cfg.Scan.Tools, ",")))
+	selectedRateLimit := firstNonEmpty(*rateLimit, cfg.Scan.RateLimit)
 
 	session, initialTarget, err := engine.NewPendingSession(engine.NewSessionInput{
 		Target:        *target,
@@ -53,6 +53,8 @@ func runScan(args []string) error {
 		Mode:          models.ScanMode(selectedMode),
 		OutOfScope:    splitCSV(*outOfScope),
 		EnabledPhases: selectedPhases,
+		EnabledTools:  selectedTools,
+		RunnerOptions: models.ScanRunnerOptions{Concurrency: *concurrency, PerToolConcurrency: 1, RateLimit: selectedRateLimit},
 		LLMModel:      selectedLLMModel,
 		LLMBaseURL:    selectedLLMURL,
 	})

@@ -265,6 +265,51 @@ func TestRunnerPropagatesPriorFindingsAndTechnologies(t *testing.T) {
 	}
 }
 
+func TestRunnerFiltersSelectedToolsAndPassesToolParameters(t *testing.T) {
+	ctx := context.Background()
+	session, store := testRunnerStore(t, ctx)
+	session.EnabledTools = []string{"selected"}
+	session.ToolParameters = map[string]map[string]any{
+		"selected": {"level": float64(3), "extra_args": []any{"--safe"}},
+	}
+	ran := map[string]bool{}
+	var selectedInput adapters.AdapterInput
+	runner := NewRunnerWithOptions(store, []adapters.Adapter{
+		fakeRunnerAdapter{
+			id: "dependency",
+			runFunc: func(ctx context.Context, input adapters.AdapterInput) (adapters.AdapterOutput, error) {
+				ran["dependency"] = true
+				return adapters.AdapterOutput{ToolRun: models.ToolRun{ID: models.NewID(), SessionID: input.Session.ID, TargetID: input.Target.ID, ToolID: "dependency", StartedAt: time.Now().UTC()}}, nil
+			},
+		},
+		fakeRunnerAdapter{
+			id:   "selected",
+			deps: []string{"dependency"},
+			runFunc: func(ctx context.Context, input adapters.AdapterInput) (adapters.AdapterOutput, error) {
+				ran["selected"] = true
+				selectedInput = input
+				return adapters.AdapterOutput{ToolRun: models.ToolRun{ID: models.NewID(), SessionID: input.Session.ID, TargetID: input.Target.ID, ToolID: "selected", StartedAt: time.Now().UTC()}}, nil
+			},
+		},
+		fakeRunnerAdapter{
+			id: "unselected",
+			runFunc: func(ctx context.Context, input adapters.AdapterInput) (adapters.AdapterOutput, error) {
+				ran["unselected"] = true
+				return adapters.AdapterOutput{ToolRun: models.ToolRun{ID: models.NewID(), SessionID: input.Session.ID, TargetID: input.Target.ID, ToolID: "unselected", StartedAt: time.Now().UTC()}}, nil
+			},
+		},
+	}, nil, RunnerOptions{GlobalConcurrency: 2, PerToolConcurrency: 1})
+	if err := runner.Run(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	if !ran["dependency"] || !ran["selected"] || ran["unselected"] {
+		t.Fatalf("unexpected selected tool execution: %#v", ran)
+	}
+	if selectedInput.ToolParameters["level"] != float64(3) {
+		t.Fatalf("expected selected tool parameters, got %#v", selectedInput.ToolParameters)
+	}
+}
+
 type fakeRunnerAdapter struct {
 	id      string
 	err     error

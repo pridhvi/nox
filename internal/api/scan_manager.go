@@ -61,7 +61,7 @@ func (m *ScanManager) Start(session models.Session) {
 			return
 		}
 		defer store.Close()
-		runner := engine.NewRunnerWithHTTPClient(store, m.httpClient)
+		runner := engine.NewRunnerWithOptions(store, engine.DefaultSafeAdapters(), m.httpClient, runnerOptionsFromSession(session))
 		runner.OnEvent(m.Publish)
 		if err := runner.Run(ctx, session); err != nil {
 			slog.Error("async scan failed", "session_id", session.ID, "error", err)
@@ -89,6 +89,16 @@ func (m *ScanManager) Stop(sessionID string) bool {
 
 func (m *ScanManager) Publish(event engine.ScanEvent) {
 	m.events.publish(event)
+}
+
+func runnerOptionsFromSession(session models.Session) engine.RunnerOptions {
+	options := session.RunnerOptions
+	return engine.RunnerOptions{
+		GlobalConcurrency:  options.Concurrency,
+		PerToolConcurrency: options.PerToolConcurrency,
+		ToolDelay:          time.Duration(options.ToolDelayMS) * time.Millisecond,
+		ToolTimeout:        time.Duration(options.ToolTimeoutSeconds) * time.Second,
+	}
 }
 
 func (m *ScanManager) Subscribe(sessionID string) (<-chan engine.ScanEvent, func()) {

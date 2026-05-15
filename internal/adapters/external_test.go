@@ -40,10 +40,10 @@ func (s fakeScope) IsInScope(raw string) (bool, string) {
 }
 
 func TestParseNmapFindings(t *testing.T) {
-	raw := `<nmaprun><host><ports><port protocol="tcp" portid="443"><state state="open"/><service name="https" product="nginx" version="1.25"/></port></ports></host></nmaprun>`
+	raw := `<nmaprun><host><ports><port protocol="tcp" portid="80"><state state="closed"/></port><port protocol="tcp" portid="443"><state state="open"/><service name="https" product="nginx" version="1.25"/></port><port protocol="tcp" portid="8443"><state state="open"/></port></ports></host></nmaprun>`
 	findings := parseNmapFindings(testExternalInput(), raw)
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d", len(findings))
+	if len(findings) != 2 {
+		t.Fatalf("expected 2 findings, got %d", len(findings))
 	}
 	if findings[0].ToolID != "nmap" || findings[0].Type != models.FindingTypeExposure || findings[0].Severity != models.SeverityInfo {
 		t.Fatalf("unexpected finding: %#v", findings[0])
@@ -51,16 +51,22 @@ func TestParseNmapFindings(t *testing.T) {
 	if findings[0].EvidenceRaw == "" || findings[0].EvidenceNormalized == "" {
 		t.Fatal("expected raw and normalized evidence")
 	}
+	if !testHasTag(findings[1].Tags, "unknown") {
+		t.Fatalf("expected unknown service tag for service-less open port, got %#v", findings[1].Tags)
+	}
 }
 
 func TestParseFFUFFindings(t *testing.T) {
-	raw := `{"results":[{"url":"https://example.com/admin","status":200,"length":42,"words":4,"lines":1}]}`
+	raw := `{"results":[{"url":"https://example.com/admin","status":200,"length":42,"words":4,"lines":1},{"url":"https://example.com/missing","status":404,"length":9},{"url":"https://example.com/login","status":302,"redirectlocation":"https://example.com/auth"}]}`
 	findings := parseFFUFFindings(testExternalInput(), raw)
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d", len(findings))
+	if len(findings) != 2 {
+		t.Fatalf("expected 2 findings, got %d", len(findings))
 	}
 	if findings[0].ToolID != "ffuf" || findings[0].Severity != models.SeverityLow {
 		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+	if findings[1].Severity != models.SeverityInfo || findings[1].EvidenceNormalized == "" {
+		t.Fatalf("expected non-admin redirect discovery with normalized evidence, got %#v", findings[1])
 	}
 }
 
@@ -78,6 +84,14 @@ q parameter is vulnerable.`
 	}
 }
 
+func TestParseSQLMapFindingsIgnoresNegativeOutput(t *testing.T) {
+	raw := `all tested parameters do not appear to be injectable`
+	findings := parseSQLMapFindings(testExternalInput(), raw)
+	if len(findings) != 0 {
+		t.Fatalf("expected no findings for negative sqlmap output, got %d", len(findings))
+	}
+}
+
 func TestParseDalfoxFindings(t *testing.T) {
 	raw := `[{"type":"reflected","param":"q","payload":"<script>alert(1)</script>","poc":"https://example.com/search?q=%3Cscript%3E"}]`
 	findings := parseDalfoxFindings(testExternalInput(), raw)
@@ -85,6 +99,16 @@ func TestParseDalfoxFindings(t *testing.T) {
 		t.Fatalf("expected 1 finding, got %d", len(findings))
 	}
 	if findings[0].ToolID != "dalfox" || findings[0].Parameter != "q" || findings[0].Severity != models.SeverityHigh {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+}
+
+func TestParseDalfoxTextFindings(t *testing.T) {
+	findings := parseDalfoxTextFindings(testExternalInput(), "Verified XSS vulnerability on parameter q")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "dalfox" || findings[0].Parameter != "q" || findings[0].EvidenceRaw == "" {
 		t.Fatalf("unexpected finding: %#v", findings[0])
 	}
 }

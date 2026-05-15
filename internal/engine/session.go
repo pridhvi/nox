@@ -13,6 +13,9 @@ type NewSessionInput struct {
 	Mode          models.ScanMode
 	OutOfScope    []string
 	EnabledPhases []string
+	EnabledTools  []string
+	ToolParameters map[string]map[string]any
+	RunnerOptions  models.ScanRunnerOptions
 	LLMModel      string
 	LLMBaseURL    string
 }
@@ -39,6 +42,9 @@ func NewPendingSession(input NewSessionInput) (models.Session, models.Target, er
 		InScope:       []string{input.Target},
 		OutOfScope:    input.OutOfScope,
 		EnabledPhases: input.EnabledPhases,
+		EnabledTools:  input.EnabledTools,
+		ToolParameters: input.ToolParameters,
+		RunnerOptions: input.RunnerOptions,
 		LLMModel:      input.LLMModel,
 		LLMBaseURL:    input.LLMBaseURL,
 		CreatedAt:     time.Now().UTC(),
