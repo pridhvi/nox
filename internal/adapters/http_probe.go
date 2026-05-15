@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 type HTTPProbe struct{}

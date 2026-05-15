@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
 	_ "modernc.org/sqlite"
 )
 
@@ -44,6 +44,16 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, version).Scan(&got); err != nil {
 			t.Fatalf("expected migration %s: %v", version, err)
 		}
+	}
+}
+
+func TestDefaultSessionsDirIsAbsoluteStatePath(t *testing.T) {
+	dir := DefaultSessionsDir()
+	if !filepath.IsAbs(dir) {
+		t.Fatalf("expected absolute default sessions dir, got %q", dir)
+	}
+	if filepath.Base(dir) != "sessions" || filepath.Base(filepath.Dir(dir)) != ".nox" {
+		t.Fatalf("expected $HOME/.nox/sessions style path, got %q", dir)
 	}
 }
 

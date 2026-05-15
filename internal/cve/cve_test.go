@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 type countingSource struct {

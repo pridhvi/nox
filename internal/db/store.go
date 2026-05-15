@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
 	_ "modernc.org/sqlite"
 )
 
@@ -45,7 +45,11 @@ type FindingFilter struct {
 }
 
 func DefaultSessionsDir() string {
-	return filepath.Join(".nox", "sessions")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".nox", "sessions")
+	}
+	return filepath.Join(home, ".nox", "sessions")
 }
 
 func EnsureSessionsDir(dir string) error {
@@ -60,6 +64,10 @@ func SessionDBPath(dir, sessionID string) (string, error) {
 }
 
 func CreateSessionDB(ctx context.Context, dir string, session models.Session, target models.Target) (SessionRecord, error) {
+	return CreateSessionDBWithTargets(ctx, dir, session, []models.Target{target})
+}
+
+func CreateSessionDBWithTargets(ctx context.Context, dir string, session models.Session, targets []models.Target) (SessionRecord, error) {
 	if err := EnsureSessionsDir(dir); err != nil {
 		return SessionRecord{}, err
 	}
@@ -75,13 +83,15 @@ func CreateSessionDB(ctx context.Context, dir string, session models.Session, ta
 	if err := store.InsertSession(ctx, session); err != nil {
 		return SessionRecord{}, err
 	}
-	if err := store.InsertTarget(ctx, target); err != nil {
-		return SessionRecord{}, err
+	for _, target := range targets {
+		if err := store.InsertTarget(ctx, target); err != nil {
+			return SessionRecord{}, err
+		}
 	}
 	if err := store.UpdateSessionCounts(ctx, session.ID); err != nil {
 		return SessionRecord{}, err
 	}
-	session.TargetCount = 1
+	session.TargetCount = len(targets)
 	return SessionRecord{Session: session, DBPath: path}, nil
 }
 

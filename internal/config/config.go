@@ -65,6 +65,10 @@ func DefaultPath() string {
 }
 
 func Default() Config {
+	sessionDir := filepath.Join(".nox", "sessions")
+	if home, err := os.UserHomeDir(); err == nil {
+		sessionDir = filepath.Join(home, ".nox", "sessions")
+	}
 	return Config{
 		LLM: LLMConfig{
 			Provider:    "openai-compatible",
@@ -75,8 +79,8 @@ func Default() Config {
 			Temperature: 0.2,
 			Enabled:     false,
 		},
-		Database: DatabaseConfig{SessionDir: filepath.Join(".nox", "sessions")},
-		Server:   ServerConfig{Host: "127.0.0.1", Port: 8080},
+		Database: DatabaseConfig{SessionDir: sessionDir},
+		Server:   ServerConfig{Host: "127.0.0.1", Port: 6767},
 		Scan:     ScanConfig{Mode: "active", Concurrency: 4},
 		CVE:      CVEConfig{EnableRemote: false, CacheTTL: "24h", Sources: []string{"embedded"}},
 		Tools:    map[string]string{},
@@ -111,7 +115,7 @@ func Load(path string) (Config, error) {
 	cfg.LLM.MaxTokens = v.GetInt("llm.max_tokens")
 	cfg.LLM.Temperature = v.GetFloat64("llm.temperature")
 	cfg.LLM.Enabled = v.GetBool("llm.enabled")
-	cfg.Database.SessionDir = v.GetString("database.session_dir")
+	cfg.Database.SessionDir = resolvePath(v.GetString("database.session_dir"), filepath.Dir(path))
 	cfg.Server.Host = v.GetString("server.host")
 	cfg.Server.Port = v.GetInt("server.port")
 	cfg.Server.APIKey = v.GetString("server.api_key")
@@ -145,7 +149,7 @@ func ApplyEnv(cfg Config) Config {
 	cfg.LLM.BaseURL = first(os.Getenv("NOX_LLM_BASE_URL"), cfg.LLM.BaseURL)
 	cfg.LLM.APIKey = first(os.Getenv("NOX_LLM_API_KEY"), cfg.LLM.APIKey)
 	cfg.LLM.Model = first(os.Getenv("NOX_LLM_MODEL"), cfg.LLM.Model)
-	cfg.Database.SessionDir = first(os.Getenv("NOX_SESSION_DIR"), cfg.Database.SessionDir)
+	cfg.Database.SessionDir = absolutePath(first(os.Getenv("NOX_SESSION_DIR"), cfg.Database.SessionDir))
 	cfg.Server.APIKey = first(os.Getenv("NOX_API_KEY"), cfg.Server.APIKey)
 	cfg.CVE.OfflinePath = first(os.Getenv("NOX_CVE_OFFLINE_PATH"), cfg.CVE.OfflinePath)
 	cfg.CVE.ExploitDBPath = first(os.Getenv("NOX_CVE_EXPLOITDB_PATH"), cfg.CVE.ExploitDBPath)
@@ -164,6 +168,45 @@ func ApplyEnv(cfg Config) Config {
 		}
 	}
 	return cfg
+}
+
+func resolvePath(value, baseDir string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	value = expandHome(value)
+	if filepath.IsAbs(value) {
+		return filepath.Clean(value)
+	}
+	return filepath.Clean(filepath.Join(baseDir, value))
+}
+
+func absolutePath(value string) string {
+	value = strings.TrimSpace(value)
+	value = expandHome(value)
+	if value == "" || filepath.IsAbs(value) {
+		return filepath.Clean(value)
+	}
+	abs, err := filepath.Abs(value)
+	if err != nil {
+		return filepath.Clean(value)
+	}
+	return abs
+}
+
+func expandHome(value string) string {
+	if value == "~" {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return home
+		}
+	}
+	if strings.HasPrefix(value, "~/") {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, strings.TrimPrefix(value, "~/"))
+		}
+	}
+	return value
 }
 
 func (c Config) YAML() string {

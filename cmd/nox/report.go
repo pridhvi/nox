@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kanini/nox/internal/config"
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/models"
-	reportgen "github.com/kanini/nox/internal/report"
+	"github.com/pridhvi/nox/internal/config"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/models"
+	reportgen "github.com/pridhvi/nox/internal/report"
 )
 
 func runReport(args []string) error {

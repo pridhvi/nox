@@ -15,11 +15,47 @@ func TestWriteDefaultAndLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Server.Host != "127.0.0.1" || cfg.Server.Port != 8080 {
+	if cfg.Server.Host != "127.0.0.1" || cfg.Server.Port != 6767 {
 		t.Fatalf("unexpected server defaults: %#v", cfg.Server)
+	}
+	if !filepath.IsAbs(cfg.Database.SessionDir) {
+		t.Fatalf("expected absolute session dir, got %q", cfg.Database.SessionDir)
 	}
 	if cfg.LLM.Model != "llama3:8b" {
 		t.Fatalf("unexpected LLM default: %#v", cfg.LLM)
+	}
+}
+
+func TestRelativeSessionDirResolvesFromConfigDir(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("database:\n  session_dir: data/sessions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "data", "sessions")
+	if cfg.Database.SessionDir != want {
+		t.Fatalf("expected %q, got %q", want, cfg.Database.SessionDir)
+	}
+}
+
+func TestTildeSessionDirResolvesToHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("database:\n  session_dir: ~/.nox/sessions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".nox", "sessions")
+	if cfg.Database.SessionDir != want {
+		t.Fatalf("expected %q, got %q", want, cfg.Database.SessionDir)
 	}
 }
 

@@ -9,20 +9,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/models"
+	openai "github.com/sashabaranov/go-openai"
 )
-
-type ToolDefinition struct {
-	Type     string       `json:"type"`
-	Function ToolFunction `json:"function"`
-}
-
-type ToolFunction struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
-}
 
 type ToolRunner struct {
 	store Store
@@ -32,8 +22,8 @@ func NewToolRunner(store Store) ToolRunner {
 	return ToolRunner{store: store}
 }
 
-func ToolDefinitions() []ToolDefinition {
-	return []ToolDefinition{
+func ToolDefinitions() []openai.Tool {
+	return []openai.Tool{
 		objectTool("request_scan", "Request a follow-up scan for an in-scope target. This records a constrained request only; scans still require explicit API or CLI execution.", map[string]any{
 			"target": map[string]any{"type": "string"},
 			"tool":   map[string]any{"type": "string"},
@@ -53,7 +43,7 @@ func ToolDefinitions() []ToolDefinition {
 	}
 }
 
-func objectTool(name, description string, properties map[string]any, required []string) ToolDefinition {
+func objectTool(name, description string, properties map[string]any, required []string) openai.Tool {
 	params := map[string]any{
 		"type":       "object",
 		"properties": properties,
@@ -61,9 +51,9 @@ func objectTool(name, description string, properties map[string]any, required []
 	if len(required) > 0 {
 		params["required"] = required
 	}
-	return ToolDefinition{
-		Type: "function",
-		Function: ToolFunction{
+	return openai.Tool{
+		Type: openai.ToolTypeFunction,
+		Function: &openai.FunctionDefinition{
 			Name:        name,
 			Description: description,
 			Parameters:  params,
@@ -71,18 +61,18 @@ func objectTool(name, description string, properties map[string]any, required []
 	}
 }
 
-func (r ToolRunner) Execute(ctx context.Context, sessionID string, call ChatToolCall) (string, error) {
-	switch call.Name {
+func (r ToolRunner) Execute(ctx context.Context, sessionID string, call openai.ToolCall) (string, error) {
+	switch call.Function.Name {
 	case "request_scan":
-		return r.requestScan(ctx, sessionID, call.Arguments)
+		return r.requestScan(ctx, sessionID, call.Function.Arguments)
 	case "lookup_cve":
-		return r.lookupCVE(ctx, sessionID, call.Arguments)
+		return r.lookupCVE(ctx, sessionID, call.Function.Arguments)
 	case "search_cves_for_technology":
-		return r.searchCVEsForTechnology(ctx, sessionID, call.Arguments)
+		return r.searchCVEsForTechnology(ctx, sessionID, call.Function.Arguments)
 	case "get_session_findings":
-		return r.getSessionFindings(ctx, sessionID, call.Arguments)
+		return r.getSessionFindings(ctx, sessionID, call.Function.Arguments)
 	default:
-		return "", fmt.Errorf("unsupported tool %q", call.Name)
+		return "", fmt.Errorf("unsupported tool %q", call.Function.Name)
 	}
 }
 

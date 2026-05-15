@@ -26,7 +26,7 @@ func (t FindingType) Valid() bool {
 
 func (s SessionStatus) Valid() bool {
 	switch s {
-	case SessionStatusPending, SessionStatusRunning, SessionStatusCompleted, SessionStatusFailed, SessionStatusCancelled:
+	case SessionStatusPending, SessionStatusRunning, SessionStatusPaused, SessionStatusCompleted, SessionStatusFailed, SessionStatusCancelled:
 		return true
 	default:
 		return false

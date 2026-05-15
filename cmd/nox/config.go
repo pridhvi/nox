@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/kanini/nox/internal/config"
+	"github.com/pridhvi/nox/internal/config"
 )
 
 func runConfig(args []string) error {

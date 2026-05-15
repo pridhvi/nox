@@ -7,8 +7,8 @@ build:
 ci: test web build compose-config
 
 dev:
-	@echo "Starting Nox API on http://127.0.0.1:8080"
-	go run . serve --host 127.0.0.1 --port 8080
+	@echo "Starting Nox API on http://127.0.0.1:6767"
+	go run . serve --host 127.0.0.1 --port 6767
 
 test:
 	go test ./...

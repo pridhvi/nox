@@ -1,4 +1,4 @@
-export type SessionStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type SessionStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 export type Session = {
   id: string;
@@ -164,6 +164,7 @@ export type SessionStats = {
 
 export type StartScanRequest = {
   target: string;
+  targets?: string[];
   name?: string;
   mode: string;
   out_of_scope?: string[];
@@ -200,6 +201,8 @@ export type ToolParameter = {
 export type ToolRecord = {
   id: string;
   name: string;
+  description: string;
+  homepage_url: string;
   phase: string;
   depends_on: string[];
   kind: "builtin_http" | "subprocess" | "plugin";
@@ -216,6 +219,9 @@ export type PluginRecord = {
   id: string;
   name: string;
   binary: string;
+  phase: string;
+  description: string;
+  homepage_url: string;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -233,6 +239,7 @@ export type EffectiveConfig = {
   cve: Record<string, unknown>;
   tools: Record<string, string>;
   plugins: string[];
+  paths: Record<string, string>;
   runtime: Record<string, string>;
 };
 
@@ -331,16 +338,31 @@ export function deleteScanProfile(profileID: string) {
   return api<{ deleted: string }>(`/api/scan-profiles/${profileID}`, { method: "DELETE" });
 }
 
-export function listPlugins(sessionID: string) {
-  return api<PluginRecord[]>(`/api/sessions/${sessionID}/plugins`);
+export function listPlugins() {
+  return api<PluginRecord[]>("/api/plugins");
 }
 
-export function createPlugin(sessionID: string, payload: { name?: string; binary: string; enabled?: boolean }) {
-  return api<PluginRecord>(`/api/sessions/${sessionID}/plugins`, { method: "POST", body: JSON.stringify(payload) });
+export function createPlugin(payload: { name?: string; binary: string; phase?: string; description?: string; homepage_url?: string; enabled?: boolean }) {
+  return api<PluginRecord>("/api/plugins", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function updatePlugin(sessionID: string, pluginID: string, payload: { name?: string; binary?: string; enabled?: boolean }) {
-  return api<PluginRecord>(`/api/sessions/${sessionID}/plugins/${pluginID}`, { method: "PATCH", body: JSON.stringify(payload) });
+export function updatePlugin(pluginID: string, payload: { name?: string; binary?: string; phase?: string; description?: string; homepage_url?: string; enabled?: boolean }) {
+  return api<PluginRecord>(`/api/plugins/${pluginID}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deletePlugin(pluginID: string) {
+  return api<{ deleted: string }>(`/api/plugins/${pluginID}`, { method: "DELETE" });
+}
+
+export async function uploadPluginBinary(file: File) {
+  const body = new FormData();
+  body.set("binary", file);
+  const response = await fetch("/api/plugins/upload", { method: "POST", body });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(payload.error ?? response.statusText);
+  }
+  return response.json() as Promise<{ binary: string }>;
 }
 
 export function listVectors(sessionID: string) {
@@ -383,6 +405,22 @@ export function startScan(request: StartScanRequest) {
     method: "POST",
     body: JSON.stringify(request),
   });
+}
+
+export function pauseScan(sessionID: string) {
+  return api<{ status: string }>(`/api/scan/${sessionID}/pause`, { method: "POST", body: "{}" });
+}
+
+export function resumeScan(sessionID: string) {
+  return api<{ status: string }>(`/api/scan/${sessionID}/resume`, { method: "POST", body: "{}" });
+}
+
+export function stopScan(sessionID: string) {
+  return api<{ status: string }>(`/api/scan/${sessionID}/stop`, { method: "POST", body: "{}" });
+}
+
+export function deleteSession(sessionID: string) {
+  return api<{ deleted: string }>(`/api/sessions/${sessionID}`, { method: "DELETE" });
 }
 
 export function scanEventsURL(sessionID: string) {

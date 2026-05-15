@@ -16,13 +16,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kanini/nox/internal/adapters"
-	appconfig "github.com/kanini/nox/internal/config"
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/engine"
-	llmintel "github.com/kanini/nox/internal/llm"
-	"github.com/kanini/nox/internal/models"
-	"github.com/kanini/nox/internal/report"
+	"github.com/pridhvi/nox/internal/adapters"
+	appconfig "github.com/pridhvi/nox/internal/config"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/engine"
+	llmintel "github.com/pridhvi/nox/internal/llm"
+	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nox/internal/report"
 )
 
 type Config struct {
@@ -44,10 +44,16 @@ func NewServer(cfg Config) *Server {
 	if cfg.SessionDir == "" {
 		cfg.SessionDir = db.DefaultSessionsDir()
 	}
+	cfg.SessionDir = absolutePath(cfg.SessionDir)
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("NOX_API_KEY")
 	}
-	return &Server{cfg: cfg, scanManager: NewScanManager(cfg.SessionDir, cfg.HTTPClient)}
+	server := &Server{cfg: cfg, scanManager: NewScanManager(cfg.SessionDir, cfg.HTTPClient)}
+	server.scanManager.SetPluginProvider(func() []models.PluginRecord {
+		plugins, _ := server.readGlobalPlugins()
+		return plugins
+	})
+	return server
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -82,6 +88,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/scan-profiles", s.listScanProfiles)
 	mux.HandleFunc("POST /api/scan-profiles", s.createScanProfile)
 	mux.HandleFunc("DELETE /api/scan-profiles/{profile_id}", s.deleteScanProfile)
+	mux.HandleFunc("GET /api/plugins", s.listGlobalPlugins)
+	mux.HandleFunc("POST /api/plugins", s.createGlobalPlugin)
+	mux.HandleFunc("PATCH /api/plugins/{plugin_id}", s.updateGlobalPlugin)
+	mux.HandleFunc("DELETE /api/plugins/{plugin_id}", s.deleteGlobalPlugin)
+	mux.HandleFunc("POST /api/plugins/upload", s.uploadPluginBinary)
 	mux.HandleFunc("POST /api/llm/models", s.llmModels)
 	mux.HandleFunc("GET /api/sessions", s.listSessions)
 	mux.HandleFunc("GET /api/sessions/{id}", s.getSession)
@@ -105,6 +116,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ws/scan/{id}", s.scanEvents)
 	mux.HandleFunc("POST /api/scan/start", s.startScan)
 	mux.HandleFunc("POST /api/scan/{id}/stop", s.stopScan)
+	mux.HandleFunc("POST /api/scan/{id}/pause", s.pauseScan)
+	mux.HandleFunc("POST /api/scan/{id}/resume", s.resumeScan)
 	mux.Handle("/", spaHandler())
 	return s.withAuth(mux)
 }
@@ -179,6 +192,13 @@ func (s *Server) effectiveConfig(w http.ResponseWriter, r *http.Request) {
 		},
 		"tools":   cfg.Tools,
 		"plugins": cfg.Plugins,
+		"paths": map[string]string{
+			"state_dir":         s.stateDir(),
+			"scan_profiles":     s.scanProfilesPath(),
+			"plugin_registry":   s.globalPluginsPath(),
+			"plugin_bin_dir":    s.pluginBinDir(),
+			"session_events_ws": "/api/scan/{id}/events",
+		},
 		"runtime": map[string]string{"goos": runtime.GOOS, "goarch": runtime.GOARCH},
 	})
 }
@@ -195,6 +215,8 @@ type toolParameter struct {
 type toolRecord struct {
 	ID             string          `json:"id"`
 	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	HomepageURL    string          `json:"homepage_url"`
 	Phase          string          `json:"phase"`
 	DependsOn      []string        `json:"depends_on"`
 	Kind           string          `json:"kind"`
@@ -230,6 +252,16 @@ func (s *Server) tools(w http.ResponseWriter, r *http.Request) {
 		}
 		tools = append(tools, record)
 	}
+	for _, plugin := range s.enabledGlobalPlugins() {
+		record := s.toolRecord(adapters.NewConfiguredPlugin(plugin))
+		record.Kind = "plugin"
+		record.Installed = validatePluginBinary(plugin.Binary) == nil
+		record.BinaryPath = plugin.Binary
+		record.Description = plugin.Description
+		record.HomepageURL = plugin.HomepageURL
+		record.InstallHint = firstNonEmpty(plugin.Description, "Global plugin.")
+		tools = append(tools, record)
+	}
 	writeJSON(w, tools)
 }
 
@@ -258,6 +290,8 @@ func (s *Server) toolRecord(adapter adapters.Adapter) toolRecord {
 	return toolRecord{
 		ID:             id,
 		Name:           adapter.Name(),
+		Description:    descriptionForTool(id),
+		HomepageURL:    homepageForTool(id),
 		Phase:          string(adapter.Phase()),
 		DependsOn:      deps,
 		Kind:           kind,
@@ -268,6 +302,25 @@ func (s *Server) toolRecord(adapter adapters.Adapter) toolRecord {
 		InstallHint:    installHintForTool(id, binary),
 		Parameters:     parameters,
 	}
+}
+
+func absolutePath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || filepath.IsAbs(value) {
+		return filepath.Clean(value)
+	}
+	abs, err := filepath.Abs(value)
+	if err != nil {
+		return filepath.Clean(value)
+	}
+	return abs
+}
+
+func (s *Server) stateDir() string {
+	if filepath.Base(s.cfg.SessionDir) == "sessions" {
+		return filepath.Dir(s.cfg.SessionDir)
+	}
+	return s.cfg.SessionDir
 }
 
 func (s *Server) detectToolBinary(toolID, binary string) (string, bool) {
@@ -376,7 +429,7 @@ func (s *Server) deleteScanProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) scanProfilesPath() string {
-	return filepath.Join(s.cfg.SessionDir, "scan-profiles.json")
+	return filepath.Join(s.stateDir(), "scan-profiles.json")
 }
 
 func (s *Server) readScanProfiles() ([]scanProfileRecord, error) {
@@ -399,7 +452,7 @@ func (s *Server) readScanProfiles() ([]scanProfileRecord, error) {
 }
 
 func (s *Server) writeScanProfiles(profiles []scanProfileRecord) error {
-	if err := db.EnsureSessionsDir(s.cfg.SessionDir); err != nil {
+	if err := os.MkdirAll(s.stateDir(), 0o755); err != nil {
 		return err
 	}
 	body, err := json.MarshalIndent(profiles, "", "  ")
@@ -545,9 +598,238 @@ func (s *Server) listPlugins(w http.ResponseWriter, r *http.Request) {
 }
 
 type pluginRequest struct {
-	Name    string `json:"name"`
-	Binary  string `json:"binary"`
-	Enabled *bool  `json:"enabled"`
+	Name        string `json:"name"`
+	Binary      string `json:"binary"`
+	Phase       string `json:"phase"`
+	Description string `json:"description"`
+	HomepageURL string `json:"homepage_url"`
+	Enabled     *bool  `json:"enabled"`
+}
+
+func (s *Server) globalPluginsPath() string {
+	return filepath.Join(s.stateDir(), "plugins.json")
+}
+
+func (s *Server) pluginBinDir() string {
+	return filepath.Join(s.stateDir(), "plugins", "bin")
+}
+
+func (s *Server) listGlobalPlugins(w http.ResponseWriter, r *http.Request) {
+	plugins, err := s.readGlobalPlugins()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, plugins)
+}
+
+func (s *Server) createGlobalPlugin(w http.ResponseWriter, r *http.Request) {
+	var req pluginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	plugin, err := pluginFromRequest(req, models.NewID(), time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	plugins, err := s.readGlobalPlugins()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	plugins = append(plugins, plugin)
+	if err := s.writeGlobalPlugins(plugins); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, plugin)
+}
+
+func (s *Server) updateGlobalPlugin(w http.ResponseWriter, r *http.Request) {
+	plugins, err := s.readGlobalPlugins()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("plugin_id"))
+	for i := range plugins {
+		if plugins[i].ID != id {
+			continue
+		}
+		var req pluginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(req.Name) != "" {
+			plugins[i].Name = strings.TrimSpace(req.Name)
+		}
+		if strings.TrimSpace(req.Binary) != "" {
+			if err := validatePluginBinary(req.Binary); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			plugins[i].Binary = strings.TrimSpace(req.Binary)
+		}
+		if strings.TrimSpace(req.Phase) != "" {
+			if err := validatePluginPhase(req.Phase); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			plugins[i].Phase = strings.TrimSpace(req.Phase)
+		}
+		if req.Description != "" {
+			plugins[i].Description = strings.TrimSpace(req.Description)
+		}
+		if req.HomepageURL != "" {
+			plugins[i].HomepageURL = strings.TrimSpace(req.HomepageURL)
+		}
+		if req.Enabled != nil {
+			plugins[i].Enabled = *req.Enabled
+		}
+		plugins[i].UpdatedAt = time.Now().UTC()
+		if err := s.writeGlobalPlugins(plugins); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, plugins[i])
+		return
+	}
+	writeDBError(w, db.ErrNotFound)
+}
+
+func (s *Server) deleteGlobalPlugin(w http.ResponseWriter, r *http.Request) {
+	plugins, err := s.readGlobalPlugins()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("plugin_id"))
+	next := plugins[:0]
+	deleted := false
+	for _, plugin := range plugins {
+		if plugin.ID == id {
+			deleted = true
+			continue
+		}
+		next = append(next, plugin)
+	}
+	if !deleted {
+		writeDBError(w, db.ErrNotFound)
+		return
+	}
+	if err := s.writeGlobalPlugins(next); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]string{"deleted": id})
+}
+
+func (s *Server) uploadPluginBinary(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	file, header, err := r.FormFile("binary")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	defer file.Close()
+	if err := os.MkdirAll(s.pluginBinDir(), 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	name := filepath.Base(header.Filename)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = "plugin-" + models.NewID()
+	}
+	path := filepath.Join(s.pluginBinDir(), name)
+	out, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, file); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]string{"binary": path})
+}
+
+func (s *Server) readGlobalPlugins() ([]models.PluginRecord, error) {
+	body, err := os.ReadFile(s.globalPluginsPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return []models.PluginRecord{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var plugins []models.PluginRecord
+	if err := json.Unmarshal(body, &plugins); err != nil {
+		return nil, err
+	}
+	if plugins == nil {
+		plugins = []models.PluginRecord{}
+	}
+	return plugins, nil
+}
+
+func (s *Server) writeGlobalPlugins(plugins []models.PluginRecord) error {
+	if err := os.MkdirAll(s.stateDir(), 0o755); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(plugins, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.globalPluginsPath(), body, 0o600)
+}
+
+func (s *Server) enabledGlobalPlugins() []models.PluginRecord {
+	plugins, _ := s.readGlobalPlugins()
+	var out []models.PluginRecord
+	for _, plugin := range plugins {
+		if plugin.Enabled {
+			out = append(out, plugin)
+		}
+	}
+	return out
+}
+
+func pluginFromRequest(req pluginRequest, id string, now time.Time) (models.PluginRecord, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return models.PluginRecord{}, fmt.Errorf("plugin name is required")
+	}
+	binary := strings.TrimSpace(req.Binary)
+	if err := validatePluginBinary(binary); err != nil {
+		return models.PluginRecord{}, err
+	}
+	phase := strings.TrimSpace(req.Phase)
+	if phase == "" {
+		phase = string(adapters.PhaseVulnScan)
+	}
+	if err := validatePluginPhase(phase); err != nil {
+		return models.PluginRecord{}, err
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	return models.PluginRecord{ID: id, Name: name, Binary: binary, Phase: phase, Description: strings.TrimSpace(req.Description), HomepageURL: strings.TrimSpace(req.HomepageURL), Enabled: enabled, CreatedAt: now, UpdatedAt: now}, nil
+}
+
+func validatePluginPhase(phase string) error {
+	switch adapters.Phase(strings.TrimSpace(phase)) {
+	case adapters.PhaseRecon, adapters.PhaseFingerprint, adapters.PhaseEnumerate, adapters.PhaseVulnScan:
+		return nil
+	default:
+		return fmt.Errorf("unsupported plugin phase %q", phase)
+	}
 }
 
 func (s *Server) upsertPlugin(w http.ResponseWriter, r *http.Request) {
@@ -910,6 +1192,7 @@ func (s *Server) runLLM(w http.ResponseWriter, r *http.Request, prompt string) {
 
 type startScanRequest struct {
 	Target             string                    `json:"target"`
+	Targets            []string                  `json:"targets"`
 	Name               string                    `json:"name"`
 	Mode               models.ScanMode           `json:"mode"`
 	OutOfScope         []string                  `json:"out_of_scope"`
@@ -932,6 +1215,9 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Target = strings.TrimSpace(req.Target)
+	if len(req.Targets) > 0 {
+		req.Target = strings.Join(req.Targets, "\n")
+	}
 	if err := validateTools(req.Tools); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -940,7 +1226,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	session, target, err := engine.NewPendingSession(engine.NewSessionInput{
+	session, targets, err := engine.NewPendingSessionWithTargets(engine.NewSessionInput{
 		Target:         req.Target,
 		Name:           req.Name,
 		Mode:           req.Mode,
@@ -962,7 +1248,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	record, err := db.CreateSessionDB(r.Context(), s.cfg.SessionDir, session, target)
+	record, err := db.CreateSessionDBWithTargets(r.Context(), s.cfg.SessionDir, session, targets)
 	if err != nil {
 		writeDBError(w, err)
 		return
@@ -1190,6 +1476,80 @@ func installHintForTool(id, binary string) string {
 	return "Install " + binary + " or configure tools." + id + " in the Nox config."
 }
 
+func descriptionForTool(id string) string {
+	descriptions := map[string]string{
+		"http-probe":            "Checks whether scoped HTTP and HTTPS endpoints respond and records basic reachability evidence.",
+		"security-headers":      "Inspects common browser security headers and records missing or weak protections.",
+		"crtsh":                 "Queries certificate transparency data for scoped hostnames.",
+		"subfinder":             "Discovers subdomains from passive sources.",
+		"dnsx":                  "Resolves and validates discovered DNS names.",
+		"naabu":                 "Performs scoped TCP port discovery.",
+		"httpx":                 "Probes HTTP services and captures response metadata.",
+		"whois":                 "Collects WHOIS registration data for scoped domains.",
+		"waybackurls":           "Collects historical URLs from public archives.",
+		"whatweb":               "Fingerprints web technologies and server-side frameworks.",
+		"nuclei-tech":           "Runs Nuclei technology-detection templates.",
+		"testssl":               "Checks TLS protocol and certificate configuration.",
+		"graphql-introspection": "Attempts safe GraphQL introspection discovery.",
+		"openapi-discovery":     "Discovers OpenAPI and Swagger metadata endpoints.",
+		"wpscan":                "Fingerprints WordPress installations and common exposure signals.",
+		"droopescan":            "Fingerprints Drupal, Joomla, and other CMS exposure signals.",
+		"ffuf":                  "Runs scoped content discovery against web targets.",
+		"arjun":                 "Discovers HTTP parameters with safe probing.",
+		"linkfinder":            "Extracts JavaScript endpoints from scoped web responses.",
+		"gitleaks":              "Scans collected code and text artifacts for secret patterns.",
+		"js-secrets":            "Looks for likely secrets in JavaScript responses.",
+		"cors-check":            "Checks CORS policy behavior on scoped HTTP targets.",
+		"cloud-buckets":         "Checks for scoped cloud storage bucket exposure patterns.",
+		"nuclei-vuln":           "Runs Nuclei vulnerability templates against scoped targets.",
+		"sqlmap":                "Runs conservative SQL injection checks with scoped inputs.",
+		"dalfox":                "Runs scoped XSS checks.",
+		"ssrfmap":               "Runs scoped SSRF checks where input evidence supports it.",
+		"jwt-tool":              "Checks JWT structure and common token weaknesses.",
+		"oauth-check":           "Checks OAuth and OIDC metadata for common misconfigurations.",
+		"ssti-check":            "Performs safe server-side template injection checks.",
+		"xxe-check":             "Performs safe XML external entity exposure checks.",
+		"nikto":                 "Runs Nikto web server checks against scoped HTTP services.",
+		"cve-intel":             "Correlates discovered technologies with CVE intelligence.",
+		"attack-vector-engine":  "Builds deterministic attack chains from normalized findings.",
+		"llm-analysis":          "Adds optional local LLM annotations to findings and attack vectors.",
+		"nmap":                  "Runs scoped network service detection.",
+	}
+	if value, ok := descriptions[id]; ok {
+		return value
+	}
+	return "Adapter-provided scanner."
+}
+
+func homepageForTool(id string) string {
+	homepages := map[string]string{
+		"crtsh":        "https://crt.sh/",
+		"subfinder":    "https://github.com/projectdiscovery/subfinder",
+		"dnsx":         "https://github.com/projectdiscovery/dnsx",
+		"naabu":        "https://github.com/projectdiscovery/naabu",
+		"httpx":        "https://github.com/projectdiscovery/httpx",
+		"waybackurls":  "https://github.com/tomnomnom/waybackurls",
+		"whatweb":      "https://github.com/urbanadventurer/WhatWeb",
+		"nuclei-tech":  "https://github.com/projectdiscovery/nuclei",
+		"nuclei-vuln":  "https://github.com/projectdiscovery/nuclei",
+		"testssl":      "https://github.com/testssl/testssl.sh",
+		"wpscan":       "https://github.com/wpscanteam/wpscan",
+		"droopescan":   "https://github.com/SamJoan/droopescan",
+		"ffuf":         "https://github.com/ffuf/ffuf",
+		"arjun":        "https://github.com/s0md3v/Arjun",
+		"linkfinder":   "https://github.com/GerbenJavado/LinkFinder",
+		"gitleaks":     "https://github.com/gitleaks/gitleaks",
+		"sqlmap":       "https://github.com/sqlmapproject/sqlmap",
+		"dalfox":       "https://github.com/hahwul/dalfox",
+		"ssrfmap":      "https://github.com/swisskyrepo/SSRFmap",
+		"jwt-tool":     "https://github.com/ticarpi/jwt_tool",
+		"nikto":        "https://github.com/sullo/nikto",
+		"nmap":         "https://nmap.org/",
+		"llm-analysis": "https://github.com/sashabaranov/go-openai",
+	}
+	return homepages[id]
+}
+
 func detectVersion(path string) string {
 	if strings.TrimSpace(path) == "" {
 		return ""
@@ -1359,6 +1719,24 @@ func (s *Server) stopScan(w http.ResponseWriter, r *http.Request) {
 		"id":     session.ID,
 		"status": models.SessionStatusCancelled,
 	})
+}
+
+func (s *Server) pauseScan(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if !s.scanManager.Pause(sessionID) {
+		writeError(w, http.StatusConflict, fmt.Errorf("scan %s is not running", sessionID))
+		return
+	}
+	writeJSONStatus(w, http.StatusAccepted, map[string]any{"id": sessionID, "status": "paused"})
+}
+
+func (s *Server) resumeScan(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if !s.scanManager.Resume(sessionID) {
+		writeError(w, http.StatusConflict, fmt.Errorf("scan %s is not running", sessionID))
+		return
+	}
+	writeJSONStatus(w, http.StatusAccepted, map[string]any{"id": sessionID, "status": models.SessionStatusRunning})
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

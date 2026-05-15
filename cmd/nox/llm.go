@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kanini/nox/internal/config"
-	"github.com/kanini/nox/internal/db"
-	llmintel "github.com/kanini/nox/internal/llm"
+	"github.com/pridhvi/nox/internal/config"
+	"github.com/pridhvi/nox/internal/db"
+	llmintel "github.com/pridhvi/nox/internal/llm"
 )
 
 func runLLM(args []string) error {

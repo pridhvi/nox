@@ -1,8 +1,8 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
-import { Bot, FileText, Network, PackageSearch, Search, Settings as SettingsIcon, Shield, TerminalSquare, Wrench } from "lucide-react";
+import { BrowserRouter, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Bot, FileText, Moon, Network, PackageSearch, Search, Settings as SettingsIcon, Shield, Sun, TerminalSquare, Wrench } from "lucide-react";
 import { scopedSessionPath } from "./sessionRoutes";
 import { SessionProvider, useSessionContext } from "./session";
 import "./styles.css";
@@ -33,11 +33,19 @@ function App() {
 
 function OperatorShell() {
   const { sessions, selectedSessionID, selected, setSelectedSessionID, refreshSessions } = useSessionContext();
+  const [theme, setTheme] = useState(() => localStorage.getItem("nox-theme") ?? "dark");
+  const location = useLocation();
   const scoped = (suffix: string) => scopedSessionPath(selectedSessionID, suffix);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("nox-theme", theme);
+  }, [theme]);
+
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">Nox</div>
+        <div className="brand"><img src="/nox-logo.svg" alt="" />Nox</div>
         <nav>
           <NavLink to={scoped("")}><Shield size={18} />Dashboard</NavLink>
           <NavLink to="/scan"><TerminalSquare size={18} />Scan Builder</NavLink>
@@ -56,13 +64,16 @@ function OperatorShell() {
           <label>Session
             <select value={selectedSessionID} onChange={(event) => setSelectedSessionID(event.target.value)}>
               <option value="">No session</option>
-              {sessions.map((record) => <option key={record.session.id} value={record.session.id}>{record.session.target_input} · {record.session.status}</option>)}
+              {sessions.map((record) => <option key={record.session.id} value={record.session.id}>{record.session.name || record.session.target_input} · {record.session.status}</option>)}
             </select>
           </label>
           <span className={`status ${selected?.session.status ?? "pending"}`}>{selected?.session.status ?? "no session"}</span>
+          <button className="icon-button theme-toggle" aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           <button className="secondary" onClick={refreshSessions}>Refresh</button>
         </header>
-        <RouteErrorBoundary>
+        <RouteErrorBoundary key={location.pathname}>
           <Suspense fallback={<section className="panel route-loading">Loading</section>}>
             <Routes>
               <Route path="/" element={<Dashboard />} />

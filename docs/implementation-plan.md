@@ -45,13 +45,15 @@ scanner-specific improvements rather than adding new roadmap phases.
 The current repo is not greenfield. These items are valuable baseline work and
 must be carried forward:
 
-- **Foundation:** Buildable Go module and CLI entrypoint with `scan`, `serve`,
-  `sessions`, `plugins`, `report`, and `version` command surfaces.
+- **Foundation:** Buildable Go module at `github.com/pridhvi/nox` and CLI
+  entrypoint with `scan`, `serve`, `sessions`, `plugins`, `report`, and
+  `version` command surfaces.
 - **Models and persistence:** Canonical model structs for sessions, targets,
   findings, CVEs, tool runs, attack vectors, report metadata, LLM analyses, and
   plugin records, plus per-session SQLite migrations and typed store methods.
-- **Session store:** Per-session SQLite persistence in `.nox/sessions`, with
-  create/list/show/delete support.
+- **Session store:** Per-session SQLite persistence defaults to the absolute
+  state path `$HOME/.nox/sessions`, with create/list/show/delete support and
+  config-relative resolution for explicit relative paths.
 - **Scope safety:** Scope checker for hosts, URLs, and CIDRs.
 - **Adapters:** Adapter interface, registry, plugin JSON contract, subprocess
   helper, built-in `http-probe`, built-in `security-headers`, and optional
@@ -72,25 +74,31 @@ must be carried forward:
   by default. This is a useful MVP slice across spec reconnaissance,
   fingerprinting, enumeration, and vulnerability scanning. It is not a
   replacement for every future spec adapter.
-- **Runner:** Simple dependency-ordered runner with persisted tool runs and
-  normalized findings. This should be incrementally evolved into the spec DAG
-  scheduler instead of being thrown away.
-- **LLM analyst:** Optional local-first OpenAI-compatible client, structured
-  scan context builder, constrained LLM tools, evidence truncation, and
-  persisted conversation/tool-call audit trails.
+- **Runner:** Dependency-ordered runner with persisted tool runs, normalized
+  findings, global plugin loading, cancellation, and cooperative pause/resume
+  before starting the next tool. This should keep evolving incrementally into
+  the full spec DAG scheduler instead of being thrown away.
+- **LLM analyst:** Optional local-first OpenAI-compatible client implemented
+  through `github.com/sashabaranov/go-openai`, structured scan context builder,
+  constrained LLM tools, evidence truncation, and persisted
+  conversation/tool-call audit trails.
 - **API:** Health, tools, sessions, targets, findings, tool runs, stats, scan
-  start/status/stop, vectors, CVEs, reports, LLM history/analysis/chat, session
-  deletion, scan profiles, LLM model probing, optional API-key auth, and scan
-  lifecycle WebSocket event stream.
+  start/status/pause/resume/stop, vectors, CVEs, reports, LLM
+  history/analysis/chat, session deletion, scan profiles, global plugins, LLM
+  model probing, optional API-key auth, and scan lifecycle WebSocket event
+  stream. Scan start accepts both legacy `target` and multi-target `targets`.
 - **WebSocket progress:** Current endpoint is `GET /api/scan/{id}/events` with
   bounded event replay. The spec route `WS /ws/scan/{id}` is also available as
   a compatibility alias.
 - **Reporting and UI:** Markdown/HTML/paginated-PDF report generation,
-  CLI/API/UI report access, and React/Vite dashboard, Recharts severity chart,
-  Cytoscape attack graph, sortable finding/CVE tables, bulk finding workflow,
-  finding evidence/edit workflow, validated plugin registration, LLM model
-  probing, and report pages backed by real API data. Built assets are embedded
-  into `internal/api/web/dist`.
+  CLI/API/UI report access, and React/Vite dark-default operator console with a
+  Nox logo/favicon, dashboard controls and live terminal feed, multi-target scan
+  builder, per-tool configuration modals, profile import/export, Recharts
+  severity chart, Cytoscape attack graph with safe edge filtering, sortable
+  finding/CVE tables, bulk finding workflow, finding evidence/edit workflow,
+  global plugin registration, LLM model probing, settings health panels, and
+  report pages backed by real API data. Built assets are embedded into
+  `internal/api/web/dist`.
 - **Verification:** `go test ./...` and `npm run build` pass for the current
   working set.
 
@@ -103,7 +111,8 @@ must be carried forward:
 
 ### Existing Baseline
 
-- Go module and CLI exist.
+- Go module path is `github.com/pridhvi/nox`.
+- CLI exists.
 - React/Vite frontend exists and builds into embedded assets.
 - Repository guidance exists in `AGENTS.md`.
 - README describes local-first purpose and safety boundary.
@@ -304,8 +313,10 @@ must be carried forward:
 - MVP external adapters record `tool_runs` for missing binaries, timeouts,
   non-zero exits, and parser-normalized findings.
 - CLI plugin management supports `nox plugins list` and
-  `nox plugins install --session <id> <path>`.
-- Configured plugin metadata persists in the per-session plugin store.
+  `nox plugins install --name <name> --phase <phase> <path>`.
+- Configured plugin metadata persists in the global plugin registry under the
+  Nox state directory. Legacy session plugin rows remain readable for old
+  sessions.
 - Enabled configured plugins load into the scan runner alongside built-in
   adapters.
 - Configured plugins invoke the subprocess JSON contract and normalize returned
@@ -693,7 +704,8 @@ must be carried forward:
 
 ### Implemented Work
 
-- Added `internal/llm` OpenAI-compatible chat client supporting:
+- Added `internal/llm` OpenAI-compatible chat client using
+  `github.com/sashabaranov/go-openai` and supporting:
   - Ollama
   - LM Studio
   - llama.cpp OpenAI-compatible servers
@@ -720,7 +732,8 @@ must be carried forward:
   - `lookup_cve`
   - `search_cves_for_technology`
   - `get_session_findings`
-- Added analyst loop with visible tool-call audit trail.
+- Added analyst loop with `go-openai` chat completion, streaming, and tool-call
+  types plus visible tool-call audit trail.
 - Persisted system/user/assistant/tool messages, tool-call arguments, tool
   results, model id, prompt summary, token totals, and creation time.
 - Added spec-aligned system prompt that treats deterministic findings, CVEs,
@@ -942,30 +955,38 @@ must be carried forward:
   - concurrency, per-tool concurrency, timeout, delay, and rate-limit controls
   - hover help for scan mode and runtime fields
   - LLM base URL controls, connection probing, and discovered model selection
-  - per-tool parameter editors backed by API metadata and backend validation
+  - per-tool configuration modals backed by API metadata and backend validation
+  - target textarea for multi-target scans and section-local required-field
+    validation
+  - custom scan profile JSON import/export
 - Implemented Tools `/tools` and `/sessions/:id/tools`:
   - structured tool inventory
   - installed/missing status
   - configured binary path and version detection
   - phase, adapter kind, dependencies, install hints, and last run status
-  - session-scoped plugin registration and enable/disable controls
+  - global plugin registration, enable/disable, deletion, phase metadata,
+    description, homepage URL, and managed binary upload
   - plugin binary validation that rejects random text, directories, missing
     executables, and non-executable paths before registration
 - Implemented Tool Runs `/runs` and `/sessions/:id/runs`:
   - per-session tool run table
   - stdout/stderr/raw argument detail view
-- Implemented Settings `/settings` for effective local config visibility without
-  exposing API-key values.
+- Implemented Settings `/settings` for storage, server, tool, plugin, LLM,
+  frontend, and CVE visibility without exposing API-key values.
 - Added lazy-loaded route chunks for graph, chart, report, LLM, findings, tools,
   runs, CVEs, settings, and scan-builder surfaces.
 - Added route-level error recovery so transient route chunk failures do not
   leave the operator console as a blank white page.
-- Added frontend unit tests for route scoping and scan-profile payload helpers.
+- Added frontend unit tests for route scoping, scan-profile payload helpers, and
+  attack graph edge filtering.
 - Dashboard lists sessions, stats, findings, and live progress.
 - Implemented Dashboard `/` and `/sessions/:id`:
   - active/recent sessions
   - selected-session stats
   - global finding stats
+  - engagement name and target list visibility
+  - cooperative pause/resume, cancel, and delete controls
+  - concise high-level progress feed and live terminal feed
 - Implemented Session Detail `/sessions/:id` using the dashboard/detail data
   surface:
   - metadata
@@ -982,6 +1003,7 @@ must be carried forward:
   - severity/category filters
   - weighted severity styling, attack/finding edge styling, legend, and summary
     counters
+  - missing-edge filtering with an operator warning instead of route failure
 - Implemented Findings `/sessions/:id/findings`:
   - sortable findings table
   - bulk severity/remediation workflow for selected findings
@@ -1003,8 +1025,10 @@ must be carried forward:
 
 ### Spec Alignment Follow-ups
 
-- Keep current dashboard layout and evolve it into the spec dashboard.
-- Continue improving plugin editing ergonomics after validated registration.
+- Keep refining dashboard density and keyboard ergonomics as the data volume
+  grows.
+- Continue improving plugin editing ergonomics after global validated
+  registration.
 - Do not add decorative landing pages; the first screen remains the app.
 - Suggested LLM prompts remain later UI polish; routes, real API data, graph
   rendering, details panels, evidence expansion, and edit workflows are in

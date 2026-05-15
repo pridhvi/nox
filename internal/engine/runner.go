@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kanini/nox/internal/adapters"
-	cveintel "github.com/kanini/nox/internal/cve"
-	"github.com/kanini/nox/internal/db"
-	llmintel "github.com/kanini/nox/internal/llm"
-	"github.com/kanini/nox/internal/models"
-	"github.com/kanini/nox/internal/vectors"
+	"github.com/pridhvi/nox/internal/adapters"
+	cveintel "github.com/pridhvi/nox/internal/cve"
+	"github.com/pridhvi/nox/internal/db"
+	llmintel "github.com/pridhvi/nox/internal/llm"
+	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nox/internal/vectors"
 )
 
 type Runner struct {
@@ -23,6 +23,7 @@ type Runner struct {
 	httpClient adapters.HTTPDoer
 	onEvent    ScanEventHandler
 	options    RunnerOptions
+	pause      pauseController
 }
 
 type RunnerOptions struct {
@@ -66,6 +67,7 @@ func DefaultSafeAdapters() []adapters.Adapter {
 		adapters.NewHTTPX(),
 		adapters.NewWhois(),
 		adapters.NewWaybackURLs(),
+		adapters.NewCrtSH(),
 		adapters.NewNmap(),
 		adapters.NewFFUF(),
 		adapters.NewNucleiVuln(),
@@ -115,6 +117,18 @@ func normalizeRunnerOptions(options RunnerOptions) RunnerOptions {
 
 func (r *Runner) OnEvent(handler ScanEventHandler) {
 	r.onEvent = handler
+}
+
+func (r *Runner) AddAdapters(scanAdapters ...adapters.Adapter) {
+	r.adapters = append(r.adapters, scanAdapters...)
+}
+
+func (r *Runner) SetPauseController(controller pauseController) {
+	r.pause = controller
+}
+
+type pauseController interface {
+	WaitIfPaused(context.Context) error
 }
 
 func (r *Runner) loadConfiguredPlugins(ctx context.Context) {
@@ -438,6 +452,12 @@ func (r *Runner) runLevel(ctx context.Context, session models.Session, level []a
 					return
 				}
 				defer release(toolSem)
+				if r.pause != nil {
+					if err := r.pause.WaitIfPaused(ctx); err != nil {
+						results <- adapterRunResult{ctxErr: err}
+						return
+					}
+				}
 				if r.options.ToolDelay > 0 {
 					timer := time.NewTimer(r.options.ToolDelay)
 					select {

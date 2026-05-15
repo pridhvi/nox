@@ -3,7 +3,7 @@ set -eu
 
 image="${NOX_DOCKER_IMAGE:-nox:smoke}"
 container="${NOX_DOCKER_CONTAINER:-nox-smoke}"
-port="${NOX_DOCKER_PORT:-18080}"
+port="${NOX_DOCKER_PORT:-16767}"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -12,7 +12,7 @@ trap cleanup EXIT INT TERM
 
 docker build -t "$image" .
 cleanup
-docker run -d --name "$container" -p "127.0.0.1:${port}:8080" "$image" >/dev/null
+docker run -d --name "$container" -p "127.0.0.1:${port}:6767" "$image" >/dev/null
 
 deadline=$(($(date +%s) + 45))
 while [ "$(date +%s)" -lt "$deadline" ]; do

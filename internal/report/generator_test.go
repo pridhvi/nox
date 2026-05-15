@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 func TestGenerateMarkdownHTMLAndPDFReports(t *testing.T) {

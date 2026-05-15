@@ -1,92 +1,77 @@
-# Nox
+# nox
 
-Nox is a local-first web application penetration testing framework. It is designed around scoped scan sessions, normalized findings, evidence preservation, deterministic attack-vector rules, and optional local LLM analysis.
+A local-first web application penetration testing framework that chains 20+ security tools, normalizes findings into a shared database, and uses a local LLM to map attack vectors.
 
-The canonical project specification is tracked at [docs/nox-project-spec.md](docs/nox-project-spec.md).
+<!-- TODO: Add demo GIF here -->
 
-## Authorized Use Only
+## What it does
 
-Nox is intended exclusively for authorized penetration testing, security research, and CTF challenges. Only use Nox against systems you own or have explicit, written permission to test. Unauthorized scanning or exploitation of systems is illegal in most jurisdictions. The authors accept no responsibility for misuse.
+nox is for pentesters, bug bounty hunters, and security researchers who want one local workspace for web app reconnaissance, fingerprinting, enumeration, vulnerability checks, evidence review, and reporting. It keeps each engagement scoped, stores the scan state in SQLite, and lets optional external tools contribute findings without making those tools mandatory.
 
-This repository currently contains the buildable foundation plus the first safe scan path:
+At a high level, nox creates a scoped session, runs a dependency-aware tool pipeline, normalizes tool output into common target/finding/evidence models, correlates CVEs, builds deterministic attack vectors, lets a local OpenAI-compatible model annotate the results, and generates Markdown, HTML, or PDF reports.
 
-- Go CLI entrypoint with `scan`, `serve`, `sessions`, `plugins`, and `report` commands.
-- Canonical models for sessions, targets, findings, CVEs, tool runs, and attack vectors.
-- Report metadata models and model validation helpers for spec-aligned ingestion.
-- Scope validation before scans and per-adapter network requests.
-- Per-session SQLite databases in `.nox/sessions/<session-id>.db`.
-- Ordered embedded SQLite migrations and manual repository methods for findings, evidence, technologies, CVEs, attack vectors, LLM analyses, plugins, and tool runs.
-- Safe built-in `http-probe` and `security-headers` adapters.
-- Persisted tool runs and normalized security header findings.
-- REST APIs for session create/list/detail/targets/findings/tool-runs/stats and scan status.
-- Asynchronous API scan start with polling-friendly status/read endpoints.
-- WebSocket scan lifecycle stream for queued/running/tool/finding/completed progress.
-- Running API scans can be cancelled with `POST /api/scan/{id}/stop`.
-- DAG-style scheduler with dependency levels, same-level concurrency, phase events, and per-tool concurrency controls.
-- Dashboard wired to real session, stats, and finding data.
-- Dashboard live progress feed for the selected session.
-- Subprocess plugin JSON contract and runner.
-- Session-scoped plugin install/list support for configured subprocess adapters.
-- Optional recon subprocess adapters for `subfinder`, `dnsx`, `naabu`, `httpx`, `whois`, and `waybackurls`, plus registered opt-in `crt.sh` lookup support.
-- Optional fingerprinting adapters for `whatweb`, `nuclei` technology templates, `testssl.sh`, GraphQL introspection, OpenAPI/Swagger discovery, `wpscan`, and `droopescan`.
-- Optional enumeration adapters for `ffuf`, `arjun`, `linkfinder`, `gitleaks`, JavaScript secret scanning, CORS checks, and scoped cloud bucket checks.
-- Optional vulnerability adapters for `nuclei` vulnerability templates, `sqlmap`, `dalfox`, SSRFmap, `jwt_tool`, OAuth checks, SSTI checks, XXE fuzzing, and `nikto`.
-- CVE intelligence correlator with offline JSON and Exploit-DB CSV source support, local cache, NVD/OSV/CIRCL/Vulners/GitHub advisory parsers, technology/finding matching, persisted CVE matches, and draft vectors for high-severity exploitable CVEs.
-- Deterministic attack vector engine with default rules, confidence scoring, ordered steps, prerequisite findings, and CVE vector merging.
-- Optional local-first OpenAI-compatible LLM analyst for structured session context, constrained tool calls, evidence truncation, persisted conversation audit trails, and post-analysis attack-vector annotations.
-- Expanded REST API for vectors, CVEs, reports, LLM history/analysis, session deletion, finding filters, finding updates, and optional API-key auth.
-- Operator REST APIs for effective config, structured tool inventory, install/version status, validated plugin registration, API-backed scan profiles, LLM model probing, scan tool selection, validated per-tool parameters, and runner options.
-- CLI config, LLM, and report commands plus expanded scan flags for phases, LLM settings, concurrency, and rate-limit configuration.
-- Viper-backed YAML/TOML/JSON configuration with environment overrides, tool path maps, plugin directories, scan controls, and CVE source settings.
-- Markdown, HTML, and paginated PDF report generation from persisted findings, evidence, CVEs, attack vectors, tool runs, and optional LLM analysis.
-- Web UI pages for global session selection, API-backed scan profiles, scan building, tool inventory/status, tool run evidence, session detail/dashboard, Recharts severity charts, Cytoscape attack graph, sortable finding/CVE tables, bulk finding workflows, finding evidence/edit workflows, CVEs, LLM analyst history/chat/model probing, effective settings, and report preview/download.
-- Docker health checks, Compose validation, local Docker smoke scripts, CI frontend verification, and snapshot release packaging.
-- Optional subprocess adapters for `nmap`, `ffuf`, `sqlmap`, and `dalfox`, with graceful degradation when tools are unavailable.
-- React/Vite frontend for the operator console, with lazy-loaded route chunks and route-level error recovery for dashboard, graph, LLM, reports, findings, tools, runs, CVEs, scan builder, and settings.
+It runs entirely locally by default. There is no telemetry, no required cloud service, and no required hosted LLM. Ollama, LM Studio, llama.cpp, and OpenAI-compatible endpoints can be used when LLM analysis is enabled.
 
-## Toolchain
+## Quick start
 
-Nox targets Go 1.26. Use the latest Go 1.26 patch release for local development and CI.
+| Docker Compose | Single binary |
+| --- | --- |
+| `docker compose up --build` | `make build` |
+| `curl http://127.0.0.1:6767/api/health` | `./bin/nox scan --target https://example.com --no-llm` |
 
-## Quick Start
-
-Build the binary:
+After building the binary, you can also run:
 
 ```sh
-make build
+./bin/nox serve --host 127.0.0.1 --port 6767
 ```
 
-The compiled binary is written to `bin/`.
+## Features
 
-```sh
-nox version
-nox scan --target https://example.com
-nox sessions list
-nox sessions findings <session-id>
-nox sessions runs <session-id>
-nox serve --host 127.0.0.1 --port 8080
+- **Scan pipeline:** DAG-driven execution across reconnaissance, fingerprinting, enumeration, and vulnerability phases with optional subprocess tools.
+- **Findings & evidence:** Normalized findings, raw stdout/stderr retention, HTTP request/response evidence, technologies, CVE correlation, and tool-run history.
+- **Attack vector engine:** Rule-based chains with confidence scoring, ordered steps, prerequisite findings, and OWASP mapping.
+- **LLM analysis:** OpenAI-compatible local model support, constrained tool calling, persisted audit trail, post-scan analysis, and interactive chat.
+- **Reporting:** Markdown, HTML, and PDF output in executive or technical modes.
+- **Plugin system:** Subprocess JSON contract so adapters can be written in any language.
+- **Web UI:** Scan builder, session dashboard, findings workflow, attack graph, CVE table, tool status, LLM chat, settings, and report preview.
+
+## Supported tools
+
+All external tools are optional. Missing tools are recorded as tool runs and the scan continues with available adapters.
+
+| Phase | Tools |
+| --- | --- |
+| Recon | `http-probe`, `security-headers`, `subfinder`, `dnsx`, `naabu`, `httpx`, `whois`, `waybackurls`, `nmap`, `crt.sh` |
+| Fingerprinting | `whatweb`, `nuclei-tech`, `testssl.sh`, GraphQL introspection, OpenAPI/Swagger discovery, `wpscan`, `droopescan` |
+| Enumeration | `ffuf`, `arjun`, `linkfinder`, `gitleaks`, JavaScript secret scanning, CORS checks, scoped cloud bucket checks |
+| Vulnerability | `nuclei-vuln`, `sqlmap`, `dalfox`, SSRFmap, `jwt_tool`, OAuth checks, SSTI checks, XXE fuzzing, `nikto` |
+
+## Configuration
+
+Create `~/.nox/config.yaml` with the local defaults you care about:
+
+```yaml
+database:
+  session_dir: ~/.nox/sessions
+
+llm:
+  enabled: true
+  provider: openai-compatible
+  base_url: http://127.0.0.1:11434/v1
+  api_key: ollama
+  model: llama3:8b
+
+tools:
+  nmap: /usr/bin/nmap
+  ffuf: /usr/bin/ffuf
+  sqlmap: /usr/bin/sqlmap
+  dalfox: /usr/local/bin/dalfox
 ```
 
-The frontend source lives in `web/`. Production frontend assets are built with `npm run build` and embedded into the Go binary from `internal/api/web/dist`.
+See [docs/](docs/) for the project spec and implementation roadmap.
 
-## Docker
+> **Authorized use only:** nox is intended exclusively for authorized penetration testing, security research, and CTF challenges. Only use it against systems you own or have explicit, written permission to test. Unauthorized scanning or exploitation may be illegal. The authors accept no responsibility for misuse.
 
-```sh
-docker compose up --build
-curl http://127.0.0.1:8080/api/health
-```
+## License
 
-The Docker image bundles the Nox binary and common external scanner tools. Single-binary local builds still work without those tools installed; optional adapters degrade gracefully and record missing binaries as `tool_runs`.
-
-## Roadmap
-
-The implementation roadmap in [docs/implementation-plan.md](docs/implementation-plan.md) is complete from the repository perspective. Next work should focus on hardening and depth:
-
-1. Expand external scanner install/version checks in Docker images.
-2. Add deeper vulnerable-app integration suites beyond the built-in smoke fixture.
-3. Add optional code-splitting for any remaining large frontend graph/chart bundle paths.
-4. Evaluate native ProjectDiscovery Go-library adapters where subprocess behavior is too limiting.
-
-## Safety Boundary
-
-Nox must treat scope as a hard control. Every network-touching adapter should call scope validation before making outbound requests. Tool failures should be recorded as `tool_runs`, not crash the whole scan unless the database or session context fails.
+GPL-3.0.

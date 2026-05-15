@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 var ErrNotConfigured = errors.New("llm is not configured")
@@ -39,10 +40,10 @@ func (a Analyst) AnalyzeSession(ctx context.Context, sessionID, prompt string) (
 	if err != nil {
 		return models.LLMAnalysis{}, err
 	}
-	messages := []ChatMessage{
-		{Role: "system", Content: SystemPrompt},
-		{Role: "user", Content: "Session context JSON:\n" + string(contextBody)},
-		{Role: "user", Content: prompt},
+	messages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: SystemPrompt},
+		{Role: openai.ChatMessageRoleUser, Content: "Session context JSON:\n" + string(contextBody)},
+		{Role: openai.ChatMessageRoleUser, Content: prompt},
 	}
 	totalTokens := 0
 	completion, err := a.client.Complete(ctx, ChatRequest{
@@ -60,14 +61,13 @@ func (a Analyst) AnalyzeSession(ctx context.Context, sessionID, prompt string) (
 
 	toolCalls := executeToolCalls(ctx, a.store, sessionID, completion.Message.ToolCalls)
 	if len(toolCalls) > 0 {
-		messages[len(messages)-1].ToolCalls = mergeToolResults(messages[len(messages)-1].ToolCalls, toolCalls)
 		for _, call := range toolCalls {
 			content := call.Result
 			if call.Error != "" {
 				content = call.Error
 			}
-			messages = append(messages, ChatMessage{
-				Role:       "tool",
+			messages = append(messages, openai.ChatCompletionMessage{
+				Role:       openai.ChatMessageRoleTool,
 				Content:    content,
 				ToolCallID: call.ID,
 			})
@@ -104,7 +104,7 @@ func (a Analyst) AnalyzeSession(ctx context.Context, sessionID, prompt string) (
 	return analysis, nil
 }
 
-func (a Analyst) annotateAttackVectors(ctx context.Context, sessionID string, vectors []models.AttackVector, messages []ChatMessage) error {
+func (a Analyst) annotateAttackVectors(ctx context.Context, sessionID string, vectors []models.AttackVector, messages []openai.ChatCompletionMessage) error {
 	if len(vectors) == 0 {
 		return nil
 	}
@@ -123,20 +123,20 @@ func (a Analyst) annotateAttackVectors(ctx context.Context, sessionID string, ve
 	return nil
 }
 
-func assistantReviewNote(messages []ChatMessage) string {
+func assistantReviewNote(messages []openai.ChatCompletionMessage) string {
 	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "assistant" && strings.TrimSpace(messages[i].Content) != "" {
+		if messages[i].Role == openai.ChatMessageRoleAssistant && strings.TrimSpace(messages[i].Content) != "" {
 			return truncate(strings.TrimSpace(messages[i].Content), 1200)
 		}
 	}
 	return ""
 }
 
-func executeToolCalls(ctx context.Context, store Store, sessionID string, calls []ChatToolCall) []models.LLMToolCall {
+func executeToolCalls(ctx context.Context, store Store, sessionID string, calls []openai.ToolCall) []models.LLMToolCall {
 	runner := NewToolRunner(store)
 	var results []models.LLMToolCall
 	for _, call := range calls {
-		result := models.LLMToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments}
+		result := models.LLMToolCall{ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments}
 		output, err := runner.Execute(ctx, sessionID, call)
 		if err != nil {
 			result.Error = err.Error()
@@ -148,45 +148,18 @@ func executeToolCalls(ctx context.Context, store Store, sessionID string, calls 
 	return results
 }
 
-func mergeToolResults(calls []ChatToolCall, results []models.LLMToolCall) []ChatToolCall {
-	if len(calls) == 0 || len(results) == 0 {
-		return calls
-	}
-	byID := map[string]models.LLMToolCall{}
-	byName := map[string]models.LLMToolCall{}
-	for _, result := range results {
-		if result.ID != "" {
-			byID[result.ID] = result
-		}
-		byName[result.Name] = result
-	}
-	for i := range calls {
-		result, ok := byID[calls[i].ID]
-		if !ok {
-			result, ok = byName[calls[i].Name]
-		}
-		if ok {
-			calls[i].Result = result.Result
-			calls[i].Error = result.Error
-		}
-	}
-	return calls
-}
-
-func modelMessages(messages []ChatMessage) []models.LLMMessage {
+func modelMessages(messages []openai.ChatCompletionMessage) []models.LLMMessage {
 	out := make([]models.LLMMessage, 0, len(messages))
 	for _, message := range messages {
 		modelMessage := models.LLMMessage{Role: message.Role, Content: message.Content}
 		for _, call := range message.ToolCalls {
 			modelMessage.ToolCalls = append(modelMessage.ToolCalls, models.LLMToolCall{
 				ID:        call.ID,
-				Name:      call.Name,
-				Arguments: call.Arguments,
-				Result:    call.Result,
-				Error:     call.Error,
+				Name:      call.Function.Name,
+				Arguments: call.Function.Arguments,
 			})
 		}
-		if message.Role == "tool" {
+		if message.Role == openai.ChatMessageRoleTool {
 			modelMessage.ToolCalls = append(modelMessage.ToolCalls, models.LLMToolCall{
 				ID:     message.ToolCallID,
 				Name:   "tool_result",

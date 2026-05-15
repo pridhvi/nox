@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 type Subfinder struct{}
@@ -137,12 +137,14 @@ func (a WaybackURLs) Run(ctx context.Context, input AdapterInput) (AdapterOutput
 
 type CrtSH struct{}
 
-func NewCrtSH() CrtSH                     { return CrtSH{} }
-func (CrtSH) ID() string                  { return "crtsh" }
-func (CrtSH) Name() string                { return "crt.sh" }
-func (CrtSH) Phase() Phase                { return PhaseRecon }
-func (CrtSH) DependsOn() []string         { return nil }
-func (CrtSH) ShouldRun(AdapterInput) bool { return false }
+func NewCrtSH() CrtSH             { return CrtSH{} }
+func (CrtSH) ID() string          { return "crtsh" }
+func (CrtSH) Name() string        { return "crt.sh" }
+func (CrtSH) Phase() Phase        { return PhaseRecon }
+func (CrtSH) DependsOn() []string { return nil }
+func (CrtSH) ShouldRun(input AdapterInput) bool {
+	return input.Target.Host != "" && net.ParseIP(input.Target.Host) == nil
+}
 func (a CrtSH) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error) {
 	domain := scopedRootDomain(input)
 	args := []string{domain}

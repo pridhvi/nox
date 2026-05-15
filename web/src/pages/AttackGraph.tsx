@@ -24,13 +24,13 @@ export function AttackGraph() {
     if (!graphRef.current) {
       return;
     }
-    const elements = graphElements(nodes.targets, nodes.findings, nodes.vectors);
+    const { elements } = graphElements(nodes.targets, nodes.findings, nodes.vectors);
     const graph = cytoscape({
       container: graphRef.current,
       elements,
       layout: { name: "cose", animate: false, padding: 36, nodeRepulsion: 9000, idealEdgeLength: 140, componentSpacing: 90 },
       style: [
-        { selector: "node", style: { label: "data(label)", "font-size": "11px", "font-weight": "600", color: "#17202a", "text-valign": "bottom", "text-halign": "center", "text-margin-y": "8px", width: "mapData(weight, 1, 5, 54, 86)", height: "mapData(weight, 1, 5, 54, 86)", "text-wrap": "wrap", "text-max-width": "110px", "border-width": "2px", "border-color": "#ffffff", "background-color": "#e5e7eb", "shadow-blur": "8px", "shadow-opacity": 0.18, "shadow-color": "#0f172a" } },
+        { selector: "node", style: { label: "data(label)", "font-size": "11px", "font-weight": "600", color: "#d8fff0", "text-valign": "bottom", "text-halign": "center", "text-margin-y": "8px", width: "mapData(weight, 1, 5, 54, 86)", height: "mapData(weight, 1, 5, 54, 86)", "text-wrap": "wrap", "text-max-width": "110px", "border-width": "2px", "border-color": "#16342c", "background-color": "#1f2937", "shadow-blur": "12px", "shadow-opacity": 0.28, "shadow-color": "#020617" } },
         { selector: "node[type='target']", style: { "background-color": "#0f766e", color: "#0f766e", shape: "round-rectangle" } },
         { selector: "node[type='tech']", style: { "background-color": "#2563eb", color: "#2563eb", shape: "ellipse" } },
         { selector: "node[type='finding']", style: { "background-color": "data(color)", color: "data(color)", shape: "diamond" } },
@@ -46,6 +46,8 @@ export function AttackGraph() {
     });
     return () => graph.destroy();
   }, [nodes]);
+
+  const graphData = useMemo(() => graphElements(nodes.targets, nodes.findings, nodes.vectors), [nodes]);
 
   return (
     <section className="page wide-page">
@@ -77,6 +79,7 @@ export function AttackGraph() {
           </div>
         </div>
         <div className="cy-graph" ref={graphRef} />
+        {graphData.skippedEdges > 0 ? <p className="graph-warning">Skipped {graphData.skippedEdges} graph edge{graphData.skippedEdges === 1 ? "" : "s"} with missing source or target data.</p> : null}
         {selectedNode ? (
           <div className="graph-detail">
             <strong>{selectedNode.label}</strong>
@@ -128,29 +131,46 @@ export function AttackGraph() {
   );
 }
 
-function graphElements(targets: Target[], findings: Finding[], vectors: AttackVector[]) {
+export function graphElements(targets: Target[], findings: Finding[], vectors: AttackVector[]) {
   const elements: cytoscape.ElementDefinition[] = [];
+  const nodeIDs = new Set<string>();
+  let skippedEdges = 0;
+  const addNode = (element: cytoscape.ElementDefinition) => {
+    if (typeof element.data?.id === "string") {
+      nodeIDs.add(element.data.id);
+    }
+    elements.push(element);
+  };
+  const addEdge = (element: cytoscape.ElementDefinition) => {
+    const source = element.data?.source;
+    const target = element.data?.target;
+    if (typeof source === "string" && typeof target === "string" && nodeIDs.has(source) && nodeIDs.has(target)) {
+      elements.push(element);
+      return;
+    }
+    skippedEdges += 1;
+  };
   for (const target of targets) {
-    elements.push({ data: { id: `target:${target.id}`, label: target.host, type: "target", weight: 3, detail: `${target.protocol}:${target.port} discovered by ${target.discovered_by}` } });
+    addNode({ data: { id: `target:${target.id}`, label: target.host, type: "target", weight: 3, detail: `${target.protocol}:${target.port} discovered by ${target.discovered_by}` } });
     for (const tech of target.technologies ?? []) {
       const techID = `tech:${tech.id}`;
-      elements.push({ data: { id: techID, label: `${tech.name} ${tech.version}`.trim(), type: "tech", weight: 2, detail: `${tech.category || "technology"} confidence ${Math.round(tech.confidence * 100)}%` } });
-      elements.push({ data: { id: `edge:${target.id}:${tech.id}`, source: `target:${target.id}`, target: techID } });
+      addNode({ data: { id: techID, label: `${tech.name} ${tech.version}`.trim(), type: "tech", weight: 2, detail: `${tech.category || "technology"} confidence ${Math.round(tech.confidence * 100)}%` } });
+      addEdge({ data: { id: `edge:${target.id}:${tech.id}`, source: `target:${target.id}`, target: techID } });
     }
   }
   for (const finding of findings) {
-    elements.push({ data: { id: `finding:${finding.id}`, label: finding.title, type: "finding", weight: severityWeight(finding.severity), color: severityColor(finding.severity), detail: `${finding.severity} ${finding.type} from ${finding.tool_id}. ${finding.url}` } });
+    addNode({ data: { id: `finding:${finding.id}`, label: finding.title, type: "finding", weight: severityWeight(finding.severity), color: severityColor(finding.severity), detail: `${finding.severity} ${finding.type} from ${finding.tool_id}. ${finding.url}` } });
     if (finding.target_id) {
-      elements.push({ data: { id: `edge:${finding.target_id}:${finding.id}`, source: `target:${finding.target_id}`, target: `finding:${finding.id}` } });
+      addEdge({ data: { id: `edge:${finding.target_id}:${finding.id}`, source: `target:${finding.target_id}`, target: `finding:${finding.id}` } });
     }
   }
   for (const vector of vectors) {
-    elements.push({ data: { id: `vector:${vector.id}`, label: vector.title, type: "vector", weight: severityWeight(vector.severity), detail: `${vector.severity} confidence ${Math.round(vector.confidence * 100)}%. ${vector.narrative}` } });
+    addNode({ data: { id: `vector:${vector.id}`, label: vector.title, type: "vector", weight: severityWeight(vector.severity), detail: `${vector.severity} confidence ${Math.round(vector.confidence * 100)}%. ${vector.narrative}` } });
     for (const findingID of vector.prereq_finding_ids ?? []) {
-      elements.push({ data: { id: `edge:${findingID}:${vector.id}`, source: `finding:${findingID}`, target: `vector:${vector.id}`, type: "attack" } });
+      addEdge({ data: { id: `edge:${findingID}:${vector.id}`, source: `finding:${findingID}`, target: `vector:${vector.id}`, type: "attack" } });
     }
   }
-  return elements;
+  return { elements, skippedEdges };
 }
 
 function severityColor(severity: string) {

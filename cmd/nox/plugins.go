@@ -1,16 +1,16 @@
 package nox
 
 import (
-	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/kanini/nox/internal/adapters"
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/adapters"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 func runPlugins(args []string) error {
@@ -29,7 +29,7 @@ func runPlugins(args []string) error {
 
 func runPluginsList(args []string) error {
 	fs := flag.NewFlagSet("plugins list", flag.ContinueOnError)
-	sessionID := fs.String("session", "", "session id for configured plugins")
+	cfgPath := fs.String("config", "", "config file path")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -37,39 +37,31 @@ func runPluginsList(args []string) error {
 	for _, adapter := range adapters.All() {
 		fmt.Printf("%s\t%s\t%s\n", adapter.ID(), adapter.Phase(), adapter.Name())
 	}
-	if strings.TrimSpace(*sessionID) == "" {
-		return nil
-	}
-	store, err := db.OpenSession(context.Background(), db.DefaultSessionsDir(), *sessionID)
+	plugins, err := readGlobalCLIPlugins(*cfgPath)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
-	plugins, err := store.ListPlugins(context.Background())
-	if err != nil {
-		return err
-	}
-	fmt.Println("configured plugins:")
+	fmt.Println("global plugins:")
 	for _, plugin := range plugins {
 		state := "disabled"
 		if plugin.Enabled {
 			state = "enabled"
 		}
-		fmt.Printf("plugin:%s\t%s\t%s\t%s\n", plugin.Name, state, plugin.Binary, plugin.ID)
+		fmt.Printf("plugin:%s\t%s\t%s\t%s\t%s\n", plugin.Name, plugin.Phase, state, plugin.Binary, plugin.ID)
 	}
 	return nil
 }
 
 func runPluginsInstall(args []string) error {
 	fs := flag.NewFlagSet("plugins install", flag.ContinueOnError)
-	sessionID := fs.String("session", "", "session id to register plugin with")
+	cfgPath := fs.String("config", "", "config file path")
 	name := fs.String("name", "", "plugin name")
+	phase := fs.String("phase", "vuln_scan", "plugin phase: recon, fingerprint, enumerate, vuln_scan")
+	description := fs.String("description", "", "plugin description")
+	homepageURL := fs.String("homepage-url", "", "plugin homepage URL")
 	disabled := fs.Bool("disabled", false, "register plugin disabled")
 	if err := fs.Parse(args); err != nil {
 		return err
-	}
-	if strings.TrimSpace(*sessionID) == "" {
-		return fmt.Errorf("--session is required")
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("plugins install requires a plugin binary path")
@@ -82,23 +74,113 @@ func runPluginsInstall(args []string) error {
 	if pluginName == "" {
 		pluginName = strings.TrimSuffix(filepath.Base(binary), filepath.Ext(binary))
 	}
+	if err := validatePluginExecutable(binary); err != nil {
+		return err
+	}
+	if !validPluginPhase(*phase) {
+		return fmt.Errorf("unsupported plugin phase %q", *phase)
+	}
 	now := time.Now().UTC()
 	plugin := models.PluginRecord{
-		ID:        models.NewID(),
-		Name:      pluginName,
-		Binary:    binary,
-		Enabled:   !*disabled,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          models.NewID(),
+		Name:        pluginName,
+		Binary:      binary,
+		Phase:       strings.TrimSpace(*phase),
+		Description: strings.TrimSpace(*description),
+		HomepageURL: strings.TrimSpace(*homepageURL),
+		Enabled:     !*disabled,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
-	store, err := db.OpenSession(context.Background(), db.DefaultSessionsDir(), *sessionID)
+	plugins, err := readGlobalCLIPlugins(*cfgPath)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
-	if err := store.UpsertPlugin(context.Background(), plugin); err != nil {
+	for i := range plugins {
+		if plugins[i].Name == plugin.Name {
+			plugin.ID = plugins[i].ID
+			plugin.CreatedAt = plugins[i].CreatedAt
+			plugins[i] = plugin
+			if err := writeGlobalCLIPlugins(*cfgPath, plugins); err != nil {
+				return err
+			}
+			fmt.Printf("updated global plugin %s\n", plugin.Name)
+			return nil
+		}
+	}
+	plugins = append(plugins, plugin)
+	if err := writeGlobalCLIPlugins(*cfgPath, plugins); err != nil {
 		return err
 	}
-	fmt.Printf("installed plugin %s for session %s\n", plugin.Name, *sessionID)
+	fmt.Printf("installed global plugin %s\n", plugin.Name)
+	return nil
+}
+
+func readGlobalCLIPlugins(cfgPath string) ([]models.PluginRecord, error) {
+	path, err := globalCLIPluginsPath(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	body, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return []models.PluginRecord{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var plugins []models.PluginRecord
+	if err := json.Unmarshal(body, &plugins); err != nil {
+		return nil, err
+	}
+	return plugins, nil
+}
+
+func writeGlobalCLIPlugins(cfgPath string, plugins []models.PluginRecord) error {
+	path, err := globalCLIPluginsPath(cfgPath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(plugins, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, body, 0o644)
+}
+
+func globalCLIPluginsPath(cfgPath string) (string, error) {
+	sessionDir, err := configuredSessionDir(cfgPath)
+	if err != nil {
+		return "", err
+	}
+	stateDir := sessionDir
+	if filepath.Base(sessionDir) == "sessions" {
+		stateDir = filepath.Dir(sessionDir)
+	}
+	return filepath.Join(stateDir, "plugins.json"), nil
+}
+
+func validPluginPhase(phase string) bool {
+	switch strings.TrimSpace(phase) {
+	case "recon", "fingerprint", "enumerate", "vuln_scan":
+		return true
+	default:
+		return false
+	}
+}
+
+func validatePluginExecutable(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("plugin binary is not accessible: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("plugin binary must be a file, got directory %s", path)
+	}
+	if info.Mode()&0o111 == 0 {
+		return fmt.Errorf("plugin binary is not executable: %s", path)
+	}
 	return nil
 }

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/kanini/nox/cmd/nox"
+import "github.com/pridhvi/nox/cmd/nox"
 
 func main() {
 	nox.Execute()

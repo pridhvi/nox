@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/models"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 func TestConfigFromSessionRequiresBaseURL(t *testing.T) {
@@ -54,19 +55,22 @@ func TestAnalystPersistsConversationAndToolAuditTrail(t *testing.T) {
 	session, store := testLLMStore(t, ctx)
 	client := &fakeCompleter{responses: []ChatCompletion{
 		{
-			Message: ChatMessage{
-				Role:    "assistant",
+			Message: openai.ChatCompletionMessage{
+				Role:    openai.ChatMessageRoleAssistant,
 				Content: "I need the findings first.",
-				ToolCalls: []ChatToolCall{{
-					ID:        "call-1",
-					Name:      "get_session_findings",
-					Arguments: `{"severity":"high"}`,
+				ToolCalls: []openai.ToolCall{{
+					ID:   "call-1",
+					Type: openai.ToolTypeFunction,
+					Function: openai.FunctionCall{
+						Name:      "get_session_findings",
+						Arguments: `{"severity":"high"}`,
+					},
 				}},
 			},
 			TotalTokens: 8,
 		},
 		{
-			Message:     ChatMessage{Role: "assistant", Content: "The high-risk finding is supported by persisted evidence."},
+			Message:     openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: "The high-risk finding is supported by persisted evidence."},
 			TotalTokens: 12,
 		},
 	}}
@@ -97,7 +101,7 @@ func TestAnalystPersistsConversationAndToolAuditTrail(t *testing.T) {
 	foundToolResult := false
 	for _, message := range analyses[0].Messages {
 		for _, call := range message.ToolCalls {
-			if call.Name == "get_session_findings" && strings.Contains(call.Result, "Test high finding") {
+			if call.Name == "tool_result" && strings.Contains(call.Result, "Test high finding") {
 				foundToolResult = true
 			}
 		}
@@ -119,9 +123,12 @@ func TestToolRunnerConstrainsScanRequestsToSessionScope(t *testing.T) {
 	session, store := testLLMStore(t, ctx)
 	runner := NewToolRunner(store)
 
-	result, err := runner.Execute(ctx, session.ID, ChatToolCall{
-		Name:      "request_scan",
-		Arguments: `{"target":"https://evil.example","tool":"http-probe","reason":"check it"}`,
+	result, err := runner.Execute(ctx, session.ID, openai.ToolCall{
+		Type: openai.ToolTypeFunction,
+		Function: openai.FunctionCall{
+			Name:      "request_scan",
+			Arguments: `{"target":"https://evil.example","tool":"http-probe","reason":"check it"}`,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -129,9 +136,12 @@ func TestToolRunnerConstrainsScanRequestsToSessionScope(t *testing.T) {
 	if !strings.Contains(result, `"accepted":false`) || !strings.Contains(result, `"in_scope":false`) {
 		t.Fatalf("expected out-of-scope scan request denial, got %s", result)
 	}
-	result, err = runner.Execute(ctx, session.ID, ChatToolCall{
-		Name:      "request_scan",
-		Arguments: `{"target":"https://example.com.evil.test","tool":"http-probe","reason":"check it"}`,
+	result, err = runner.Execute(ctx, session.ID, openai.ToolCall{
+		Type: openai.ToolTypeFunction,
+		Function: openai.FunctionCall{
+			Name:      "request_scan",
+			Arguments: `{"target":"https://example.com.evil.test","tool":"http-probe","reason":"check it"}`,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +159,7 @@ type fakeCompleter struct {
 func (f *fakeCompleter) Complete(ctx context.Context, request ChatRequest) (ChatCompletion, error) {
 	f.requests = append(f.requests, request)
 	if len(f.responses) == 0 {
-		return ChatCompletion{Message: ChatMessage{Role: "assistant", Content: "done"}}, nil
+		return ChatCompletion{Message: openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: "done"}}, nil
 	}
 	response := f.responses[0]
 	f.responses = f.responses[1:]

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kanini/nox/internal/config"
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/engine"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/config"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/engine"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 func runScan(args []string) error {
@@ -47,7 +47,7 @@ func runScan(args []string) error {
 	selectedTools := splitCSV(firstNonEmpty(*tools, strings.Join(cfg.Scan.Tools, ",")))
 	selectedRateLimit := firstNonEmpty(*rateLimit, cfg.Scan.RateLimit)
 
-	session, initialTarget, err := engine.NewPendingSession(engine.NewSessionInput{
+	session, initialTargets, err := engine.NewPendingSessionWithTargets(engine.NewSessionInput{
 		Target:        *target,
 		Name:          *name,
 		Mode:          models.ScanMode(selectedMode),
@@ -62,7 +62,7 @@ func runScan(args []string) error {
 		return err
 	}
 	sessionDir := firstNonEmpty(cfg.Database.SessionDir, db.DefaultSessionsDir())
-	record, err := db.CreateSessionDB(context.Background(), sessionDir, session, initialTarget)
+	record, err := db.CreateSessionDBWithTargets(context.Background(), sessionDir, session, initialTargets)
 	if err != nil {
 		return err
 	}

@@ -5,14 +5,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/engine"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/engine"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 func TestSessionAPI(t *testing.T) {
@@ -232,6 +234,31 @@ func TestOperatorConsoleAPI(t *testing.T) {
 		t.Fatalf("expected bad request for unknown tool, got %d", bad.Code)
 	}
 
+	crtsh := httptest.NewRecorder()
+	handler.ServeHTTP(crtsh, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"target":"http://127.0.0.1","mode":"passive","tools":["crtsh"]}`)))
+	if crtsh.Code != http.StatusAccepted {
+		t.Fatalf("expected crtsh to be registered, got %d body=%s", crtsh.Code, crtsh.Body.String())
+	}
+
+	multiTarget := httptest.NewRecorder()
+	handler.ServeHTTP(multiTarget, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"targets":["`+targetServer.URL+`","`+strings.Replace(targetServer.URL, "127.0.0.1", "localhost", 1)+`"],"mode":"active","tools":["http-probe"]}`)))
+	if multiTarget.Code != http.StatusAccepted {
+		t.Fatalf("multi-target start status = %d body=%s", multiTarget.Code, multiTarget.Body.String())
+	}
+	var multiCreated db.SessionRecord
+	if err := json.NewDecoder(multiTarget.Body).Decode(&multiCreated); err != nil {
+		t.Fatal(err)
+	}
+	if multiCreated.Session.TargetCount != 2 {
+		t.Fatalf("expected two targets, got %#v", multiCreated.Session)
+	}
+
+	invalidTarget := httptest.NewRecorder()
+	handler.ServeHTTP(invalidTarget, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"targets":["ftp://example.com"],"mode":"active","tools":["http-probe"]}`)))
+	if invalidTarget.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid target rejection, got %d", invalidTarget.Code)
+	}
+
 	unsafeArgs := httptest.NewRecorder()
 	handler.ServeHTTP(unsafeArgs, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"target":"`+targetServer.URL+`","mode":"active","tools":["ffuf"],"tool_parameters":{"ffuf":{"extra_args":["--output","/tmp/leak"]}}}`)))
 	if unsafeArgs.Code != http.StatusBadRequest {
@@ -263,6 +290,26 @@ func TestOperatorConsoleAPI(t *testing.T) {
 	handler.ServeHTTP(badPlugin, httptest.NewRequest(http.MethodPost, "/api/sessions/"+created.Session.ID+"/plugins", bytes.NewBufferString(`{"binary":"definitely-not-a-real-plugin-binary"}`)))
 	if badPlugin.Code != http.StatusBadRequest {
 		t.Fatalf("expected bad request for missing plugin binary, got %d", badPlugin.Code)
+	}
+
+	pluginBinary := filepath.Join(t.TempDir(), "plugin")
+	if err := os.WriteFile(pluginBinary, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	globalPlugin := httptest.NewRecorder()
+	handler.ServeHTTP(globalPlugin, httptest.NewRequest(http.MethodPost, "/api/plugins", bytes.NewBufferString(`{"name":"custom-check","binary":"`+pluginBinary+`","phase":"enumerate","description":"custom scanner","homepage_url":"https://example.com","enabled":true}`)))
+	if globalPlugin.Code != http.StatusCreated {
+		t.Fatalf("global plugin create status = %d body=%s", globalPlugin.Code, globalPlugin.Body.String())
+	}
+	globalPluginList := httptest.NewRecorder()
+	handler.ServeHTTP(globalPluginList, httptest.NewRequest(http.MethodGet, "/api/plugins", nil))
+	if globalPluginList.Code != http.StatusOK || !strings.Contains(globalPluginList.Body.String(), "custom-check") {
+		t.Fatalf("global plugin list status = %d body=%s", globalPluginList.Code, globalPluginList.Body.String())
+	}
+	toolsWithPlugin := httptest.NewRecorder()
+	handler.ServeHTTP(toolsWithPlugin, httptest.NewRequest(http.MethodGet, "/api/tools", nil))
+	if toolsWithPlugin.Code != http.StatusOK || !strings.Contains(toolsWithPlugin.Body.String(), "plugin:custom-check") {
+		t.Fatalf("expected global plugin in tools, got status=%d body=%s", toolsWithPlugin.Code, toolsWithPlugin.Body.String())
 	}
 
 	models := httptest.NewRecorder()
@@ -386,6 +433,20 @@ func TestStopScanCancelsRunningScan(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("scan did not start target request")
 	}
+
+	pause := httptest.NewRecorder()
+	handler.ServeHTTP(pause, httptest.NewRequest(http.MethodPost, "/api/scan/"+created.Session.ID+"/pause", nil))
+	if pause.Code != http.StatusAccepted {
+		t.Fatalf("pause status = %d body=%s", pause.Code, pause.Body.String())
+	}
+	waitForScanStatus(t, handler, created.Session.ID, models.SessionStatusPaused)
+
+	resume := httptest.NewRecorder()
+	handler.ServeHTTP(resume, httptest.NewRequest(http.MethodPost, "/api/scan/"+created.Session.ID+"/resume", nil))
+	if resume.Code != http.StatusAccepted {
+		t.Fatalf("resume status = %d body=%s", resume.Code, resume.Body.String())
+	}
+	waitForScanStatus(t, handler, created.Session.ID, models.SessionStatusRunning)
 
 	stop := httptest.NewRecorder()
 	handler.ServeHTTP(stop, httptest.NewRequest(http.MethodPost, "/api/scan/"+created.Session.ID+"/stop", nil))

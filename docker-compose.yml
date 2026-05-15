@@ -2,7 +2,7 @@ services:
   nox:
     build: .
     ports:
-      - "8080:8080"
+      - "6767:6767"
     volumes:
       - nox-data:/home/nox/.nox
     environment:
@@ -11,7 +11,7 @@ services:
     depends_on:
       - ollama
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:6767/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

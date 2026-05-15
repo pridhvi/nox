@@ -1,6 +1,6 @@
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
+import { type ChangeEvent, type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CircleHelp, Play, Save, ShieldCheck, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, CircleHelp, Download, Play, Save, Settings, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
 import { createScanProfile, deleteScanProfile, listLLMModels, listScanProfiles, listTools, startScan, type StartScanRequest, type ToolRecord } from "../api/client";
 import { allProfiles, buildCustomProfileRequest, cleanToolParameters, splitArgs, splitLines, type ScanProfile } from "../scanProfiles";
 import { useSessionContext } from "../session";
@@ -32,7 +32,7 @@ export function ScanBuilder() {
   const toolsQuery = useQuery({ queryKey: ["tools"], queryFn: () => listTools() });
   const profilesQuery = useQuery({ queryKey: ["scan-profiles"], queryFn: listScanProfiles });
   const tools = toolsQuery.data ?? [];
-  const [target, setTarget] = useState("");
+  const [targets, setTargets] = useState("");
   const [name, setName] = useState("");
   const [mode, setMode] = useState("active");
   const [outOfScope, setOutOfScope] = useState("");
@@ -48,17 +48,19 @@ export function ScanBuilder() {
   const [params, setParams] = useState<Record<string, Record<string, unknown>>>({});
   const [selectedProfileID, setSelectedProfileID] = useState("");
   const [profileName, setProfileName] = useState("");
-  const [llmStatus, setLLMStatus] = useState("");
+  const [llmStatus, setLLMStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [llmMessage, setLLMMessage] = useState("");
+  const [configuredTool, setConfiguredTool] = useState<ToolRecord | null>(null);
 
   const selectedToolRecords = useMemo(() => tools.filter((tool) => selectedTools.includes(tool.id)), [selectedTools, tools]);
   const toolByID = useMemo(() => new Map(tools.map((tool) => [tool.id, tool])), [tools]);
-  const dependencyWarnings = useMemo(() => {
-    const selected = new Set(selectedTools);
-    return selectedToolRecords.flatMap((tool) => tool.depends_on.filter((dep) => !selected.has(dep)).map((dep) => `${tool.id} depends on ${dep}; Nox will include it automatically.`));
-  }, [selectedToolRecords, selectedTools]);
   const installedSelectedTools = selectedToolRecords.filter((tool) => tool.installed);
   const selectedEnabledPhaseCount = selectedPhases.length;
-  const canStartBase = target.trim() !== "" && selectedEnabledPhaseCount > 0 && installedSelectedTools.length > 0;
+  const parsedTargets = useMemo(() => splitTargets(targets), [targets]);
+  const targetError = targets.trim() === "" ? "Add at least one target." : parsedTargets.length === 0 ? "Enter valid http:// or https:// targets, separated by commas or new lines." : "";
+  const phaseError = selectedEnabledPhaseCount === 0 ? "Select at least one scan phase." : "";
+  const toolError = selectedTools.length === 0 ? "Select at least one tool." : installedSelectedTools.length === 0 ? "Select at least one installed or built-in tool." : "";
+  const canStartBase = !targetError && !phaseError && !toolError;
 
   const mutation = useMutation({
     mutationFn: startScan,
@@ -84,13 +86,19 @@ export function ScanBuilder() {
   const modelsMutation = useMutation({
     mutationFn: () => listLLMModels(llmBaseURL),
     onSuccess: (result) => {
-      setLLMStatus(`Connected. ${result.models.length} model${result.models.length === 1 ? "" : "s"} available.`);
+      setLLMStatus("success");
+      setLLMMessage(`${result.models.length} model${result.models.length === 1 ? "" : "s"} available.`);
       if (!llmModel && result.models.length > 0) {
         setLLMModel(result.models[0]);
       }
     },
-    onError: (error) => {
-      setLLMStatus(error instanceof Error ? error.message : "Unable to connect.");
+    onMutate: () => {
+      setLLMStatus("checking");
+      setLLMMessage("Checking model endpoint.");
+    },
+    onError: () => {
+      setLLMStatus("error");
+      setLLMMessage("Could not connect to the model endpoint.");
     },
   });
 
@@ -137,7 +145,8 @@ export function ScanBuilder() {
 
   function currentRequest(): StartScanRequest {
     return {
-      target,
+      target: parsedTargets.join("\n"),
+      targets: parsedTargets,
       name,
       mode,
       out_of_scope: splitLines(outOfScope),
@@ -169,6 +178,9 @@ export function ScanBuilder() {
     setRateLimit(request.rate_limit ?? "");
     setLLMBaseURL(request.llm_base_url ?? "");
     setLLMModel(request.llm_model ?? "");
+    if (request.target || request.targets?.length) {
+      setTargets(request.targets?.join("\n") ?? request.target ?? "");
+    }
   }
 
   function saveProfile() {
@@ -186,7 +198,35 @@ export function ScanBuilder() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canStartBase) {
+      return;
+    }
     mutation.mutate(currentRequest());
+  }
+
+  function exportProfiles() {
+    const blob = new Blob([JSON.stringify(profilesQuery.data ?? [], null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "scan-profiles.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importProfiles(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const parsed = JSON.parse(text) as unknown;
+    const records = Array.isArray(parsed) ? parsed : [parsed];
+    await Promise.all(records.map((record) => {
+      const item = record as { name?: string; description?: string; request?: StartScanRequest };
+      if (!item.name || !item.request) return Promise.resolve();
+      return createScanProfile({ name: item.name, description: item.description, request: item.request });
+    }));
+    queryClient.invalidateQueries({ queryKey: ["scan-profiles"] });
+    event.target.value = "";
   }
 
   const profiles = allProfiles(profilesQuery.data ?? []);
@@ -218,6 +258,8 @@ export function ScanBuilder() {
             </label>
             <button className="secondary" type="button" disabled={!profileName.trim() || createProfileMutation.isPending} onClick={saveProfile}><Save size={16} />Save</button>
             <button className="secondary" type="button" disabled={!selectedProfile || selectedProfile.builtIn || deleteProfileMutation.isPending} onClick={deleteSelectedProfile}><Trash2 size={16} />Delete</button>
+            <button className="secondary" type="button" onClick={exportProfiles}><Download size={16} />Export</button>
+            <label className="secondary file-button"><Upload size={16} />Import<input type="file" accept="application/json,.json" onChange={importProfiles} /></label>
           </div>
           {createProfileMutation.error ? <p className="error-text">{createProfileMutation.error.message}</p> : null}
           {selectedProfile ? <p className="profile-description">{selectedProfile.description}</p> : null}
@@ -225,7 +267,8 @@ export function ScanBuilder() {
         <section className="panel">
           <h2>Scope</h2>
           <div className="form-grid">
-            <label>Target<input value={target} onChange={(event) => setTarget(event.target.value)} placeholder="https://example.com" required /></label>
+            <label className="span-2">Targets <Required /><textarea value={targets} onChange={(event) => setTargets(event.target.value)} rows={4} placeholder={"https://example.com\nhttps://example.org"} required /></label>
+            {targetError ? <p className="field-error span-2">{targetError}</p> : null}
             <label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Engagement name" /></label>
             <label>Mode
               <span className="inline-help-control">
@@ -257,11 +300,11 @@ export function ScanBuilder() {
           </div>
           <div className="llm-actions">
             <button className="secondary" type="button" disabled={!llmBaseURL.trim() || modelsMutation.isPending} onClick={() => modelsMutation.mutate()}>{modelsMutation.isPending ? "Checking" : "Check Connection"}</button>
-            {llmStatus ? <span className={modelsMutation.isError ? "error-text inline-status" : "success-text inline-status"}>{llmStatus}</span> : null}
+            {llmStatus !== "idle" ? <span className={`llm-state ${llmStatus}`}>{llmStatus === "checking" ? <span className="spinner" /> : llmStatus === "success" ? <CheckCircle2 size={16} /> : <XCircle size={16} />}{llmMessage}</span> : null}
           </div>
         </section>
         <section className="panel span-2">
-          <h2>Phases</h2>
+          <h2>Phases <Required /></h2>
           <div className="phase-grid">
             {phases.map((phase) => (
               <label key={phase.id} className={`phase-option ${selectedPhases.includes(phase.id) ? "selected" : ""}`}>
@@ -270,41 +313,45 @@ export function ScanBuilder() {
               </label>
             ))}
           </div>
+          {phaseError ? <p className="field-error">{phaseError}</p> : null}
         </section>
         <section className="panel span-2">
-          <h2>Tools</h2>
+          <h2>Tools <Required /></h2>
           <div className="tool-phase-grid">
             {phases.map((phase) => (
               <article key={phase.id} className={!selectedPhases.includes(phase.id) ? "disabled-tool-phase" : ""}>
                 <h3>{phase.label}</h3>
                 {tools.filter((tool) => tool.phase === phase.id).map((tool) => (
-                  <label key={tool.id} className={`tool-check ${tool.installed ? tool.kind : "missing"} ${selectedTools.includes(tool.id) ? "selected" : ""}`}>
-                    <input type="checkbox" disabled={!selectedPhases.includes(phase.id)} checked={selectedTools.includes(tool.id)} onChange={() => toggleTool(tool)} />
-                    {tool.installed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-                    <span><strong>{tool.id}</strong><small>{toolStatus(tool)} · {tool.name}</small></span>
-                  </label>
+                  <div key={tool.id} className={`tool-check ${tool.installed ? tool.kind : "missing"} ${selectedTools.includes(tool.id) ? "selected" : ""}`}>
+                    <label>
+                      <input type="checkbox" disabled={!selectedPhases.includes(phase.id) || !tool.installed} checked={selectedTools.includes(tool.id)} onChange={() => toggleTool(tool)} />
+                      {tool.installed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                      <span><strong>{tool.id} <InfoTip text={`${tool.name}. ${tool.description || tool.install_hint}${tool.homepage_url ? ` ${tool.homepage_url}` : ""}`} /></strong><small>{toolStatus(tool)}</small></span>
+                    </label>
+                    <button className="icon-button" type="button" disabled={!selectedPhases.includes(phase.id)} onClick={() => setConfiguredTool(tool)} aria-label={`Configure ${tool.id}`}><Settings size={16} /></button>
+                  </div>
                 ))}
               </article>
             ))}
           </div>
-          {dependencyWarnings.map((warning) => <p key={warning} className="warning-text">{warning}</p>)}
-          <p className="profile-description">Selecting a tool also selects its dependencies when those dependency phases are enabled.</p>
+          {toolError ? <p className="field-error">{toolError}</p> : null}
+          <p className="profile-description">Selecting a tool automatically selects required dependency tools when available.</p>
         </section>
-        {selectedToolRecords.length > 0 ? (
-          <section className="panel span-2">
-            <h2>Tool Parameters</h2>
-            <div className="parameter-grid">
-              {selectedToolRecords.map((tool) => <ToolParameters key={tool.id} tool={tool} values={params[tool.id] ?? {}} onChange={(name, value) => setToolParam(tool.id, name, value)} />)}
-            </div>
-          </section>
-        ) : null}
         <section className="panel span-2 action-panel">
           {mutation.error ? <p className="error-text">{mutation.error.message}</p> : null}
-          {!canStartBase ? <p className="warning-text">Select at least one phase and one installed tool before starting a scan.</p> : null}
           <button className="primary" type="submit" disabled={!canStart}><Play size={16} />{mutation.isPending ? "Starting" : "Start Scan"}</button>
           <span><ShieldCheck size={16} /> Scope validation is enforced before adapters run.</span>
         </section>
       </form>
+      {configuredTool ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal">
+            <header><h2>Configure {configuredTool.id}</h2><button className="icon-button" type="button" onClick={() => setConfiguredTool(null)}>×</button></header>
+            <ToolParameters tool={configuredTool} values={params[configuredTool.id] ?? {}} onChange={(name, value) => setToolParam(configuredTool.id, name, value)} />
+            <footer><button className="primary" type="button" onClick={() => setConfiguredTool(null)}>Save</button></footer>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -337,18 +384,23 @@ function HelpLabel({ label, help, children }: { label: string; help: string; chi
 }
 
 function InfoTip({ text }: { text: string }) {
-  return <span className="info-tip" title={text} aria-label={text}><CircleHelp size={16} /></span>;
+  return <span className="info-tip" aria-label={text}><CircleHelp size={16} /><span className="tooltip">{text}</span></span>;
 }
 
 function toolStatus(tool: ToolRecord) {
   if (!tool.installed) {
-    return "missing";
+    return "not installed";
   }
   if (tool.kind === "builtin_http") {
-    return "built in";
+    return "built-in";
   }
-  if (tool.kind === "subprocess") {
-    return "installed subprocess";
-  }
-  return "plugin";
+  return "installed";
+}
+
+function Required() {
+  return <span className="required-mark">Required</span>;
+}
+
+function splitTargets(value: string) {
+  return [...new Set(value.split(/[\n,]+/).map((item) => item.trim()).filter((item) => /^https?:\/\/[^/\s]+/i.test(item)))];
 }

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kanini/nox/internal/adapters"
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/engine"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/adapters"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/engine"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 type ScanManager struct {
@@ -18,6 +18,9 @@ type ScanManager struct {
 	events     *scanEventBroker
 	mu         sync.Mutex
 	running    map[string]context.CancelFunc
+	paused     map[string]bool
+	resumeCh   map[string]chan struct{}
+	plugins    func() []models.PluginRecord
 }
 
 func NewScanManager(sessionDir string, httpClient adapters.HTTPDoer) *ScanManager {
@@ -26,7 +29,13 @@ func NewScanManager(sessionDir string, httpClient adapters.HTTPDoer) *ScanManage
 		httpClient: httpClient,
 		events:     newScanEventBroker(),
 		running:    make(map[string]context.CancelFunc),
+		paused:     make(map[string]bool),
+		resumeCh:   make(map[string]chan struct{}),
 	}
+}
+
+func (m *ScanManager) SetPluginProvider(provider func() []models.PluginRecord) {
+	m.plugins = provider
 }
 
 func (m *ScanManager) Start(session models.Session) {
@@ -45,6 +54,8 @@ func (m *ScanManager) Start(session models.Session) {
 		defer func() {
 			m.mu.Lock()
 			delete(m.running, session.ID)
+			delete(m.paused, session.ID)
+			delete(m.resumeCh, session.ID)
 			m.mu.Unlock()
 			cancel()
 		}()
@@ -62,11 +73,88 @@ func (m *ScanManager) Start(session models.Session) {
 		}
 		defer store.Close()
 		runner := engine.NewRunnerWithOptions(store, engine.DefaultSafeAdapters(), m.httpClient, runnerOptionsFromSession(session))
+		runner.SetPauseController(m.pauseController(session.ID))
+		for _, plugin := range m.enabledPlugins() {
+			runner.AddAdapters(adapters.NewConfiguredPlugin(plugin))
+		}
 		runner.OnEvent(m.Publish)
 		if err := runner.Run(ctx, session); err != nil {
 			slog.Error("async scan failed", "session_id", session.ID, "error", err)
 		}
 	}()
+}
+
+func (m *ScanManager) Pause(sessionID string) bool {
+	m.mu.Lock()
+	if _, ok := m.running[sessionID]; !ok {
+		m.mu.Unlock()
+		return false
+	}
+	if m.resumeCh[sessionID] == nil {
+		m.resumeCh[sessionID] = make(chan struct{})
+	}
+	m.paused[sessionID] = true
+	m.mu.Unlock()
+	m.updateSessionStatus(sessionID, models.SessionStatusPaused, nil, nil)
+	m.Publish(engine.ScanEvent{Type: engine.ScanEventRunning, SessionID: sessionID, Status: "paused", Message: "Scan paused", At: time.Now().UTC()})
+	return true
+}
+
+func (m *ScanManager) Resume(sessionID string) bool {
+	m.mu.Lock()
+	if _, ok := m.running[sessionID]; !ok {
+		m.mu.Unlock()
+		return false
+	}
+	if ch := m.resumeCh[sessionID]; ch != nil {
+		close(ch)
+	}
+	m.resumeCh[sessionID] = make(chan struct{})
+	m.paused[sessionID] = false
+	m.mu.Unlock()
+	m.updateSessionStatus(sessionID, models.SessionStatusRunning, nil, nil)
+	m.Publish(engine.ScanEvent{Type: engine.ScanEventRunning, SessionID: sessionID, Status: "running", Message: "Scan resumed", At: time.Now().UTC()})
+	return true
+}
+
+func (m *ScanManager) pauseController(sessionID string) pauseControllerFunc {
+	return func(ctx context.Context) error {
+		for {
+			m.mu.Lock()
+			paused := m.paused[sessionID]
+			ch := m.resumeCh[sessionID]
+			if ch == nil {
+				ch = make(chan struct{})
+				m.resumeCh[sessionID] = ch
+			}
+			m.mu.Unlock()
+			if !paused {
+				return nil
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ch:
+			}
+		}
+	}
+}
+
+type pauseControllerFunc func(context.Context) error
+
+func (f pauseControllerFunc) WaitIfPaused(ctx context.Context) error { return f(ctx) }
+
+func (m *ScanManager) enabledPlugins() []models.PluginRecord {
+	if m.plugins == nil {
+		return nil
+	}
+	var out []models.PluginRecord
+	for _, plugin := range m.plugins() {
+		if plugin.Enabled {
+			out = append(out, plugin)
+		}
+	}
+	return out
 }
 
 func (m *ScanManager) Stop(sessionID string) bool {
@@ -85,6 +173,15 @@ func (m *ScanManager) Stop(sessionID string) bool {
 		At:        time.Now().UTC(),
 	})
 	return true
+}
+
+func (m *ScanManager) updateSessionStatus(sessionID string, status models.SessionStatus, startedAt, completedAt *time.Time) {
+	store, err := db.OpenSession(context.Background(), m.sessionDir, sessionID)
+	if err != nil {
+		return
+	}
+	defer store.Close()
+	_ = store.UpdateSessionStatus(context.Background(), sessionID, status, startedAt, completedAt)
 }
 
 func (m *ScanManager) Publish(event engine.ScanEvent) {

@@ -3,7 +3,7 @@ package vectors
 import (
 	"testing"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 func TestDefaultRulesGenerateExpectedVectors(t *testing.T) {

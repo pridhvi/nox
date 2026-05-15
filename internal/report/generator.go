@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/jung-kurt/gofpdf"
-	"github.com/kanini/nox/internal/db"
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/db"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 type Options struct {

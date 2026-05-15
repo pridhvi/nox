@@ -7,6 +7,7 @@ type SessionStatus string
 const (
 	SessionStatusPending   SessionStatus = "pending"
 	SessionStatusRunning   SessionStatus = "running"
+	SessionStatusPaused    SessionStatus = "paused"
 	SessionStatusCompleted SessionStatus = "completed"
 	SessionStatusFailed    SessionStatus = "failed"
 	SessionStatusCancelled SessionStatus = "cancelled"
@@ -21,24 +22,24 @@ const (
 )
 
 type Session struct {
-	ID            string        `json:"id"`
-	Name          string        `json:"name"`
-	Status        SessionStatus `json:"status"`
-	Mode          ScanMode      `json:"mode"`
-	TargetInput   string        `json:"target_input"`
-	InScope       []string      `json:"in_scope"`
-	OutOfScope    []string      `json:"out_of_scope"`
-	EnabledPhases []string      `json:"enabled_phases"`
-	EnabledTools  []string      `json:"enabled_tools"`
+	ID             string                    `json:"id"`
+	Name           string                    `json:"name"`
+	Status         SessionStatus             `json:"status"`
+	Mode           ScanMode                  `json:"mode"`
+	TargetInput    string                    `json:"target_input"`
+	InScope        []string                  `json:"in_scope"`
+	OutOfScope     []string                  `json:"out_of_scope"`
+	EnabledPhases  []string                  `json:"enabled_phases"`
+	EnabledTools   []string                  `json:"enabled_tools"`
 	ToolParameters map[string]map[string]any `json:"tool_parameters,omitempty"`
 	RunnerOptions  ScanRunnerOptions         `json:"runner_options,omitempty"`
-	LLMModel      string        `json:"llm_model"`
-	LLMBaseURL    string        `json:"llm_base_url"`
-	TargetCount   int           `json:"target_count"`
-	FindingCount  int           `json:"finding_count"`
-	StartedAt     *time.Time    `json:"started_at,omitempty"`
-	CompletedAt   *time.Time    `json:"completed_at,omitempty"`
-	CreatedAt     time.Time     `json:"created_at"`
+	LLMModel       string                    `json:"llm_model"`
+	LLMBaseURL     string                    `json:"llm_base_url"`
+	TargetCount    int                       `json:"target_count"`
+	FindingCount   int                       `json:"finding_count"`
+	StartedAt      *time.Time                `json:"started_at,omitempty"`
+	CompletedAt    *time.Time                `json:"completed_at,omitempty"`
+	CreatedAt      time.Time                 `json:"created_at"`
 }
 
 type ScanRunnerOptions struct {

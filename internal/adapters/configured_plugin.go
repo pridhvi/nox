@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kanini/nox/internal/models"
+	"github.com/pridhvi/nox/internal/models"
 )
 
 const pluginProtocolVersion = "nox.plugin.v1"
@@ -23,7 +23,14 @@ func (p ConfiguredPlugin) ID() string { return "plugin:" + p.record.Name }
 
 func (p ConfiguredPlugin) Name() string { return p.record.Name }
 
-func (p ConfiguredPlugin) Phase() Phase { return PhaseVulnScan }
+func (p ConfiguredPlugin) Phase() Phase {
+	switch Phase(p.record.Phase) {
+	case PhaseRecon, PhaseFingerprint, PhaseEnumerate, PhaseVulnScan:
+		return Phase(p.record.Phase)
+	default:
+		return PhaseVulnScan
+	}
+}
 
 func (p ConfiguredPlugin) DependsOn() []string { return nil }
 

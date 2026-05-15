@@ -7,7 +7,8 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/kanini/nox/internal/db"
+	"github.com/pridhvi/nox/internal/config"
+	"github.com/pridhvi/nox/internal/db"
 )
 
 func runSessions(args []string) error {
@@ -43,7 +44,11 @@ func runSessions(args []string) error {
 }
 
 func listSessions() error {
-	records, err := db.ListSessions(context.Background(), db.DefaultSessionsDir())
+	sessionDir, err := configuredSessionDir("")
+	if err != nil {
+		return err
+	}
+	records, err := db.ListSessions(context.Background(), sessionDir)
 	if err != nil {
 		return err
 	}
@@ -69,7 +74,11 @@ func listSessions() error {
 }
 
 func showSession(sessionID string) error {
-	store, err := db.OpenSession(context.Background(), db.DefaultSessionsDir(), sessionID)
+	sessionDir, cfgErr := configuredSessionDir("")
+	if cfgErr != nil {
+		return cfgErr
+	}
+	store, err := db.OpenSession(context.Background(), sessionDir, sessionID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return fmt.Errorf("session %s not found", sessionID)
@@ -100,7 +109,11 @@ func showSession(sessionID string) error {
 }
 
 func deleteSession(sessionID string) error {
-	if err := db.DeleteSession(context.Background(), db.DefaultSessionsDir(), sessionID); err != nil {
+	sessionDir, cfgErr := configuredSessionDir("")
+	if cfgErr != nil {
+		return cfgErr
+	}
+	if err := db.DeleteSession(context.Background(), sessionDir, sessionID); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return fmt.Errorf("session %s not found", sessionID)
 		}
@@ -111,7 +124,11 @@ func deleteSession(sessionID string) error {
 }
 
 func listFindings(sessionID string) error {
-	store, err := db.OpenSession(context.Background(), db.DefaultSessionsDir(), sessionID)
+	sessionDir, cfgErr := configuredSessionDir("")
+	if cfgErr != nil {
+		return cfgErr
+	}
+	store, err := db.OpenSession(context.Background(), sessionDir, sessionID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return fmt.Errorf("session %s not found", sessionID)
@@ -140,7 +157,11 @@ func listFindings(sessionID string) error {
 }
 
 func listToolRuns(sessionID string) error {
-	store, err := db.OpenSession(context.Background(), db.DefaultSessionsDir(), sessionID)
+	sessionDir, cfgErr := configuredSessionDir("")
+	if cfgErr != nil {
+		return cfgErr
+	}
+	store, err := db.OpenSession(context.Background(), sessionDir, sessionID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return fmt.Errorf("session %s not found", sessionID)
@@ -166,4 +187,12 @@ func listToolRuns(sessionID string) error {
 		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%s\n", run.ToolID, run.ExitCode, run.DurationMS, run.FindingCount, run.StartedAt.Format("2006-01-02 15:04:05"))
 	}
 	return w.Flush()
+}
+
+func configuredSessionDir(configPath string) (string, error) {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return "", err
+	}
+	return firstNonEmpty(cfg.Database.SessionDir, db.DefaultSessionsDir()), nil
 }

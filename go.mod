@@ -1,10 +1,11 @@
-module github.com/kanini/nox
+module github.com/pridhvi/nox
 
 go 1.26
 
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jung-kurt/gofpdf v1.16.2
+	github.com/sashabaranov/go-openai v1.41.2
 	github.com/spf13/viper v1.21.0
 	modernc.org/sqlite v1.50.1
 )
