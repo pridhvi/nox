@@ -51,6 +51,37 @@ func main() {
 		}
 		http.Redirect(w, r, first(target, "/"), http.StatusFound)
 	})
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			fmt.Fprintln(w, `<form method="post"><input name="username"><input name="password" type="password"><button>login</button></form>`)
+			return
+		}
+		_ = r.ParseForm()
+		username := r.FormValue("username")
+		password := r.FormValue("password")
+		if username == "locked" {
+			w.WriteHeader(http.StatusLocked)
+			fmt.Fprintln(w, "account locked after too many attempts")
+			return
+		}
+		if username == "admin" && password == "password" {
+			fmt.Fprintln(w, "success welcome dashboard token=fixture-token")
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintln(w, "invalid credentials")
+	})
+	mux.HandleFunc("/ssti", func(w http.ResponseWriter, r *http.Request) {
+		value := r.URL.Query().Get("q")
+		if value == "{{7*7}}" || value == "${7*7}" {
+			fmt.Fprintln(w, "49")
+			return
+		}
+		fmt.Fprintf(w, "template preview: %s", value)
+	})
+	mux.HandleFunc("/xxe", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintln(w, "xml parser accepted fixture-safe marker")
+	})
 	mux.HandleFunc("/static/app.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		fmt.Fprintf(w, `const apiKey = %q; fetch("/api/search?q=test"); fetch("/graphql", {method: "POST"});`, api_key)

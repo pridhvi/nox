@@ -4,16 +4,30 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/pridhvi/nox/internal/db"
 	"github.com/pridhvi/nox/internal/models"
 )
+
+type RESTResult struct {
+	Available bool   `json:"available"`
+	Action    string `json:"action"`
+	Message   string `json:"message"`
+	Count     int    `json:"count,omitempty"`
+}
+
+type HTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
 
 type issuesXML struct {
 	Issues []issueXML `xml:"issue"`
@@ -116,6 +130,126 @@ func ExportFindings(ctx context.Context, store *db.Store, sessionID string) ([]b
 	}
 	buf.WriteString(`</issues>`)
 	return buf.Bytes(), nil
+}
+
+func Status(ctx context.Context, config models.BurpConfig, client HTTPDoer) RESTResult {
+	if strings.TrimSpace(config.BaseURL) == "" {
+		return RESTResult{Available: false, Action: "status", Message: "Burp REST base URL is not configured"}
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	req, err := restRequest(ctx, config, http.MethodGet, "/v0.1/scan", nil)
+	if err != nil {
+		return RESTResult{Available: false, Action: "status", Message: err.Error()}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return RESTResult{Available: false, Action: "status", Message: err.Error()}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+		return RESTResult{Available: true, Action: "status", Message: fmt.Sprintf("Burp REST responded with HTTP %d", resp.StatusCode)}
+	}
+	return RESTResult{Available: false, Action: "status", Message: fmt.Sprintf("Burp REST returned HTTP %d", resp.StatusCode)}
+}
+
+func PushScope(ctx context.Context, store *db.Store, sessionID string, config models.BurpConfig, client HTTPDoer) (RESTResult, error) {
+	targets, err := store.ListTargets(ctx, sessionID)
+	if err != nil {
+		return RESTResult{}, err
+	}
+	if strings.TrimSpace(config.BaseURL) == "" {
+		return RESTResult{Available: false, Action: "push_scope", Message: "Burp REST base URL is not configured"}, nil
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 8 * time.Second}
+	}
+	var urls []string
+	for _, target := range targets {
+		urls = append(urls, fmt.Sprintf("%s://%s:%d", target.Protocol, target.Host, target.Port))
+	}
+	body, _ := json.Marshal(map[string]any{"urls": urls})
+	req, err := restRequest(ctx, config, http.MethodPost, "/v0.1/scope", bytes.NewReader(body))
+	if err != nil {
+		return RESTResult{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return RESTResult{Available: false, Action: "push_scope", Message: err.Error(), Count: len(urls)}, nil
+	}
+	defer resp.Body.Close()
+	return RESTResult{Available: resp.StatusCode >= 200 && resp.StatusCode < 300, Action: "push_scope", Message: fmt.Sprintf("Burp REST returned HTTP %d", resp.StatusCode), Count: len(urls)}, nil
+}
+
+func PullIssues(ctx context.Context, store *db.Store, session models.Session, config models.BurpConfig, client HTTPDoer) (models.BurpImportResult, RESTResult, error) {
+	if strings.TrimSpace(config.BaseURL) == "" {
+		return models.BurpImportResult{}, RESTResult{Available: false, Action: "pull_issues", Message: "Burp REST base URL is not configured"}, nil
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 8 * time.Second}
+	}
+	req, err := restRequest(ctx, config, http.MethodGet, "/v0.1/issues", nil)
+	if err != nil {
+		return models.BurpImportResult{}, RESTResult{}, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return models.BurpImportResult{}, RESTResult{Available: false, Action: "pull_issues", Message: err.Error()}, nil
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return models.BurpImportResult{}, RESTResult{Available: false, Action: "pull_issues", Message: fmt.Sprintf("Burp REST returned HTTP %d", resp.StatusCode)}, nil
+	}
+	result, err := ImportJSON(ctx, store, session, raw)
+	return result, RESTResult{Available: true, Action: "pull_issues", Message: fmt.Sprintf("Imported %d Burp issues", result.FindingsImported), Count: result.FindingsImported}, err
+}
+
+func ImportJSON(ctx context.Context, store *db.Store, session models.Session, raw []byte) (models.BurpImportResult, error) {
+	var parsed struct {
+		Issues []struct {
+			Host       string `json:"host"`
+			Path       string `json:"path"`
+			URL        string `json:"url"`
+			Name       string `json:"name"`
+			Severity   string `json:"severity"`
+			Confidence string `json:"confidence"`
+			Request    string `json:"request"`
+			Response   string `json:"response"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return models.BurpImportResult{}, err
+	}
+	var xmlIssues issuesXML
+	for _, issue := range parsed.Issues {
+		xmlIssues.Issues = append(xmlIssues.Issues, issueXML{
+			Host: issue.Host, Path: issue.Path, Location: issue.URL, Name: issue.Name,
+			Severity: issue.Severity, Confidence: issue.Confidence, Request: issue.Request, Response: issue.Response,
+		})
+	}
+	body, _ := xml.Marshal(xmlIssues)
+	return ImportXML(ctx, store, session, body)
+}
+
+func restRequest(ctx context.Context, config models.BurpConfig, method, endpoint string, body io.Reader) (*http.Request, error) {
+	base, err := url.Parse(strings.TrimRight(config.BaseURL, "/"))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return nil, fmt.Errorf("invalid Burp REST base URL")
+	}
+	ref, _ := url.Parse(endpoint)
+	req, err := http.NewRequestWithContext(ctx, method, base.ResolveReference(ref).String(), body)
+	if err != nil {
+		return nil, err
+	}
+	if config.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+config.APIKey)
+		req.Header.Set("X-API-Key", config.APIKey)
+	}
+	req.Header.Set("User-Agent", "nox/0.1 burp-bridge")
+	return req, nil
 }
 
 func ReadAll(reader io.Reader) ([]byte, error) {

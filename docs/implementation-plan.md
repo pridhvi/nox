@@ -91,11 +91,17 @@ work and must be carried forward:
   registration during `nox serve`, baseline comparison, Slack/Discord webhook
   notification dispatch, and `surface_changes` persistence for target,
   technology, and finding drift.
-- **Power-feature slices:** Payloads, credential records, OSINT findings,
-  AD/internal-network entities and relationships, evasion runner options and
-  block events, PoC results, and Burp import/export/collaborator state have
-  additive models, persistence, API/CLI access, and consolidated UI visibility.
-  Active behavior remains explicit, conservative, and API-key-gated.
+- **Power-feature modules:** Payload generation now supports optional
+  LLM-assisted payloads with deterministic fallback and safe marker validation;
+  credential checks are lockout-aware, paced, scope-checked, and redacted by
+  default; OSINT records include provider status for GitHub/Shodan/passive DNS
+  configuration; AD/internal-network records include safe enum, relay-risk, and
+  Kerberoast request recording without cracking; PoC records can include safe
+  validation and callback correlation; Burp supports XML import/export plus
+  REST status, scope push, and issue pull helpers. All modules have additive
+  models, persistence, API/CLI access, report sections, integration smoke, and
+  consolidated UI visibility. Active behavior remains explicit, conservative,
+  scope-checked, and API-key-gated through the API.
 - **Audit and source-aware mode:** Static extractors cover Python,
   JavaScript/TypeScript, Go, PHP, Ruby, and Java for routes, parameters, SQL
   sinks, file uploads, auth middleware, secrets, SSRF sinks, deserialization
@@ -116,8 +122,9 @@ work and must be carried forward:
 - **API:** Health, tools, sessions, targets, findings, source findings, tool
   runs, stats, scan start/status/pause/resume/stop, vectors, attack graph edges,
   CVEs, reports, LLM history/analysis/chat, session deletion, scan profiles,
-  monitor configs/runs/surface changes, payloads, credentials, OSINT, AD,
-  block events, PoC results, Burp XML import/export/config callbacks,
+  monitor configs/runs/surface changes, payloads, credentials, OSINT, provider
+  statuses, AD, block events, callbacks, PoC results, Burp XML import/export,
+  Burp REST helpers, and config callbacks,
   API-key-protected global plugins, API-key-protected LLM model probing,
   API-key enforcement for non-loopback serving and host-privileged API
   operations, and scan lifecycle
@@ -1262,24 +1269,27 @@ greenfield assumptions:
 | 10. LLM Integration | Phase 12 | Implemented | Optional OpenAI-compatible client, config, structured context builder, constrained tools, analyst loop, evidence truncation, persisted audit trails, vector annotations, API endpoints, CLI commands, and UI history/chat exist. |
 | 11. CVE Intelligence | Phase 10 | Implemented | Correlator, offline JSON source, Exploit-DB CSV source, cache, NVD/OSV/CIRCL/Vulners/GitHub parsers, evidence CVE extraction, persisted matches, and draft vectors exist. |
 | 12. Attack Vector Engine | Phase 11 | Implemented | Deterministic rule engine, default rules, scoring, steps, persistence integration, CVE vector merging, LLM review annotations, API exposure, and UI graph exposure exist. |
-| 13. REST API Surface | Phase 13 | Implemented | Spec endpoints for sessions, scans, findings, finding updates, vectors, CVEs, LLM, reports, health, tools, auth, monitor configs/runs/changes, power-feature records/actions, and WebSocket alias exist. |
-| 14. CLI Commands | Phase 14 | Implemented | Scan flags, monitor/payload/creds/osint/ad/poc/burp commands, report generation, LLM commands, config init/show, plugins, sessions, serve, and version exist. |
-| 15. Web UI Pages | Phase 16 | Implemented | Dashboard, monitor route, power features route, session route, Cytoscape graph, Recharts severity chart, finding evidence/edit workflow, LLM, and reports pages use real API data. |
-| 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nox/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, logging settings, tool path maps, plugin directories, CVE settings, and CLI override paths exist. |
+| 13. REST API Surface | Phase 13 | Implemented | Spec endpoints for sessions, scans, findings, finding updates, vectors, CVEs, LLM, reports, health, tools, auth, monitor configs/runs/changes, power-feature records/actions, provider statuses, callbacks, Burp REST helpers, and WebSocket alias exist. |
+| 14. CLI Commands | Phase 14 | Implemented | Scan flags, monitor/payload/creds/osint/ad/poc/burp commands including safe validation/provider/credential/Burp actions, report generation, LLM commands, config init/show, plugins, sessions, serve, and version exist. |
+| 15. Web UI Pages | Phase 16 | Implemented | Dashboard, monitor route, power features workspace, session route, Cytoscape graph, Recharts severity chart, finding evidence/edit workflow, LLM, and reports pages use real API data. |
+| 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nox/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, logging settings, tool path maps, plugin directories, CVE settings, power provider/callback/credential/validation settings with redaction, and CLI override paths exist. |
 | 17. Scope Validation | Phase 3 | Implemented | Checker, adapter boundary tests, cancellation, lifecycle status coverage, and privileged API source/LLM allowlist controls exist. |
 | 18. Error Handling & Logging | Phases 3, 4, 5 | Implemented | Tool failures persist without failing scans; structured slog configuration supports `NOX_LOG_LEVEL` and `NOX_LOG_FORMAT`, and non-fatal adapter failures are logged. |
-| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM tests, frontend CI build, Docker smoke, scheduled/manual fixture-backed integration smoke, and opt-in Linux full-tool fixture validation scripts exist. |
+| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM/power tests, frontend CI build, Docker smoke, scheduled/manual fixture-backed integration smoke, opt-in power integration smoke, and opt-in Linux full-tool fixture validation scripts exist. |
 | 20. Docker Setup | Phase 17 | Implemented | Dockerfile, healthcheck, compose, deployment docs, bundled scanner version smoke, and Docker smoke exist. |
-| 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, tool-version smoke, Linux full smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
+| 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, power integration smoke, tool-version smoke, Linux full smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
 | 22. Build Order Recommendation | This plan | Implemented | This roadmap follows the spec build order while preserving current work. |
 | 23. Security & Legal Notes | Phase 0 | Implemented | README and CLI help include prominent authorized-use warnings; scope remains a hard implementation boundary. |
 
 ## Future Power Feature Plans
 
-The v1 roadmap above is implemented. All eight power-feature modules have an
-initial production-safe slice. Remaining work is depth: fixture-backed
-automation, external-provider/tool integration, richer reports, and stronger UI
-workflows. The complete target states remain in `docs/nox-power-features-spec.md`
+The v1 roadmap above is implemented. All eight power-feature modules now have a
+deep-but-safe implementation slice: optional provider integrations degrade
+gracefully, active validation is explicit and fixture-safe, callbacks are
+correlated without exfiltration, credentials are paced and redacted by default,
+and reports/UI expose power evidence. Remaining work is provider breadth and
+Linux-tool hardening based on real operator feedback, not new required roadmap
+phases. The complete target states remain in `docs/nox-power-features-spec.md`
 and `docs/power-feature-plans/`.
 
 ## Coverage Check Terms

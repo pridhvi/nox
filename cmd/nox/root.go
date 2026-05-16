@@ -113,6 +113,11 @@ Usage:
   nox llm analyse <session-id>
   nox config init
   nox config show
+  nox payloads validate <session-id> --payload <id> --confirm --enabled=true
+  nox creds test <session-id> --mode defaults --url <login-url> --confirm
+  nox osint run <session-id> --providers github,shodan,securitytrails
+  nox ad kerberoast <session-id> --username svc-http --confirm
+  nox burp status <session-id>
   nox version`)
 }
 

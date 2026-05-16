@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	appconfig "github.com/pridhvi/nox/internal/config"
 	"github.com/pridhvi/nox/internal/models"
 )
 
@@ -31,6 +32,21 @@ func ConfigFromSession(session models.Session) Config {
 		Model:       firstNonEmpty(session.LLMModel, os.Getenv("NOX_LLM_MODEL")),
 		MaxTokens:   envInt("NOX_LLM_MAX_TOKENS", defaultMaxTokens),
 		Temperature: envFloat("NOX_LLM_TEMPERATURE", defaultTemperature),
+	}
+	if config.Model == "" && config.BaseURL != "" {
+		config.Model = "llama3:8b"
+	}
+	return config
+}
+
+func ConfigFromApp(cfg appconfig.Config) Config {
+	config := Config{
+		Provider:    firstNonEmpty(os.Getenv("NOX_LLM_PROVIDER"), cfg.LLM.Provider, defaultProvider),
+		BaseURL:     firstNonEmpty(os.Getenv("NOX_LLM_BASE_URL"), cfg.LLM.BaseURL),
+		APIKey:      firstNonEmpty(os.Getenv("NOX_LLM_API_KEY"), cfg.LLM.APIKey),
+		Model:       firstNonEmpty(os.Getenv("NOX_LLM_MODEL"), cfg.LLM.Model),
+		MaxTokens:   firstPositive(envInt("NOX_LLM_MAX_TOKENS", 0), cfg.LLM.MaxTokens, defaultMaxTokens),
+		Temperature: firstFloat(os.Getenv("NOX_LLM_TEMPERATURE"), cfg.LLM.Temperature, defaultTemperature),
 	}
 	if config.Model == "" && config.BaseURL != "" {
 		config.Model = "llama3:8b"
@@ -65,4 +81,27 @@ func envFloat(key string, fallback float64) float64 {
 		return fallback
 	}
 	return value
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstFloat(env string, values ...float64) float64 {
+	if strings.TrimSpace(env) != "" {
+		if value, err := strconv.ParseFloat(strings.TrimSpace(env), 64); err == nil {
+			return value
+		}
+	}
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }

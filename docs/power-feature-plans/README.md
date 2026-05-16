@@ -5,6 +5,14 @@ work packages. Each file is intended to be handed to Codex or another engineer
 as the starting point for one module. Do not implement a module directly from
 the source spec when a detailed plan exists here.
 
+## Current State
+
+All eight modules now have a deep-but-safe v1 implementation slice in the repo.
+The plans remain useful as traceability and future hardening references, but the
+current implementation should be inspected before starting new work. Active
+behavior remains explicit, scope-checked, non-destructive, and API-key-gated
+through the API.
+
 ## Module Plans
 
 | # | Module | Plan |
@@ -56,4 +64,9 @@ cd web && npm run build
 ```
 
 Add module-specific fixture or integration checks from the relevant plan before
-considering the module complete.
+considering new hardening work complete. The current cross-module fixture check
+is:
+
+```sh
+NOX_RUN_POWER_INTEGRATION=1 make power-integration
+```

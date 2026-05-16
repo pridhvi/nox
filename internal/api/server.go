@@ -61,13 +61,18 @@ type Server struct {
 }
 
 func NewServer(cfg Config) *Server {
+	if cfg.AppConfig.Database.SessionDir == "" {
+		cfg.AppConfig = appconfig.Default()
+	}
 	if cfg.SessionDir == "" {
 		cfg.SessionDir = db.DefaultSessionsDir()
 	}
 	cfg.SessionDir = absolutePath(cfg.SessionDir)
+	cfg.AppConfig.Database.SessionDir = cfg.SessionDir
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("NOX_API_KEY")
 	}
+	cfg.AppConfig.Server.APIKey = cfg.APIKey
 	cfg.SourceRoots = append(cfg.SourceRoots, splitEnvList(os.Getenv("NOX_SOURCE_ROOTS"))...)
 	cfg.LLMAllowedHosts = append(cfg.LLMAllowedHosts, splitEnvList(os.Getenv("NOX_LLM_ALLOWED_HOSTS"))...)
 	server := &Server{
@@ -199,12 +204,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/ad/bloodhound/import", s.importBloodHound)
 	mux.HandleFunc("GET /api/sessions/{id}/ad/bloodhound/export", s.exportBloodHound)
 	mux.HandleFunc("GET /api/sessions/{id}/block-events", s.listBlockEvents)
+	mux.HandleFunc("GET /api/sessions/{id}/provider-statuses", s.listProviderStatuses)
+	mux.HandleFunc("GET /api/sessions/{id}/callbacks", s.listPowerCallbacks)
+	mux.HandleFunc("GET /api/sessions/{id}/callbacks/{token}", s.recordPowerCallback)
 	mux.HandleFunc("GET /api/sessions/{id}/poc-results", s.listPoCResults)
 	mux.HandleFunc("GET /api/sessions/{id}/burp/export/scope", s.exportBurpScope)
 	mux.HandleFunc("GET /api/sessions/{id}/burp/export/findings", s.exportBurpFindings)
 	mux.HandleFunc("POST /api/sessions/{id}/burp/import", s.importBurpXML)
-	mux.HandleFunc("POST /api/sessions/{id}/burp/push-scope", s.burpUnavailable("push_scope"))
-	mux.HandleFunc("POST /api/sessions/{id}/burp/pull-issues", s.burpUnavailable("pull_issues"))
+	mux.HandleFunc("GET /api/sessions/{id}/burp/status", s.burpStatus)
+	mux.HandleFunc("POST /api/sessions/{id}/burp/push-scope", s.pushBurpScope)
+	mux.HandleFunc("POST /api/sessions/{id}/burp/pull-issues", s.pullBurpIssues)
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs", s.listToolRuns)
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs/{run_id}/stdout", s.toolRunLog("stdout"))
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs/{run_id}/stderr", s.toolRunLog("stderr"))
@@ -301,6 +310,7 @@ func (s *Server) effectiveConfig(w http.ResponseWriter, r *http.Request) {
 			"exploitdb_path": cfg.CVE.ExploitDBPath,
 			"sources":        cfg.CVE.Sources,
 		},
+		"power":   cfg.Power.Redacted(),
 		"tools":   cfg.Tools,
 		"plugins": cfg.Plugins,
 		"paths": map[string]string{
@@ -803,12 +813,15 @@ func (s *Server) generatePayloads(w http.ResponseWriter, r *http.Request) {
 		ForceRegenerate bool `json:"force_regenerate"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	store, _, ok := s.openSession(w, r)
+	store, session, ok := s.openSession(w, r)
 	if !ok {
 		return
 	}
 	defer store.Close()
-	payloads, err := payload.Generate(r.Context(), store, r.PathValue("id"), r.PathValue("finding_id"), payload.GenerateOptions{Force: req.ForceRegenerate})
+	payloads, err := payload.Generate(r.Context(), store, r.PathValue("id"), r.PathValue("finding_id"), payload.GenerateOptions{
+		Force:     req.ForceRegenerate,
+		LLMConfig: llmintel.ConfigFromSession(session),
+	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -853,16 +866,25 @@ func (s *Server) validatePayload(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConfiguredAPIKey(w, "payload validation requires API key authentication") {
 		return
 	}
-	store, _, ok := s.openSession(w, r)
+	var req struct {
+		Confirm bool `json:"confirm"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	store, session, ok := s.openSession(w, r)
 	if !ok {
 		return
 	}
 	defer store.Close()
-	if err := store.UpdatePayloadValidation(r.Context(), r.PathValue("id"), r.PathValue("payload_id"), "Manual validation recorded; no request was sent by the safe default validator.", false); err != nil {
-		writeDBError(w, err)
+	result, err := payload.Validate(r.Context(), store, session, r.PathValue("payload_id"), payload.ValidationOptions{
+		Confirm: req.Confirm,
+		Enabled: s.cfg.AppConfig.Power.ActiveValidation.Enabled,
+		Client:  s.cfg.HTTPClient,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, map[string]any{"validated": false, "reason": "manual validation required"})
+	writeJSON(w, result)
 }
 
 func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
@@ -912,6 +934,12 @@ func (s *Server) testCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer store.Close()
+	req.MaxAttempts = firstPositive(req.MaxAttempts, s.cfg.AppConfig.Power.Credentials.MaxAttemptsPerUser)
+	if req.DelayMS == 0 && s.cfg.AppConfig.Power.Credentials.DelaySeconds > 0 {
+		req.DelayMS = s.cfg.AppConfig.Power.Credentials.DelaySeconds * 1000
+	}
+	req.StoreSecret = req.StoreSecret && s.cfg.AppConfig.Power.Credentials.StorePlaintext
+	req.Client = s.cfg.HTTPClient
 	credentials, err := creds.Run(r.Context(), store, r.PathValue("id"), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -967,7 +995,7 @@ func (s *Server) runOSINT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer store.Close()
-	findings, err := osint.Run(r.Context(), store, session, req)
+	findings, err := osint.RunWithConfig(r.Context(), store, session, req, s.cfg.AppConfig.Power, s.cfg.HTTPClient)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -979,7 +1007,11 @@ func (s *Server) seedOSINTFinding(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConfiguredAPIKey(w, "OSINT seeding requires API key authentication") {
 		return
 	}
-	store, _, ok := s.openSession(w, r)
+	var req struct {
+		Confirm bool `json:"confirm"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	store, session, ok := s.openSession(w, r)
 	if !ok {
 		return
 	}
@@ -989,7 +1021,20 @@ func (s *Server) seedOSINTFinding(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"seeded": false, "finding": finding, "reason": "operator confirmation required before adding scan targets"})
+	if !req.Confirm {
+		writeJSON(w, map[string]any{"seeded": false, "finding": finding, "reason": "operator confirmation required before adding scan targets"})
+		return
+	}
+	if !osintFindingInScope(finding, session) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("OSINT finding is outside session scope"))
+		return
+	}
+	target := models.Target{ID: models.NewID(), SessionID: session.ID, Host: finding.Value, Port: 443, Protocol: "https", IsAlive: false, DiscoveredBy: "osint/" + finding.Source, CreatedAt: time.Now().UTC()}
+	if err := store.InsertTarget(r.Context(), target); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"seeded": true, "target": target})
 }
 
 func (s *Server) listADEntities(w http.ResponseWriter, r *http.Request) {
@@ -1053,6 +1098,7 @@ func (s *Server) runADEnum(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	_, _ = activedirectory.RecordRelayRisks(r.Context(), store, session)
 	writeJSON(w, entities)
 }
 
@@ -1061,14 +1107,23 @@ func (s *Server) runADKerberoast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Confirm bool `json:"confirm"`
+		Confirm     bool   `json:"confirm"`
+		Domain      string `json:"domain"`
+		Username    string `json:"username"`
+		AllowPublic bool   `json:"allow_public"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	if !req.Confirm {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("kerberoast requires confirm=true"))
+	store, session, ok := s.openSession(w, r)
+	if !ok {
 		return
 	}
-	writeJSON(w, map[string]any{"started": false, "reason": "external Kerberoast execution is intentionally not automatic in this safe slice"})
+	defer store.Close()
+	artifact, err := activedirectory.RecordKerberoastRequest(r.Context(), store, session, activedirectory.KerberoastRequest{Confirm: req.Confirm, Domain: req.Domain, Username: req.Username, AllowPublic: req.AllowPublic})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, map[string]any{"started": false, "artifact": artifact, "reason": "Kerberoast request recorded; hash extraction and cracking are not automatic"})
 }
 
 func (s *Server) importBloodHound(w http.ResponseWriter, r *http.Request) {
@@ -1117,6 +1172,57 @@ func (s *Server) listBlockEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, events)
 }
 
+func (s *Server) listProviderStatuses(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	statuses, err := store.ListProviderStatuses(r.Context(), r.PathValue("id"), db.ProviderStatusFilter{
+		Provider: r.URL.Query().Get("provider"),
+		Module:   r.URL.Query().Get("module"),
+		Status:   r.URL.Query().Get("status"),
+	})
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, statuses)
+}
+
+func (s *Server) listPowerCallbacks(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	filter := db.PowerCallbackFilter{FindingID: r.URL.Query().Get("finding_id"), Provider: r.URL.Query().Get("provider")}
+	if value := r.URL.Query().Get("received"); strings.TrimSpace(value) != "" {
+		parsed := parseBoolQuery(value)
+		filter.Received = &parsed
+	}
+	callbacks, err := store.ListPowerCallbacks(r.Context(), r.PathValue("id"), filter)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, callbacks)
+}
+
+func (s *Server) recordPowerCallback(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, 64*1024))
+	if err := store.MarkPowerCallbackReceived(r.Context(), r.PathValue("id"), r.PathValue("token"), hostOnly(r.RemoteAddr), string(raw)); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"received": true})
+}
+
 func (s *Server) runPoC(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConfiguredAPIKey(w, "PoC execution requires API key authentication") {
 		return
@@ -1131,6 +1237,11 @@ func (s *Server) runPoC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer store.Close()
+	req.ActiveValidationEnabled = s.cfg.AppConfig.Power.ActiveValidation.Enabled
+	req.Client = s.cfg.HTTPClient
+	if req.CallbackBaseURL == "" && s.cfg.AppConfig.Power.Callbacks.Provider == "builtin" {
+		req.CallbackBaseURL = fmt.Sprintf("http://%s:%d/api/sessions/%s/callbacks", firstNonEmpty(s.cfg.Host, "127.0.0.1"), s.cfg.Port, r.PathValue("id"))
+	}
 	result, err := poc.Run(r.Context(), store, r.PathValue("id"), r.PathValue("finding_id"), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -1228,19 +1339,83 @@ func (s *Server) burpUnavailable(action string) http.HandlerFunc {
 	}
 }
 
-func (s *Server) burpStatus(w http.ResponseWriter, r *http.Request) {
-	store, err := s.openState(r.Context())
+func (s *Server) pushBurpScope(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "Burp REST actions require API key authentication") {
+		return
+	}
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	config, err := s.currentBurpConfig(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	defer store.Close()
-	config, err := store.GetBurpConfig(r.Context())
+	result, err := burp.PushScope(r.Context(), store, r.PathValue("id"), config, s.cfg.HTTPClient)
 	if err != nil {
-		writeJSON(w, map[string]any{"configured": false, "available": false})
+		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	writeJSON(w, map[string]any{"configured": true, "available": false, "config": config.Redacted(), "reason": "REST status probing is disabled until a local Burp API URL is configured and explicitly tested"})
+	writeJSON(w, result)
+}
+
+func (s *Server) pullBurpIssues(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "Burp REST actions require API key authentication") {
+		return
+	}
+	store, session, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	config, err := s.currentBurpConfig(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	imported, result, err := burp.PullIssues(r.Context(), store, session, config, s.cfg.HTTPClient)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, map[string]any{"result": result, "imported": imported})
+}
+
+func (s *Server) burpStatus(w http.ResponseWriter, r *http.Request) {
+	config, err := s.currentBurpConfig(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	result := burp.Status(r.Context(), config, s.cfg.HTTPClient)
+	writeJSON(w, map[string]any{"configured": config.BaseURL != "" || config.CollaboratorProvider != "", "available": result.Available, "config": config.Redacted(), "result": result})
+}
+
+func (s *Server) currentBurpConfig(ctx context.Context) (models.BurpConfig, error) {
+	store, err := s.openState(ctx)
+	if err != nil {
+		return models.BurpConfig{}, err
+	}
+	defer store.Close()
+	config, err := store.GetBurpConfig(ctx)
+	if err == nil {
+		return config, nil
+	}
+	if !errors.Is(err, db.ErrNotFound) {
+		return models.BurpConfig{}, err
+	}
+	now := time.Now().UTC()
+	return models.BurpConfig{
+		ID:                   "config",
+		BaseURL:              s.cfg.AppConfig.Power.Burp.BaseURL,
+		APIKey:               s.cfg.AppConfig.Power.Burp.APIKey,
+		CollaboratorProvider: s.cfg.AppConfig.Power.Callbacks.Provider,
+		CollaboratorURL:      s.cfg.AppConfig.Power.Callbacks.InteractshURL,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}, nil
 }
 
 func (s *Server) setupBurpCollaborator(w http.ResponseWriter, r *http.Request) {
@@ -3085,6 +3260,48 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func hostOnly(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return host
+	}
+	return remoteAddr
+}
+
+func osintFindingInScope(finding models.OSINTFinding, session models.Session) bool {
+	value := strings.ToLower(strings.TrimSpace(finding.Value))
+	if value == "" {
+		return false
+	}
+	for _, scope := range append([]string{session.TargetInput}, session.InScope...) {
+		host := strings.ToLower(scopeHost(scope))
+		if host == value || strings.HasSuffix(value, "."+host) {
+			return true
+		}
+	}
+	return false
+}
+
+func scopeHost(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err == nil && parsed.Hostname() != "" {
+		return parsed.Hostname()
+	}
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "http://"), "https://")
+	raw, _, _ = strings.Cut(raw, "/")
+	raw, _, _ = strings.Cut(raw, ":")
+	return raw
 }
 
 func (s *Server) scanStatus(w http.ResponseWriter, r *http.Request) {

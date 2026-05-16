@@ -1,4 +1,4 @@
-.PHONY: build ci dev test test-integration tool-version-smoke linux-full-smoke lint web web-build run sqlc migrate-up docker-smoke compose-config clean release-snapshot
+.PHONY: build ci dev test test-integration power-integration tool-version-smoke linux-full-smoke lint web web-build run sqlc migrate-up docker-smoke compose-config clean release-snapshot
 
 build:
 	cd web && npm run build
@@ -15,6 +15,9 @@ test:
 
 test-integration:
 	./scripts/integration-smoke.sh
+
+power-integration:
+	./scripts/power-integration-smoke.sh
 
 tool-version-smoke:
 	./scripts/tool-version-smoke.sh host

@@ -42,7 +42,7 @@ Static and combined source-aware modes use the same session database and report 
 - **LLM analysis:** OpenAI-compatible local model support, constrained tool calling, persisted audit trail, post-scan analysis, and interactive chat.
 - **Reporting:** Markdown, HTML, SARIF 2.1.0, and PDF output with source findings, tool coverage, dependency CVEs, suppressed findings, and cross-confirmed evidence.
 - **Continuous monitoring:** `nox monitor` stores recurring scan configs in the global state DB, creates normal session runs, diffs each run against a baseline, and records attack-surface changes.
-- **Power-feature modules:** Operator-triggered first slices for payload generation, credential records, OSINT seeds, AD/BloodHound records, evasion runner options, safe PoC records, and Burp XML import/export.
+- **Power-feature modules:** Operator-triggered workspace for LLM-assisted payloads with safe fixture validation, lockout-aware credential checks, provider-backed OSINT status, AD/BloodHound records, evasion/block events, callback-backed PoC evidence, and Burp XML/REST bridge actions.
 - **Plugin system:** Subprocess JSON contract so adapters can be written in any language.
 - **Web UI:** Dense midnight/violet operator console with bundled local fonts, command-center dashboard, responsive mobile actions, scan builder rail, monitor workspace, triage split panes with mobile finding cards, grouped source evidence, deduplicated attack paths, CVE table, responsive tool inventory, polished stdout/stderr log drawers, LLM analyst workspace, system health, and report composer.
 
@@ -80,6 +80,24 @@ logging:
   level: info
   format: text
 
+power:
+  active_validation:
+    enabled: false
+  callbacks:
+    provider: builtin
+    interactsh_url: ""
+  credentials:
+    max_attempts_per_user: 3
+    delay_seconds: 3
+    store_plaintext: false
+  providers:
+    github_token: ""
+    shodan_api_key: ""
+    securitytrails_api_key: ""
+  burp:
+    base_url: ""
+    api_key: ""
+
 tools:
   nmap: /usr/bin/nmap
   ffuf: /usr/bin/ffuf
@@ -101,11 +119,19 @@ Advanced modules are explicit and safe by default:
 
 ```sh
 ./bin/nox payloads generate <session-id> --finding <finding-id>
-./bin/nox creds test <session-id> --mode correlate
-./bin/nox osint run <session-id>
-./bin/nox poc run <session-id> --finding <finding-id> --confirm
+./bin/nox payloads validate <session-id> --payload <payload-id> --confirm --enabled=true
+./bin/nox creds test <session-id> --mode defaults --url http://127.0.0.1:18081/login --confirm --max-attempts 2
+./bin/nox osint run <session-id> --providers github,shodan,securitytrails
+./bin/nox ad kerberoast <session-id> --username svc-http --confirm
+./bin/nox poc run <session-id> --finding <finding-id> --confirm --active=true
 ./bin/nox burp export scope <session-id> --output scope.xml
+./bin/nox burp status <session-id>
 ```
+
+Power-provider secrets are always redacted in effective config, logs, API output,
+and UI surfaces. Active validation, credential checks, Burp REST actions, and AD
+request records are opt-in; API-triggered active actions require configured
+API-key authentication.
 
 For stricter local deployments, set `NOX_SOURCE_ROOTS` to a comma-separated list of allowed repository roots for API-triggered source scans, and `NOX_LLM_ALLOWED_HOSTS` to allowed LLM probe hosts such as `127.0.0.1,localhost,ollama`.
 
@@ -115,9 +141,16 @@ Run the deeper local fixture integration suite with:
 
 ```sh
 NOX_RUN_INTEGRATION=1 make test-integration
+NOX_RUN_POWER_INTEGRATION=1 make power-integration
 ```
 
-It starts the built-in vulnerable fixture and verifies dynamic scans, static audits, combined source-aware correlation, reports, and lean sidecar-log behavior. The same suite runs in GitHub Actions on a nightly schedule and on manual dispatch.
+The integration smoke starts the built-in vulnerable fixture and verifies
+dynamic scans, static audits, combined source-aware correlation, reports, and
+lean sidecar-log behavior. The power integration smoke additionally verifies
+payload validation, credential redaction, provider skip status, PoC records, and
+power report sections against deterministic fixture routes. The standard
+integration suite runs in GitHub Actions on a nightly schedule and on manual
+dispatch; the power suite is local opt-in for now.
 
 Docker smoke validation builds the image, starts the API, checks health/tools endpoints, runs `nox version`, and verifies bundled scanner versions:
 

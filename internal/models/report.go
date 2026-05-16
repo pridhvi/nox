@@ -33,6 +33,7 @@ const (
 	ReportSectionSuppressed       ReportSectionID = "suppressed_findings"
 	ReportSectionToolCoverage     ReportSectionID = "tool_coverage"
 	ReportSectionCrossConfirmed   ReportSectionID = "cross_confirmed_findings"
+	ReportSectionPowerFeatures    ReportSectionID = "power_features"
 )
 
 type Report struct {

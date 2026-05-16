@@ -3,6 +3,9 @@ package poc
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,9 +14,14 @@ import (
 )
 
 type RunRequest struct {
-	PoCType   string `json:"poc_type"`
-	PayloadID string `json:"payload_id"`
-	Confirm   bool   `json:"confirm"`
+	PoCType                 string `json:"poc_type"`
+	PayloadID               string `json:"payload_id"`
+	Confirm                 bool   `json:"confirm"`
+	ActiveValidationEnabled bool   `json:"active_validation_enabled"`
+	CallbackBaseURL         string `json:"callback_base_url"`
+	Client                  interface {
+		Do(*http.Request) (*http.Response, error)
+	} `json:"-"`
 }
 
 func Run(ctx context.Context, store *db.Store, sessionID, findingID string, req RunRequest) (models.PoCResult, error) {
@@ -44,13 +52,86 @@ func Run(ctx context.Context, store *db.Store, sessionID, findingID string, req 
 		CompletedAt:     &completed,
 	}
 	text := strings.ToLower(finding.Title + " " + finding.Description)
-	if strings.Contains(text, "reflected") || strings.Contains(text, "open redirect") {
-		result.Evidence = "Finding is eligible for safe manual validation; no request was sent by the default PoC recorder."
+	if req.ActiveValidationEnabled {
+		if evidence, status, code := safeValidate(ctx, req, finding, pocType); evidence != "" {
+			result.Evidence = evidence
+			result.Status = status
+			result.ResponseCode = code
+		}
+	} else if strings.Contains(text, "reflected") || strings.Contains(text, "open redirect") {
+		result.Evidence = "Finding is eligible for safe manual validation; active validation is disabled."
+	}
+	if (pocType == "ssrf" || pocType == "redirect" || pocType == "open_redirect") && strings.TrimSpace(req.CallbackBaseURL) != "" {
+		token := models.NewID()
+		callbackURL := strings.TrimRight(req.CallbackBaseURL, "/") + "/" + token
+		result.CanaryToken = token
+		result.Evidence += " Callback canary prepared at " + callbackURL + "."
+		_ = store.InsertPowerCallback(ctx, models.PowerCallback{
+			ID:        models.NewID(),
+			SessionID: sessionID,
+			FindingID: findingID,
+			Provider:  "builtin",
+			Token:     token,
+			URL:       callbackURL,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
 	}
 	if err := store.InsertPoCResult(ctx, result); err != nil {
 		return models.PoCResult{}, err
 	}
 	return result, nil
+}
+
+func safeValidate(ctx context.Context, req RunRequest, finding models.Finding, pocType string) (string, models.PoCStatus, int) {
+	rawURL := strings.TrimSpace(finding.URL)
+	if rawURL == "" {
+		return "", "", 0
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", "", 0
+	}
+	query := parsed.Query()
+	switch pocType {
+	case "xss":
+		query.Set(firstNonEmpty(finding.Parameter, "q"), `"><span>nox-poc</span>`)
+	case "ssti":
+		query.Set(firstNonEmpty(finding.Parameter, "q"), "{{7*7}}")
+	case "xxe":
+		query.Set(firstNonEmpty(finding.Parameter, "q"), `<!DOCTYPE x [<!ENTITY nox "nox">]>`)
+	case "redirect", "open_redirect":
+		query.Set(firstNonEmpty(finding.Parameter, "next"), "https://example.com/nox-redirect-marker")
+	default:
+		return "", "", 0
+	}
+	parsed.RawQuery = query.Encode()
+	client := req.Client
+	if client == nil {
+		client = &http.Client{Timeout: 8 * time.Second}
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return "", "", 0
+	}
+	httpReq.Header.Set("User-Agent", "nox/0.1 safe-poc")
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return err.Error(), models.PoCStatusFailed, 0
+	}
+	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	body := strings.ToLower(string(bodyBytes))
+	switch {
+	case pocType == "xss" && strings.Contains(body, "nox-poc"):
+		return fmt.Sprintf("Reflected marker observed with HTTP %d.", resp.StatusCode), models.PoCStatusConfirmed, resp.StatusCode
+	case pocType == "ssti" && strings.Contains(string(bodyBytes), "49"):
+		return fmt.Sprintf("SSTI arithmetic marker evaluated with HTTP %d.", resp.StatusCode), models.PoCStatusConfirmed, resp.StatusCode
+	case (pocType == "redirect" || pocType == "open_redirect") && resp.StatusCode >= 300 && resp.StatusCode < 400:
+		return fmt.Sprintf("Redirect behavior observed with HTTP %d.", resp.StatusCode), models.PoCStatusConfirmed, resp.StatusCode
+	default:
+		return fmt.Sprintf("Safe marker request completed with HTTP %d, but confirmation marker was not observed.", resp.StatusCode), models.PoCStatusInconclusive, resp.StatusCode
+	}
 }
 
 func inferType(finding models.Finding) string {
@@ -61,4 +142,13 @@ func inferType(finding models.Finding) string {
 		}
 	}
 	return "manual"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

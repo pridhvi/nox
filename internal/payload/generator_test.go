@@ -2,6 +2,9 @@ package payload
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -45,11 +48,51 @@ func TestGenerateRejectsUnsupportedFinding(t *testing.T) {
 	}
 }
 
+func TestValidatePayloadRequiresConfirmAndUpdatesEvidence(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "reflected %s", r.URL.Query().Get("q"))
+	}))
+	defer server.Close()
+
+	store, session, finding := payloadTestStoreForTarget(t, "Reflected XSS", server.URL+"/search?q=x")
+	defer store.Close()
+	generated, err := Generate(ctx, store, session.ID, finding.ID, GenerateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Validate(ctx, store, session, generated[0].ID, ValidationOptions{Enabled: true}); err == nil || !strings.Contains(err.Error(), "confirm=true") {
+		t.Fatalf("expected confirmation error, got %v", err)
+	}
+	result, err := Validate(ctx, store, session, generated[0].ID, ValidationOptions{Confirm: true, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Validated || !strings.Contains(result.Evidence, "XSS marker") {
+		t.Fatalf("expected validated marker evidence, got %#v", result)
+	}
+}
+
 func payloadTestStore(t *testing.T, title string) (*db.Store, models.Session, models.Finding) {
+	return payloadTestStoreForTarget(t, title, "https://example.test/?q=x")
+}
+
+func payloadTestStoreForTarget(t *testing.T, title, findingURL string) (*db.Store, models.Session, models.Finding) {
 	t.Helper()
 	ctx := context.Background()
-	session := models.Session{ID: models.NewID(), Status: models.SessionStatusCompleted, Mode: models.ScanModeActive, TargetInput: "https://example.test", InScope: []string{"https://example.test"}, CreatedAt: time.Now().UTC()}
-	target := models.Target{ID: models.NewID(), SessionID: session.ID, Host: "example.test", Port: 443, Protocol: "https", IsAlive: true, CreatedAt: time.Now().UTC()}
+	req, _ := http.NewRequest(http.MethodGet, findingURL, nil)
+	port := 443
+	protocol := "https"
+	if req.URL.Scheme == "http" {
+		port = 80
+		protocol = "http"
+	}
+	if req.URL.Port() != "" {
+		fmt.Sscanf(req.URL.Port(), "%d", &port)
+	}
+	scope := req.URL.Scheme + "://" + req.URL.Host
+	session := models.Session{ID: models.NewID(), Status: models.SessionStatusCompleted, Mode: models.ScanModeActive, TargetInput: scope, InScope: []string{scope}, CreatedAt: time.Now().UTC()}
+	target := models.Target{ID: models.NewID(), SessionID: session.ID, Host: req.URL.Hostname(), Port: port, Protocol: protocol, IsAlive: true, CreatedAt: time.Now().UTC()}
 	dir := t.TempDir()
 	if _, err := db.CreateSessionDB(ctx, dir, session, target); err != nil {
 		t.Fatal(err)
@@ -58,7 +101,7 @@ func payloadTestStore(t *testing.T, title string) (*db.Store, models.Session, mo
 	if err != nil {
 		t.Fatal(err)
 	}
-	finding := models.Finding{ID: models.NewID(), SessionID: session.ID, TargetID: target.ID, ToolID: "test", Type: models.FindingTypeVulnerability, Severity: models.SeverityHigh, Title: title, Description: title, URL: "https://example.test/?q=x", Tags: []string{"test"}, CreatedAt: time.Now().UTC()}
+	finding := models.Finding{ID: models.NewID(), SessionID: session.ID, TargetID: target.ID, ToolID: "test", Type: models.FindingTypeVulnerability, Severity: models.SeverityHigh, Title: title, Description: title, URL: findingURL, Tags: []string{"test"}, CreatedAt: time.Now().UTC()}
 	if err := store.InsertFinding(ctx, finding); err != nil {
 		t.Fatal(err)
 	}

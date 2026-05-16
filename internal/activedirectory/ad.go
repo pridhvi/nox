@@ -58,7 +58,83 @@ func RecordEnumRequest(ctx context.Context, store *db.Store, session models.Sess
 	if err := store.InsertADEntity(ctx, entity); err != nil {
 		return nil, err
 	}
+	for _, target := range targets {
+		if strings.EqualFold(target.Protocol, "smb") || target.Port == 445 {
+			_ = store.InsertADEntity(ctx, models.ADEntity{
+				ID:         models.NewID(),
+				SessionID:  session.ID,
+				EntityType: "smb_service",
+				Name:       firstNonEmpty(target.Host, target.IP),
+				Domain:     entity.Domain,
+				Metadata:   map[string]any{"relay_risk": "unknown", "safe_enum": true},
+				CreatedAt:  time.Now().UTC(),
+			})
+		}
+	}
 	return store.ListADEntities(ctx, session.ID, "")
+}
+
+type KerberoastRequest struct {
+	Domain      string `json:"domain"`
+	Username    string `json:"username"`
+	Confirm     bool   `json:"confirm"`
+	AllowPublic bool   `json:"allow_public"`
+}
+
+func RecordKerberoastRequest(ctx context.Context, store *db.Store, session models.Session, req KerberoastRequest) (models.ADArtifact, error) {
+	if !req.Confirm {
+		return models.ADArtifact{}, fmt.Errorf("kerberoast requires confirm=true")
+	}
+	targets, err := store.ListTargets(ctx, session.ID)
+	if err != nil {
+		return models.ADArtifact{}, err
+	}
+	if !req.AllowPublic && !InternalSession(session, targets) {
+		return models.ADArtifact{}, fmt.Errorf("Kerberoast requires private/link-local/loopback scope or explicit override")
+	}
+	now := time.Now().UTC()
+	artifact := models.ADArtifact{
+		ID:           models.NewID(),
+		SessionID:    session.ID,
+		ArtifactType: "kerberoast_request",
+		Summary:      "Kerberoast request recorded. Hash extraction and cracking are not performed automatically by Nox.",
+		CreatedAt:    now,
+	}
+	if req.Domain != "" || req.Username != "" {
+		artifact.Summary += fmt.Sprintf(" domain=%s username=%s", strings.TrimSpace(req.Domain), strings.TrimSpace(req.Username))
+	}
+	if err := store.InsertADArtifact(ctx, artifact); err != nil {
+		return models.ADArtifact{}, err
+	}
+	return artifact, nil
+}
+
+func RecordRelayRisks(ctx context.Context, store *db.Store, session models.Session) ([]models.ADEntity, error) {
+	targets, err := store.ListTargets(ctx, session.ID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	for _, target := range targets {
+		if target.Port != 445 && target.Port != 389 && !strings.EqualFold(target.Protocol, "smb") && !strings.EqualFold(target.Protocol, "ldap") {
+			continue
+		}
+		_ = store.InsertADEntity(ctx, models.ADEntity{
+			ID:         models.NewID(),
+			SessionID:  session.ID,
+			EntityType: "relay_opportunity",
+			Name:       firstNonEmpty(target.Host, target.IP),
+			Domain:     "",
+			Metadata: map[string]any{
+				"port":       target.Port,
+				"protocol":   target.Protocol,
+				"risk":       "requires manual validation of signing/channel-binding settings",
+				"non_active": true,
+			},
+			CreatedAt: now,
+		})
+	}
+	return store.ListADEntities(ctx, session.ID, "relay_opportunity")
 }
 
 type BloodHoundData struct {
@@ -132,4 +208,13 @@ func ImportBloodHound(ctx context.Context, store *db.Store, sessionID string, ra
 		}
 	}
 	return store.InsertADArtifact(ctx, models.ADArtifact{ID: models.NewID(), SessionID: sessionID, ArtifactType: "bloodhound_import", Summary: fmt.Sprintf("Imported %d nodes and %d edges", len(data.Nodes), len(data.Edges)), CreatedAt: now})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

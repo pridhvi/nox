@@ -1,41 +1,68 @@
 import { useState } from "react";
 import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FlaskConical, KeyRound, Network, Radar, ShieldAlert, Sparkles } from "lucide-react";
-import { generatePayloads, listADEntities, listADRelationships, listBlockEvents, listCredentials, listFindings, listOSINT, listPayloads, listPoCResults, runOSINT, runPoC, testCredentials } from "../api/client";
+import { FlaskConical, KeyRound, Network, PlugZap, Radar, ShieldAlert, Sparkles } from "lucide-react";
+import { generatePayloads, getBurpStatus, listADEntities, listADRelationships, listBlockEvents, listCredentials, listFindings, listOSINT, listPayloads, listPoCResults, listPowerCallbacks, listProviderStatuses, pullBurpIssues, pushBurpScope, runADKerberoast, runOSINT, runPoC, testCredentials, validatePayload } from "../api/client";
 import { useSessionContext } from "../session";
 
-const tabs = ["payloads", "credentials", "osint", "ad", "poc", "evasion"] as const;
+const tabs = ["payloads", "credentials", "osint", "ad", "poc", "callbacks", "burp", "evasion"] as const;
 
 export function PowerFeatures() {
   const queryClient = useQueryClient();
   const { selectedSessionID } = useSessionContext();
   const [tab, setTab] = useState<(typeof tabs)[number]>("payloads");
   const [findingID, setFindingID] = useState("");
+  const [credentialURL, setCredentialURL] = useState("");
+  const [credentialUser, setCredentialUser] = useState("admin");
+  const [credentialPass, setCredentialPass] = useState("password");
+  const [providers, setProviders] = useState("github,shodan,securitytrails");
+  const [kerberoastSPN, setKerberoastSPN] = useState("");
   const enabled = Boolean(selectedSessionID);
   const findingsQuery = useQuery({ queryKey: ["findings", selectedSessionID], queryFn: () => listFindings(selectedSessionID), enabled });
   const payloadsQuery = useQuery({ queryKey: ["payloads", selectedSessionID], queryFn: () => listPayloads(selectedSessionID), enabled });
   const credentialsQuery = useQuery({ queryKey: ["credentials", selectedSessionID], queryFn: () => listCredentials(selectedSessionID), enabled });
   const osintQuery = useQuery({ queryKey: ["osint", selectedSessionID], queryFn: () => listOSINT(selectedSessionID), enabled });
+  const providersQuery = useQuery({ queryKey: ["provider-statuses", selectedSessionID], queryFn: () => listProviderStatuses(selectedSessionID), enabled });
   const adQuery = useQuery({ queryKey: ["ad-entities", selectedSessionID], queryFn: () => listADEntities(selectedSessionID), enabled });
   const adRelationshipsQuery = useQuery({ queryKey: ["ad-relationships", selectedSessionID], queryFn: () => listADRelationships(selectedSessionID), enabled });
   const pocQuery = useQuery({ queryKey: ["poc-results", selectedSessionID], queryFn: () => listPoCResults(selectedSessionID), enabled });
+  const callbacksQuery = useQuery({ queryKey: ["callbacks", selectedSessionID], queryFn: () => listPowerCallbacks(selectedSessionID), enabled });
   const blockQuery = useQuery({ queryKey: ["block-events", selectedSessionID], queryFn: () => listBlockEvents(selectedSessionID), enabled });
   const generateMutation = useMutation({
     mutationFn: () => generatePayloads(selectedSessionID, findingID || findingsQuery.data?.[0]?.id || ""),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["payloads", selectedSessionID] }),
   });
+  const validateMutation = useMutation({
+    mutationFn: (payloadID: string) => validatePayload(selectedSessionID, payloadID, true),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["payloads", selectedSessionID] }),
+  });
   const credMutation = useMutation({
-    mutationFn: () => testCredentials(selectedSessionID, { mode: "correlate" }),
+    mutationFn: () => testCredentials(selectedSessionID, { mode: credentialURL ? "defaults" : "correlate", username: credentialUser, password: credentialPass, url: credentialURL, confirm: Boolean(credentialURL), max_attempts: 3 }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["credentials", selectedSessionID] }),
   });
   const osintMutation = useMutation({
-    mutationFn: () => runOSINT(selectedSessionID),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["osint", selectedSessionID] }),
+    mutationFn: () => runOSINT(selectedSessionID, providers.split(",").map((provider) => provider.trim()).filter(Boolean)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["osint", selectedSessionID] });
+      queryClient.invalidateQueries({ queryKey: ["provider-statuses", selectedSessionID] });
+    },
   });
   const pocMutation = useMutation({
     mutationFn: () => runPoC(selectedSessionID, findingID || findingsQuery.data?.[0]?.id || "", true),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["poc-results", selectedSessionID] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["poc-results", selectedSessionID] });
+      queryClient.invalidateQueries({ queryKey: ["callbacks", selectedSessionID] });
+    },
+  });
+  const kerberoastMutation = useMutation({
+    mutationFn: () => runADKerberoast(selectedSessionID, { spn: kerberoastSPN, confirm: true }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ad-entities", selectedSessionID] }),
+  });
+  const burpStatusMutation = useMutation({ mutationFn: () => getBurpStatus(selectedSessionID) });
+  const burpPushMutation = useMutation({ mutationFn: () => pushBurpScope(selectedSessionID) });
+  const burpPullMutation = useMutation({
+    mutationFn: () => pullBurpIssues(selectedSessionID),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["findings", selectedSessionID] }),
   });
 
   return (
@@ -53,21 +80,22 @@ export function PowerFeatures() {
       <section className="panel">
         {tab === "payloads" ? (
           <FeatureSection icon={<Sparkles size={17} />} title="AI Payload Generation" action={<ActionControls value={findingID} onChange={setFindingID} onRun={() => generateMutation.mutate()} label="Generate" disabled={!enabled || generateMutation.isPending} />}>
-            <RecordTable rows={(payloadsQuery.data ?? []).map((item) => [item.payload_type, item.payload, item.bypass_technique || "-", `${Math.round(item.confidence * 100)}%`])} headers={["Type", "Payload", "Bypass", "Confidence"]} />
+            <RecordTable rows={(payloadsQuery.data ?? []).map((item) => [item.payload_type, item.payload, item.validated ? "validated" : "unvalidated", item.bypass_technique || "-", `${Math.round(item.confidence * 100)}%`, item.validated ? item.validated_response || "validated" : "validate"])} headers={["Type", "Payload", "State", "Bypass", "Confidence", "Action"]} actions={(payloadsQuery.data ?? []).map((item) => item.validated ? null : <button className="secondary" onClick={() => validateMutation.mutate(item.id)} disabled={validateMutation.isPending}>Validate</button>)} />
           </FeatureSection>
         ) : null}
         {tab === "credentials" ? (
-          <FeatureSection icon={<KeyRound size={17} />} title="Credential Testing" action={<button className="primary" onClick={() => credMutation.mutate()} disabled={!enabled || credMutation.isPending}>Record Test</button>}>
+          <FeatureSection icon={<KeyRound size={17} />} title="Credential Testing" action={<div className="action-row"><input value={credentialURL} onChange={(event) => setCredentialURL(event.target.value)} placeholder="Login URL for confirmed fixture-safe checks" /><input value={credentialUser} onChange={(event) => setCredentialUser(event.target.value)} placeholder="Username" /><input value={credentialPass} onChange={(event) => setCredentialPass(event.target.value)} placeholder="Password" /><button className="primary" onClick={() => credMutation.mutate()} disabled={!enabled || credMutation.isPending}>Run</button></div>}>
             <RecordTable rows={(credentialsQuery.data ?? []).map((item) => [item.credential_type, item.username, item.password, item.valid ? "valid" : "unconfirmed", item.evidence])} headers={["Type", "Username", "Password", "Status", "Evidence"]} />
           </FeatureSection>
         ) : null}
         {tab === "osint" ? (
-          <FeatureSection icon={<Radar size={17} />} title="OSINT Expansion" action={<button className="primary" onClick={() => osintMutation.mutate()} disabled={!enabled || osintMutation.isPending}>Run Local OSINT</button>}>
+          <FeatureSection icon={<Radar size={17} />} title="OSINT Expansion" action={<div className="action-row"><input value={providers} onChange={(event) => setProviders(event.target.value)} placeholder="Providers" /><button className="primary" onClick={() => osintMutation.mutate()} disabled={!enabled || osintMutation.isPending}>Run Providers</button></div>}>
+            <RecordTable rows={(providersQuery.data ?? []).map((item) => [item.provider, item.module, item.status, item.message])} headers={["Provider", "Module", "Status", "Message"]} />
             <RecordTable rows={(osintQuery.data ?? []).map((item) => [item.kind, item.value, item.source, `${Math.round(item.confidence * 100)}%`])} headers={["Kind", "Value", "Source", "Confidence"]} />
           </FeatureSection>
         ) : null}
         {tab === "ad" ? (
-          <FeatureSection icon={<Network size={17} />} title="AD / Internal Network">
+          <FeatureSection icon={<Network size={17} />} title="AD / Internal Network" action={<div className="action-row"><input value={kerberoastSPN} onChange={(event) => setKerberoastSPN(event.target.value)} placeholder="Optional SPN to record" /><button className="primary" onClick={() => kerberoastMutation.mutate()} disabled={!enabled || kerberoastMutation.isPending}>Record Kerberoast Request</button></div>}>
             <RecordTable rows={(adQuery.data ?? []).map((item) => [item.entity_type, item.name, item.domain, item.sid || "-"])} headers={["Type", "Name", "Domain", "SID"]} />
             <p className="empty-line">{adRelationshipsQuery.data?.length ?? 0} AD relationship records</p>
           </FeatureSection>
@@ -75,6 +103,16 @@ export function PowerFeatures() {
         {tab === "poc" ? (
           <FeatureSection icon={<FlaskConical size={17} />} title="PoC / Impact" action={<ActionControls value={findingID} onChange={setFindingID} onRun={() => pocMutation.mutate()} label="Record PoC" disabled={!enabled || pocMutation.isPending} />}>
             <RecordTable rows={(pocQuery.data ?? []).map((item) => [item.poc_type, item.status, item.evidence, item.impact_narrative])} headers={["Type", "Status", "Evidence", "Impact"]} />
+          </FeatureSection>
+        ) : null}
+        {tab === "callbacks" ? (
+          <FeatureSection icon={<PlugZap size={17} />} title="Callback Evidence">
+            <RecordTable rows={(callbacksQuery.data ?? []).map((item) => [item.provider, item.received ? "received" : "pending", item.url, item.source_ip || "-", item.raw_event || "-"])} headers={["Provider", "Status", "URL", "Source", "Event"]} />
+          </FeatureSection>
+        ) : null}
+        {tab === "burp" ? (
+          <FeatureSection icon={<PlugZap size={17} />} title="Burp REST / Collaborator" action={<div className="action-row"><button className="secondary" onClick={() => burpStatusMutation.mutate()} disabled={!enabled || burpStatusMutation.isPending}>Status</button><button className="secondary" onClick={() => burpPushMutation.mutate()} disabled={!enabled || burpPushMutation.isPending}>Push Scope</button><button className="primary" onClick={() => burpPullMutation.mutate()} disabled={!enabled || burpPullMutation.isPending}>Pull Issues</button></div>}>
+            <RecordTable rows={[[burpStatusMutation.data ? (burpStatusMutation.data.available ? "available" : "unavailable") : burpPushMutation.data?.available ? "available" : "idle", burpStatusMutation.data?.result.message || burpPushMutation.data?.message || `${burpPullMutation.data?.length ?? 0} imported issues`]]} headers={["Status", "Message"]} />
           </FeatureSection>
         ) : null}
         {tab === "evasion" ? (
@@ -108,13 +146,13 @@ function ActionControls({ value, onChange, onRun, label, disabled }: { value: st
   );
 }
 
-function RecordTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+function RecordTable({ headers, rows, actions }: { headers: string[]; rows: string[][]; actions?: (React.ReactNode | null)[] }) {
   return (
     <div className="table-wrap">
       <table>
         <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
         <tbody>
-          {rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}><code>{cell}</code></td>)}</tr>)}
+          {rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{actions?.[index] && cellIndex === row.length - 1 ? actions[index] : <code>{cell}</code>}</td>)}</tr>)}
         </tbody>
       </table>
       {rows.length === 0 ? <p className="empty-line">No records yet</p> : null}

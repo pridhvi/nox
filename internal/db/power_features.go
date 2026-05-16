@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/pridhvi/nox/internal/models"
 )
@@ -27,6 +28,18 @@ type OSINTFilter struct {
 	Source string
 }
 
+type ProviderStatusFilter struct {
+	Provider string
+	Module   string
+	Status   string
+}
+
+type PowerCallbackFilter struct {
+	FindingID string
+	Provider  string
+	Received  *bool
+}
+
 func (s *Store) GetFinding(ctx context.Context, sessionID, findingID string) (models.Finding, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT id, session_id, COALESCE(target_id, ''), tool_id, type, severity, confidence, cvss_score,
@@ -42,6 +55,107 @@ WHERE session_id = ? AND id = ?`, sessionID, findingID)
 		return models.Finding{}, err
 	}
 	return finding, nil
+}
+
+func (s *Store) InsertProviderStatus(ctx context.Context, status models.ProviderStatus) error {
+	metadata, err := json.Marshal(status.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO provider_statuses (id, session_id, provider, module, status, message, metadata, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		status.ID, status.SessionID, status.Provider, status.Module, status.Status,
+		status.Message, string(metadata), formatTime(status.CreatedAt))
+	return err
+}
+
+func (s *Store) ListProviderStatuses(ctx context.Context, sessionID string, filter ProviderStatusFilter) ([]models.ProviderStatus, error) {
+	query := `SELECT id, session_id, provider, module, status, message, metadata, created_at FROM provider_statuses WHERE session_id = ?`
+	args := []any{sessionID}
+	if filter.Provider != "" {
+		query += ` AND provider = ?`
+		args = append(args, filter.Provider)
+	}
+	if filter.Module != "" {
+		query += ` AND module = ?`
+		args = append(args, filter.Module)
+	}
+	if filter.Status != "" {
+		query += ` AND status = ?`
+		args = append(args, filter.Status)
+	}
+	query += ` ORDER BY created_at DESC`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var statuses []models.ProviderStatus
+	for rows.Next() {
+		status, err := scanProviderStatus(rows)
+		if err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses, rows.Err()
+}
+
+func (s *Store) InsertPowerCallback(ctx context.Context, callback models.PowerCallback) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO power_callbacks (
+	id, session_id, finding_id, provider, token, url, source_ip, raw_event,
+	received, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		callback.ID, callback.SessionID, nullableString(callback.FindingID), callback.Provider,
+		callback.Token, callback.URL, callback.SourceIP, callback.RawEvent, callback.Received,
+		formatTime(callback.CreatedAt), formatTime(callback.UpdatedAt))
+	return err
+}
+
+func (s *Store) MarkPowerCallbackReceived(ctx context.Context, sessionID, token, sourceIP, rawEvent string) error {
+	result, err := s.db.ExecContext(ctx, `
+UPDATE power_callbacks
+SET received = 1, source_ip = ?, raw_event = ?, updated_at = ?
+WHERE session_id = ? AND token = ?`,
+		sourceIP, rawEvent, formatTime(time.Now().UTC()), sessionID, token)
+	if err != nil {
+		return err
+	}
+	return requireAffected(result)
+}
+
+func (s *Store) ListPowerCallbacks(ctx context.Context, sessionID string, filter PowerCallbackFilter) ([]models.PowerCallback, error) {
+	query := `SELECT id, session_id, COALESCE(finding_id, ''), provider, token, url, source_ip, raw_event, received, created_at, updated_at FROM power_callbacks WHERE session_id = ?`
+	args := []any{sessionID}
+	if filter.FindingID != "" {
+		query += ` AND finding_id = ?`
+		args = append(args, filter.FindingID)
+	}
+	if filter.Provider != "" {
+		query += ` AND provider = ?`
+		args = append(args, filter.Provider)
+	}
+	if filter.Received != nil {
+		query += ` AND received = ?`
+		args = append(args, *filter.Received)
+	}
+	query += ` ORDER BY created_at DESC`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var callbacks []models.PowerCallback
+	for rows.Next() {
+		callback, err := scanPowerCallback(rows)
+		if err != nil {
+			return nil, err
+		}
+		callbacks = append(callbacks, callback)
+	}
+	return callbacks, rows.Err()
 }
 
 func (s *Store) InsertPayload(ctx context.Context, payload models.Payload) error {
@@ -79,6 +193,23 @@ func (s *Store) ListPayloadsBySession(ctx context.Context, sessionID string, fil
 		args = append(args, *filter.Validated)
 	}
 	return s.listPayloads(ctx, where, args...)
+}
+
+func (s *Store) PayloadByID(ctx context.Context, sessionID, payloadID string) (models.Payload, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, finding_id, session_id, payload_type, payload, context, target_waf,
+       target_db, bypass_technique, confidence, validated, validated_response,
+       rank, created_at
+FROM payloads
+WHERE session_id = ? AND id = ?`, sessionID, payloadID)
+	if err != nil {
+		return models.Payload{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return models.Payload{}, ErrNotFound
+	}
+	return scanPayload(rows)
 }
 
 func (s *Store) listPayloads(ctx context.Context, where string, args ...any) ([]models.Payload, error) {
@@ -414,6 +545,40 @@ WHERE session_id = ?`
 		results = append(results, result)
 	}
 	return results, rows.Err()
+}
+
+func scanProviderStatus(row rowScanner) (models.ProviderStatus, error) {
+	var status models.ProviderStatus
+	var metadata, createdAt string
+	err := row.Scan(&status.ID, &status.SessionID, &status.Provider, &status.Module,
+		&status.Status, &status.Message, &metadata, &createdAt)
+	if err != nil {
+		return models.ProviderStatus{}, err
+	}
+	if metadata != "" {
+		if err := json.Unmarshal([]byte(metadata), &status.Metadata); err != nil {
+			return models.ProviderStatus{}, err
+		}
+	}
+	status.CreatedAt, err = parseTime(createdAt)
+	return status, err
+}
+
+func scanPowerCallback(row rowScanner) (models.PowerCallback, error) {
+	var callback models.PowerCallback
+	var createdAt, updatedAt string
+	err := row.Scan(&callback.ID, &callback.SessionID, &callback.FindingID, &callback.Provider,
+		&callback.Token, &callback.URL, &callback.SourceIP, &callback.RawEvent, &callback.Received,
+		&createdAt, &updatedAt)
+	if err != nil {
+		return models.PowerCallback{}, err
+	}
+	callback.CreatedAt, err = parseTime(createdAt)
+	if err != nil {
+		return models.PowerCallback{}, err
+	}
+	callback.UpdatedAt, err = parseTime(updatedAt)
+	return callback, err
 }
 
 func scanPayload(row rowScanner) (models.Payload, error) {

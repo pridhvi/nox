@@ -153,7 +153,7 @@ ProjectDiscovery tools (`nuclei`, `httpx`, `subfinder`, `naabu`, `dnsx`) are sub
 - Full tool stdout/stderr is retained in `<session-id>/runs/` sidecars unless `nox scan --lean` is used.
 - Dynamic, static audit, and combined source-aware workloads share one session database and report pipeline.
 - Continuous monitoring creates normal scan sessions, diffs targets/technologies/findings against the monitor baseline, and schedules runs only while `nox serve` is active.
-- Power-feature slices are implemented as explicit operator actions with additive persistence for payloads, credentials, OSINT, AD entities, block events, PoC results, and Burp bridge state; active/high-risk actions require configured API-key auth.
+- Power-feature modules are implemented as explicit operator actions with additive persistence for generated and validated payloads, credential attempts, OSINT records and provider statuses, AD entities/relationships/artifacts, block events, callback evidence, PoC results, and Burp XML/REST bridge state. Active/high-risk actions require configured API-key auth through the API, explicit confirmation, scope checks, and conservative non-destructive behavior.
 - Native ProjectDiscovery library integration is deferred. Subprocess adapters remain the supported v1 path because they preserve process isolation and reduce dependency risk.
 
 ---
@@ -1357,13 +1357,20 @@ GET    /api/sessions/{id}/osint
 POST   /api/sessions/{id}/osint/run
 GET    /api/sessions/{id}/ad/entities
 GET    /api/sessions/{id}/ad/relationships
+POST   /api/sessions/{id}/ad/kerberoast
 POST   /api/sessions/{id}/ad/bloodhound/import
 GET    /api/sessions/{id}/block-events
 POST   /api/sessions/{id}/findings/{finding_id}/poc/run
 GET    /api/sessions/{id}/poc-results
+GET    /api/sessions/{id}/provider-statuses
+GET    /api/sessions/{id}/callbacks
+GET    /api/sessions/{id}/callbacks/{token}
 POST   /api/sessions/{id}/burp/import
 GET    /api/sessions/{id}/burp/export/scope
 GET    /api/sessions/{id}/burp/export/findings
+GET    /api/sessions/{id}/burp/status
+POST   /api/sessions/{id}/burp/push-scope
+POST   /api/sessions/{id}/burp/pull-issues
 GET    /api/burp/status
 
 GET    /api/tools                   List all registered tool adapters
@@ -1422,7 +1429,7 @@ nox audit report <session-id>         Generate a report from an audit session
 nox audit tools                       List built-in and external audit adapters
 
 nox serve                             Start the web UI and API server
-         --port 8080                  (default: 8080)
+         --port 6767                  (default: 6767)
          --host 127.0.0.1            (default: localhost only)
 
 nox sessions list                     List all sessions
@@ -1438,15 +1445,21 @@ nox monitor changes <config-id>        Show stored surface changes
 nox monitor delete <config-id>         Delete a monitor config and run history
 
 nox payloads generate <session-id> --finding <id>
+nox payloads validate <session-id> --payload <id> --confirm --enabled=true
 nox payloads list <session-id>
 nox creds test <session-id> --mode correlate
+nox creds test <session-id> --mode defaults --url <login-url> --confirm
 nox creds list <session-id>
-nox osint run <session-id>
+nox osint run <session-id> --providers github,shodan,securitytrails
 nox osint list <session-id>
 nox ad enum <session-id> --domain example.local
+nox ad kerberoast <session-id> --username svc-http --confirm
 nox ad bloodhound export <session-id>
-nox poc run <session-id> --finding <id> --confirm
+nox poc run <session-id> --finding <id> --confirm --active=true
 nox poc list <session-id>
+nox burp status <session-id>
+nox burp push-scope <session-id>
+nox burp pull-issues <session-id>
 nox burp export scope <session-id> --output scope.xml
 
 nox report <session-id>               Generate report
@@ -1491,12 +1504,16 @@ The frontend is a React SPA embedded in the Go binary. Routes:
 - Display persisted surface changes grouped by severity and change type.
 
 ### 15.1b Power Features (`/sessions/:id/power`)
-- Consolidated operator surface for payloads, credentials, OSINT, AD/internal,
-  PoC, and evasion/block-event records.
+- Consolidated operator surface for payloads, credentials, OSINT provider
+  status, AD/internal records, PoC, callbacks, Burp bridge actions, and
+  evasion/block-event records.
 - Advanced actions stay manual and visible; the UI does not run credential,
   PoC, Burp REST, or AD actions implicitly.
 - Finding-scoped payload and PoC controls require an explicit finding ID or use
   the first finding only as a convenience for local fixture checks.
+- Payload validation is limited to fixture-safe marker classes. Credential
+  testing is lockout-aware, paced, scope-checked, and stores redacted passwords
+  unless plaintext storage is explicitly enabled in config.
 
 ### 15.2 Session Detail (`/sessions/:id`)
 - Session metadata (target, mode, duration, status)
@@ -1605,6 +1622,25 @@ cve:
   nvd_api_key: ""           # Optional — higher rate limits with key
   cache_ttl: 86400          # seconds to cache CVE data
 
+# Power-feature settings. All secrets are redacted in effective config/API/UI.
+power:
+  providers:
+    github_token: ""
+    shodan_api_key: ""
+    securitytrails_api_key: ""
+  burp:
+    base_url: ""
+    api_key: ""
+  callbacks:
+    provider: builtin       # builtin | interactsh | burp
+    interactsh_url: ""
+  credentials:
+    max_attempts_per_user: 3
+    delay_seconds: 3
+    store_plaintext: false
+  active_validation:
+    enabled: false
+
 # Tool paths (auto-detected if in PATH)
 tools:
   nmap: /usr/bin/nmap
@@ -1707,7 +1743,7 @@ services:
   nox:
     build: .
     ports:
-      - "8080:8080"
+      - "6767:6767"
     volumes:
       - nox-data:/root/.nox/data
       - ./config.yaml:/root/.nox/config.yaml

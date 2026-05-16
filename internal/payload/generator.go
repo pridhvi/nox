@@ -2,16 +2,21 @@ package payload
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/pridhvi/nox/internal/db"
+	llmintel "github.com/pridhvi/nox/internal/llm"
 	"github.com/pridhvi/nox/internal/models"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 type GenerateOptions struct {
-	Force bool
+	Force     bool
+	LLMConfig llmintel.Config
+	LLMClient llmintel.ChatCompleter
 }
 
 func Generate(ctx context.Context, store *db.Store, sessionID, findingID string, options GenerateOptions) ([]models.Payload, error) {
@@ -33,7 +38,10 @@ func Generate(ctx context.Context, store *db.Store, sessionID, findingID string,
 			return nil, err
 		}
 	}
-	generated := deterministicPayloads(finding)
+	generated := llmPayloads(ctx, finding, options)
+	if len(generated) == 0 {
+		generated = deterministicPayloads(finding)
+	}
 	if len(generated) == 0 {
 		return nil, fmt.Errorf("finding %q is not a supported payload generation target", finding.ID)
 	}
@@ -49,6 +57,101 @@ func Generate(ctx context.Context, store *db.Store, sessionID, findingID string,
 		}
 	}
 	return store.ListPayloadsByFinding(ctx, sessionID, findingID)
+}
+
+func llmPayloads(ctx context.Context, finding models.Finding, options GenerateOptions) []models.Payload {
+	if !options.LLMConfig.Configured() {
+		return nil
+	}
+	client := options.LLMClient
+	if client == nil {
+		client = llmintel.NewOpenAIClient(options.LLMConfig)
+	}
+	prompt := `Generate safe, non-destructive payload suggestions for this vulnerability as JSON only.
+Return an array of objects with keys payload_type, payload, context, target_waf, target_db, bypass_technique, confidence.
+Do not include destructive payloads, exfiltration, credential theft, shell downloaders, or real data access.
+Finding JSON:
+` + findingContext(finding)
+	completion, err := client.Complete(ctx, llmintel.ChatRequest{
+		Model: options.LLMConfig.Model,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: "You generate bounded, non-destructive penetration-test payload suggestions for authorized testing. Output valid JSON only."},
+			{Role: openai.ChatMessageRoleUser, Content: prompt},
+		},
+		MaxTokens:   options.LLMConfig.MaxTokens,
+		Temperature: options.LLMConfig.Temperature,
+	})
+	if err != nil {
+		return nil
+	}
+	var payloads []models.Payload
+	if err := json.Unmarshal([]byte(extractJSONArray(completion.Message.Content)), &payloads); err != nil {
+		return nil
+	}
+	out := payloads[:0]
+	for _, payload := range payloads {
+		payload.PayloadType = strings.TrimSpace(payload.PayloadType)
+		payload.Payload = strings.TrimSpace(payload.Payload)
+		if payload.PayloadType == "" || payload.Payload == "" || unsafePayload(payload.Payload) {
+			continue
+		}
+		if payload.Confidence <= 0 || payload.Confidence > 1 {
+			payload.Confidence = 0.5
+		}
+		if payload.Context == "" {
+			payload.Context = "LLM-generated advisory payload; not sent automatically."
+		}
+		out = append(out, payload)
+		if len(out) >= 5 {
+			break
+		}
+	}
+	return out
+}
+
+func findingContext(finding models.Finding) string {
+	body, err := json.Marshal(map[string]any{
+		"title":       finding.Title,
+		"description": finding.Description,
+		"type":        finding.Type,
+		"tool_id":     finding.ToolID,
+		"url":         finding.URL,
+		"parameter":   finding.Parameter,
+		"method":      finding.Method,
+		"severity":    finding.Severity,
+		"evidence":    finding.EvidenceNormalized,
+		"tags":        finding.Tags,
+	})
+	if err != nil {
+		return "{}"
+	}
+	return string(body)
+}
+
+func extractJSONArray(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "```") {
+		value = strings.TrimPrefix(value, "```json")
+		value = strings.TrimPrefix(value, "```")
+		value = strings.TrimSuffix(value, "```")
+		value = strings.TrimSpace(value)
+	}
+	start := strings.Index(value, "[")
+	end := strings.LastIndex(value, "]")
+	if start >= 0 && end > start {
+		return value[start : end+1]
+	}
+	return value
+}
+
+func unsafePayload(value string) bool {
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"rm -rf", "curl ", "wget ", "/etc/shadow", "aws_secret", "metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"} {
+		if strings.Contains(lower, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
 }
 
 func deterministicPayloads(finding models.Finding) []models.Payload {

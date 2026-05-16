@@ -36,6 +36,15 @@ type Store interface {
 	ListLLMAnalyses(ctx context.Context, sessionID string) ([]models.LLMAnalysis, error)
 	ListSourceFindings(ctx context.Context, sessionID string, filter db.SourceFindingFilter) ([]models.SourceFinding, error)
 	ListAttackGraphEdges(ctx context.Context, sessionID string) ([]models.AttackGraphEdge, error)
+	ListPayloadsBySession(ctx context.Context, sessionID string, filter db.PayloadFilter) ([]models.Payload, error)
+	ListCredentialFindings(ctx context.Context, sessionID string, filter db.CredentialFilter) ([]models.CredentialFinding, error)
+	ListOSINTFindings(ctx context.Context, sessionID string, filter db.OSINTFilter) ([]models.OSINTFinding, error)
+	ListADEntities(ctx context.Context, sessionID, entityType string) ([]models.ADEntity, error)
+	ListADRelationships(ctx context.Context, sessionID string) ([]models.ADRelationship, error)
+	ListPoCResults(ctx context.Context, sessionID, findingID string) ([]models.PoCResult, error)
+	ListBlockEvents(ctx context.Context, sessionID string) ([]models.BlockEvent, error)
+	ListProviderStatuses(ctx context.Context, sessionID string, filter db.ProviderStatusFilter) ([]models.ProviderStatus, error)
+	ListPowerCallbacks(ctx context.Context, sessionID string, filter db.PowerCallbackFilter) ([]models.PowerCallback, error)
 	Stats(ctx context.Context, sessionID string) (db.SessionStats, error)
 }
 
@@ -86,7 +95,11 @@ func Generate(ctx context.Context, store Store, options Options) (Artifact, erro
 	if err != nil {
 		return Artifact{}, err
 	}
-	sections := buildSections(session, targets, findings, sourceFindings, graphEdges, cves, vectors, runs, analyses, stats, options.Mode)
+	power, err := collectPowerEvidence(ctx, store, session.ID)
+	if err != nil {
+		return Artifact{}, err
+	}
+	sections := buildSections(session, targets, findings, sourceFindings, graphEdges, cves, vectors, runs, analyses, stats, options.Mode, power)
 	summary := sections[0].Content
 	if options.Format == models.ReportFormatSARIF {
 		if body, err := json.Marshal(activeFindings(findings)); err == nil {
@@ -120,7 +133,52 @@ func Generate(ctx context.Context, store Store, options Options) (Artifact, erro
 	}, nil
 }
 
-func buildSections(session models.Session, targets []models.Target, findings []models.Finding, sourceFindings []models.SourceFinding, graphEdges []models.AttackGraphEdge, cves []models.CVEMatch, vectors []models.AttackVector, runs []models.ToolRun, analyses []models.LLMAnalysis, stats db.SessionStats, mode models.ReportMode) []models.ReportSection {
+type powerEvidence struct {
+	Payloads    []models.Payload
+	Credentials []models.CredentialFinding
+	OSINT       []models.OSINTFinding
+	ADEntities  []models.ADEntity
+	ADRelations []models.ADRelationship
+	PoCs        []models.PoCResult
+	Blocks      []models.BlockEvent
+	Providers   []models.ProviderStatus
+	Callbacks   []models.PowerCallback
+}
+
+func collectPowerEvidence(ctx context.Context, store Store, sessionID string) (powerEvidence, error) {
+	var out powerEvidence
+	var err error
+	if out.Payloads, err = store.ListPayloadsBySession(ctx, sessionID, db.PayloadFilter{}); err != nil {
+		return out, err
+	}
+	if out.Credentials, err = store.ListCredentialFindings(ctx, sessionID, db.CredentialFilter{}); err != nil {
+		return out, err
+	}
+	if out.OSINT, err = store.ListOSINTFindings(ctx, sessionID, db.OSINTFilter{}); err != nil {
+		return out, err
+	}
+	if out.ADEntities, err = store.ListADEntities(ctx, sessionID, ""); err != nil {
+		return out, err
+	}
+	if out.ADRelations, err = store.ListADRelationships(ctx, sessionID); err != nil {
+		return out, err
+	}
+	if out.PoCs, err = store.ListPoCResults(ctx, sessionID, ""); err != nil {
+		return out, err
+	}
+	if out.Blocks, err = store.ListBlockEvents(ctx, sessionID); err != nil {
+		return out, err
+	}
+	if out.Providers, err = store.ListProviderStatuses(ctx, sessionID, db.ProviderStatusFilter{}); err != nil {
+		return out, err
+	}
+	if out.Callbacks, err = store.ListPowerCallbacks(ctx, sessionID, db.PowerCallbackFilter{}); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func buildSections(session models.Session, targets []models.Target, findings []models.Finding, sourceFindings []models.SourceFinding, graphEdges []models.AttackGraphEdge, cves []models.CVEMatch, vectors []models.AttackVector, runs []models.ToolRun, analyses []models.LLMAnalysis, stats db.SessionStats, mode models.ReportMode, power powerEvidence) []models.ReportSection {
 	active := activeFindings(findings)
 	highs, lows := splitFindings(active)
 	sections := []models.ReportSection{
@@ -132,12 +190,13 @@ func buildSections(session models.Session, targets []models.Target, findings []m
 		{ID: models.ReportSectionCrossConfirmed, Title: "Cross-Confirmed Findings", Content: crossConfirmedMarkdown(findings, sourceFindings, graphEdges), Position: 6},
 		{ID: models.ReportSectionAttackVectors, Title: "Attack Vectors", Content: vectorsMarkdown(vectors), Position: 7},
 		{ID: models.ReportSectionCVEMatches, Title: "Dependency and CVE Matches", Content: cvesMarkdown(cves), Position: 8},
-		{ID: models.ReportSectionToolCoverage, Title: "Tool Coverage", Content: toolCoverageMarkdown(runs), Position: 9},
-		{ID: models.ReportSectionSuppressed, Title: "Suppressed and Dismissed Findings", Content: suppressedFindingsMarkdown(findings), Position: 10},
-		{ID: models.ReportSectionRemediation, Title: "Remediation Roadmap", Content: remediationMarkdown(active, cves), Position: 11},
+		{ID: models.ReportSectionPowerFeatures, Title: "Power Feature Evidence", Content: powerEvidenceMarkdown(power), Position: 9},
+		{ID: models.ReportSectionToolCoverage, Title: "Tool Coverage", Content: toolCoverageMarkdown(runs), Position: 10},
+		{ID: models.ReportSectionSuppressed, Title: "Suppressed and Dismissed Findings", Content: suppressedFindingsMarkdown(findings), Position: 11},
+		{ID: models.ReportSectionRemediation, Title: "Remediation Roadmap", Content: remediationMarkdown(active, cves), Position: 12},
 	}
 	if mode == models.ReportModeTechnical {
-		sections = append(sections, models.ReportSection{ID: models.ReportSectionRawEvidence, Title: "Raw Tool Output Appendix", Content: rawEvidenceMarkdown(active, runs), Position: 12})
+		sections = append(sections, models.ReportSection{ID: models.ReportSectionRawEvidence, Title: "Raw Tool Output Appendix", Content: rawEvidenceMarkdown(active, runs), Position: 13})
 	}
 	return sections
 }
@@ -228,6 +287,82 @@ func sourceFindingsMarkdown(findings []models.SourceFinding) string {
 			state = "static + dynamic"
 		}
 		fmt.Fprintf(&b, "- **%s** %s:%d `%s` [%s]\n", finding.Kind, finding.FilePath, finding.LineNumber, finding.Value, state)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func powerEvidenceMarkdown(power powerEvidence) string {
+	if len(power.Payloads) == 0 && len(power.Credentials) == 0 && len(power.OSINT) == 0 && len(power.ADEntities) == 0 && len(power.PoCs) == 0 && len(power.Blocks) == 0 && len(power.Providers) == 0 && len(power.Callbacks) == 0 {
+		return "No power-feature evidence was recorded."
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Summary: payloads=%d, credentials=%d, osint=%d, ad_entities=%d, ad_relationships=%d, poc_results=%d, callbacks=%d, block_events=%d, provider_statuses=%d.\n\n",
+		len(power.Payloads), len(power.Credentials), len(power.OSINT), len(power.ADEntities), len(power.ADRelations), len(power.PoCs), len(power.Callbacks), len(power.Blocks), len(power.Providers))
+	if len(power.Payloads) > 0 {
+		b.WriteString("Generated payloads:\n")
+		for _, payload := range power.Payloads {
+			state := "unvalidated"
+			if payload.Validated {
+				state = "validated"
+			}
+			fmt.Fprintf(&b, "- %s %s confidence=%.2f %s\n", payload.PayloadType, state, payload.Confidence, truncate(payload.Context, 180))
+		}
+		b.WriteString("\n")
+	}
+	if len(power.Credentials) > 0 {
+		b.WriteString("Credential checks:\n")
+		for _, credential := range power.Credentials {
+			status := "unconfirmed"
+			if credential.Valid {
+				status = "valid"
+			}
+			if credential.LockoutDetected {
+				status = "lockout_detected"
+			}
+			fmt.Fprintf(&b, "- %s user=%s service=%s status=%s evidence=%s\n", credential.CredentialType, credential.Username, credential.Service, status, truncate(credential.Evidence, 180))
+		}
+		b.WriteString("\n")
+	}
+	if len(power.OSINT) > 0 {
+		b.WriteString("OSINT records:\n")
+		for _, finding := range power.OSINT {
+			fmt.Fprintf(&b, "- %s %s source=%s confidence=%.2f\n", finding.Kind, finding.Value, finding.Source, finding.Confidence)
+		}
+		b.WriteString("\n")
+	}
+	if len(power.ADEntities) > 0 {
+		b.WriteString("AD/Internal records:\n")
+		for _, entity := range power.ADEntities {
+			fmt.Fprintf(&b, "- %s %s domain=%s\n", entity.EntityType, entity.Name, entity.Domain)
+		}
+		b.WriteString("\n")
+	}
+	if len(power.PoCs) > 0 {
+		b.WriteString("PoC results:\n")
+		for _, result := range power.PoCs {
+			fmt.Fprintf(&b, "- %s status=%s callback=%t evidence=%s\n", result.PoCType, result.Status, result.CallbackReceived, truncate(result.Evidence, 220))
+		}
+		b.WriteString("\n")
+	}
+	if len(power.Callbacks) > 0 {
+		b.WriteString("Callback evidence:\n")
+		for _, callback := range power.Callbacks {
+			fmt.Fprintf(&b, "- provider=%s token=%s received=%t source_ip=%s\n", callback.Provider, callback.Token, callback.Received, callback.SourceIP)
+		}
+		b.WriteString("\n")
+	}
+	if len(power.Blocks) > 0 {
+		b.WriteString("Block/backoff events:\n")
+		for _, event := range power.Blocks {
+			fmt.Fprintf(&b, "- %s status=%d signal=%s backoff_ms=%d\n", event.ToolID, event.StatusCode, event.Signal, event.BackoffMS)
+		}
+		b.WriteString("\n")
+	}
+	if len(power.Providers) > 0 {
+		b.WriteString("Provider statuses:\n")
+		for _, status := range power.Providers {
+			fmt.Fprintf(&b, "- %s/%s %s: %s\n", status.Module, status.Provider, status.Status, status.Message)
+		}
 	}
 	return strings.TrimSpace(b.String())
 }

@@ -165,3 +165,28 @@ type BurpImportResult struct {
 	FindingsImported int `json:"findings_imported"`
 	EvidenceImported int `json:"evidence_imported"`
 }
+
+type ProviderStatus struct {
+	ID        string         `json:"id"`
+	SessionID string         `json:"session_id"`
+	Provider  string         `json:"provider"`
+	Module    string         `json:"module"`
+	Status    string         `json:"status"`
+	Message   string         `json:"message"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+}
+
+type PowerCallback struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	FindingID string    `json:"finding_id,omitempty"`
+	Provider  string    `json:"provider"`
+	Token     string    `json:"token"`
+	URL       string    `json:"url"`
+	SourceIP  string    `json:"source_ip"`
+	RawEvent  string    `json:"raw_event"`
+	Received  bool      `json:"received"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

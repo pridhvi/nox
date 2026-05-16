@@ -41,6 +41,8 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 		"ad_artifacts",
 		"block_events",
 		"poc_results",
+		"provider_statuses",
+		"power_callbacks",
 		"schema_migrations",
 	} {
 		var name string
@@ -49,7 +51,7 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 			t.Fatalf("expected table %s: %v", table, err)
 		}
 	}
-	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode", "006_power_features"} {
+	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode", "006_power_features", "007_power_feature_depth"} {
 		var got string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, version).Scan(&got); err != nil {
 			t.Fatalf("expected migration %s: %v", version, err)
@@ -433,7 +435,7 @@ func TestExistingInitialDatabaseMigratesToPhase2(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plugins'`).Scan(&pluginTable); err != nil {
 		t.Fatalf("expected plugins table after migration: %v", err)
 	}
-	for _, expected := range []string{"002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode", "006_power_features"} {
+	for _, expected := range []string{"002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode", "006_power_features", "007_power_feature_depth"} {
 		var version string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, expected).Scan(&version); err != nil {
 			t.Fatalf("expected %s migration record: %v", expected, err)
@@ -574,6 +576,68 @@ func TestAuditSourcePersistenceAndStats(t *testing.T) {
 	}
 	if len(cves) != 1 || cves[0].PackageName != "demo" || cves[0].PackageVersion != "1.0.0" {
 		t.Fatalf("unexpected cves: %#v", cves)
+	}
+}
+
+func TestPowerDepthStoreProviderStatusesAndCallbacks(t *testing.T) {
+	ctx := context.Background()
+	session, target, store := createTestStore(t, ctx)
+	status := models.ProviderStatus{
+		ID:        models.NewID(),
+		SessionID: session.ID,
+		Provider:  "github",
+		Module:    "code_search",
+		Status:    "skipped",
+		Message:   "missing token",
+		Metadata:  map[string]any{"required": true},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := store.InsertProviderStatus(ctx, status); err != nil {
+		t.Fatal(err)
+	}
+	statuses, err := store.ListProviderStatuses(ctx, session.ID, ProviderStatusFilter{Provider: "github"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 1 || statuses[0].Status != "skipped" || statuses[0].Metadata["required"] != true {
+		t.Fatalf("unexpected provider statuses: %#v", statuses)
+	}
+
+	finding := models.Finding{
+		ID:        models.NewID(),
+		SessionID: session.ID,
+		TargetID:  target.ID,
+		ToolID:    "fixture",
+		Type:      models.FindingTypeVulnerability,
+		Severity:  models.SeverityMedium,
+		Title:     "Callback target",
+		URL:       "https://example.com/callback",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := store.InsertFinding(ctx, finding); err != nil {
+		t.Fatal(err)
+	}
+	callback := models.PowerCallback{
+		ID:        models.NewID(),
+		SessionID: session.ID,
+		FindingID: finding.ID,
+		Provider:  "builtin",
+		Token:     "token-1",
+		URL:       "http://127.0.0.1/callback/token-1",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := store.InsertPowerCallback(ctx, callback); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkPowerCallbackReceived(ctx, session.ID, callback.Token, "127.0.0.1", "GET /callback/token-1"); err != nil {
+		t.Fatal(err)
+	}
+	callbacks, err := store.ListPowerCallbacks(ctx, session.ID, PowerCallbackFilter{FindingID: finding.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(callbacks) != 1 || !callbacks[0].Received || callbacks[0].SourceIP != "127.0.0.1" || callbacks[0].UpdatedAt.IsZero() {
+		t.Fatalf("unexpected callbacks: %#v", callbacks)
 	}
 }
 

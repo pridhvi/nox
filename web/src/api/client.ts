@@ -251,6 +251,12 @@ export type Payload = {
   created_at: string;
 };
 
+export type PayloadValidationResult = {
+  payload_id: string;
+  validated: boolean;
+  evidence: string;
+};
+
 export type CredentialFinding = {
   id: string;
   session_id: string;
@@ -275,6 +281,17 @@ export type OSINTFinding = {
   source: string;
   confidence: number;
   target_id?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ProviderStatus = {
+  id: string;
+  session_id: string;
+  provider: string;
+  module: string;
+  status: "configured" | "skipped" | "ok" | "error";
+  message: string;
   metadata?: Record<string, unknown>;
   created_at: string;
 };
@@ -326,6 +343,34 @@ export type PoCResult = {
   impact_narrative: string;
   created_at: string;
   completed_at?: string;
+};
+
+export type PowerCallback = {
+  id: string;
+  session_id: string;
+  finding_id?: string;
+  provider: string;
+  token: string;
+  url: string;
+  received: boolean;
+  source_ip?: string;
+  raw_event?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BurpRESTResult = {
+  available: boolean;
+  action: string;
+  message: string;
+  count?: number;
+};
+
+export type BurpStatusResponse = {
+  configured: boolean;
+  available: boolean;
+  result: BurpRESTResult;
+  config?: Record<string, unknown>;
 };
 
 export type ScanProfileRecord = {
@@ -442,6 +487,7 @@ export type EffectiveConfig = {
   plugins: string[];
   paths: Record<string, string>;
   runtime: Record<string, string>;
+  power?: Record<string, unknown>;
 };
 
 export type ScanEventType =
@@ -533,11 +579,15 @@ export function generatePayloads(sessionID: string, findingID: string, force_reg
   return api<Payload[]>(`/api/sessions/${sessionID}/findings/${findingID}/generate-payloads`, { method: "POST", body: JSON.stringify({ force_regenerate }) });
 }
 
+export function validatePayload(sessionID: string, payloadID: string, confirm = true) {
+  return api<PayloadValidationResult>(`/api/sessions/${sessionID}/payloads/${payloadID}/validate`, { method: "POST", body: JSON.stringify({ confirm }) });
+}
+
 export function listCredentials(sessionID: string) {
   return api<CredentialFinding[]>(`/api/sessions/${sessionID}/credentials`);
 }
 
-export function testCredentials(sessionID: string, payload: { mode: string; username?: string; password?: string; service?: string; url?: string }) {
+export function testCredentials(sessionID: string, payload: { mode: string; username?: string; password?: string; service?: string; url?: string; confirm?: boolean; max_attempts?: number; delay_ms?: number; store_secret?: boolean }) {
   return api<CredentialFinding[]>(`/api/sessions/${sessionID}/credentials/test`, { method: "POST", body: JSON.stringify(payload) });
 }
 
@@ -547,6 +597,11 @@ export function listOSINT(sessionID: string) {
 
 export function runOSINT(sessionID: string, providers: string[] = []) {
   return api<OSINTFinding[]>(`/api/sessions/${sessionID}/osint/run`, { method: "POST", body: JSON.stringify({ providers }) });
+}
+
+export function listProviderStatuses(sessionID: string, provider = "") {
+  const suffix = provider ? `?provider=${encodeURIComponent(provider)}` : "";
+  return api<ProviderStatus[]>(`/api/sessions/${sessionID}/provider-statuses${suffix}`);
 }
 
 export function listADEntities(sessionID: string) {
@@ -565,8 +620,28 @@ export function listPoCResults(sessionID: string) {
   return api<PoCResult[]>(`/api/sessions/${sessionID}/poc-results`);
 }
 
-export function runPoC(sessionID: string, findingID: string, confirm = true) {
-  return api<PoCResult>(`/api/sessions/${sessionID}/findings/${findingID}/poc/run`, { method: "POST", body: JSON.stringify({ confirm }) });
+export function runPoC(sessionID: string, findingID: string, confirm = true, extra: Record<string, unknown> = {}) {
+  return api<PoCResult>(`/api/sessions/${sessionID}/findings/${findingID}/poc/run`, { method: "POST", body: JSON.stringify({ confirm, ...extra }) });
+}
+
+export function listPowerCallbacks(sessionID: string) {
+  return api<PowerCallback[]>(`/api/sessions/${sessionID}/callbacks`);
+}
+
+export function runADKerberoast(sessionID: string, payload: { domain?: string; spn?: string; confirm?: boolean; allow_public?: boolean }) {
+  return api<Record<string, unknown>>(`/api/sessions/${sessionID}/ad/kerberoast`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getBurpStatus(sessionID: string) {
+  return api<BurpStatusResponse>(`/api/sessions/${sessionID}/burp/status`);
+}
+
+export function pushBurpScope(sessionID: string) {
+  return api<BurpRESTResult>(`/api/sessions/${sessionID}/burp/push-scope`, { method: "POST", body: "{}" });
+}
+
+export function pullBurpIssues(sessionID: string) {
+  return api<Finding[]>(`/api/sessions/${sessionID}/burp/pull-issues`, { method: "POST", body: "{}" });
 }
 
 export function updateFinding(sessionID: string, findingID: string, payload: { severity?: string; remediation?: string }) {

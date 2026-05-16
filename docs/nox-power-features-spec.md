@@ -5,10 +5,13 @@
 >
 > **Read first:** `docs/nox-project-spec.md` for the base architecture and current audit/source-aware behavior, plus `docs/implementation-plan.md` for implementation traceability. All modules in this document build on top of the existing NOX codebase — nothing here replaces existing functionality.
 >
-> **Current implementation note:** All eight modules now have an initial
-> production-safe slice in the repository. The specifications below remain the
-> complete target state for future hardening, deeper automation, and fixture
-> coverage.
+> **Current implementation note:** All eight modules now have a deep-but-safe v1
+> slice in the repository. Optional providers degrade gracefully, fixture-safe
+> active validation is explicit, credentials are paced and redacted by default,
+> callbacks are correlated without exfiltration, and power evidence appears in
+> reports/UI. The specifications below remain the complete target state for
+> future provider breadth, Linux-tool hardening, and carefully reviewed
+> automation.
 
 ---
 
@@ -32,14 +35,14 @@ Each module is fully specified. Before writing any code, the agent should:
 
 | # | Module | Summary | Difficulty | Status |
 |---|---|---|---|---|
-| 1 | AI Payload Generation | Context-aware WAF bypass and injection payload generation | High | Initial slice implemented |
-| 2 | Continuous Attack Surface Monitoring | Scheduled scans with diff/alerting | Medium | Initial slice implemented |
-| 3 | Credential Testing | Default creds, password spray, credential correlation | Medium | Initial slice implemented |
-| 4 | OSINT Expansion | Employee enumeration, GitHub intel, job posting analysis, Shodan | Medium | Initial slice implemented |
-| 5 | Active Directory & Internal Network | BloodHound, Kerberoasting, SMB/LDAP, relay attacks | High | Initial slice implemented |
-| 6 | Evasion & Stealth Mode | Rate limiting, traffic blending, proxy chains, WAF bypass | Medium | Initial slice implemented |
-| 7 | Automated PoC & Impact Demonstration | Safe automated exploitation, canary capture, evidence generation | High | Initial slice implemented |
-| 8 | Burp Suite Bridge | Import/export, Collaborator/Interactsh integration | Medium | Initial slice implemented |
+| 1 | AI Payload Generation | Context-aware WAF bypass and injection payload generation | High | Deep safe slice implemented |
+| 2 | Continuous Attack Surface Monitoring | Scheduled scans with diff/alerting | Medium | Deep safe slice implemented |
+| 3 | Credential Testing | Default creds, password spray, credential correlation | Medium | Deep safe slice implemented |
+| 4 | OSINT Expansion | Employee enumeration, GitHub intel, job posting analysis, Shodan | Medium | Deep safe slice implemented |
+| 5 | Active Directory & Internal Network | BloodHound, Kerberoasting, SMB/LDAP, relay attacks | High | Deep safe slice implemented |
+| 6 | Evasion & Stealth Mode | Rate limiting, traffic blending, proxy chains, WAF bypass | Medium | Deep safe slice implemented |
+| 7 | Automated PoC & Impact Demonstration | Safe automated exploitation, canary capture, evidence generation | High | Deep safe slice implemented |
+| 8 | Burp Suite Bridge | Import/export, Collaborator/Interactsh integration | Medium | Deep safe slice implemented |
 
 ---
 
@@ -425,7 +428,7 @@ func (d *Differ) Diff(ctx context.Context, baselineSessionID, currentSessionID s
     {
       "type": "actions",
       "elements": [
-        { "type": "button", "text": { "type": "plain_text", "text": "View in NOX" }, "url": "http://localhost:8080/sessions/..." }
+        { "type": "button", "text": { "type": "plain_text", "text": "View in NOX" }, "url": "http://localhost:6767/sessions/..." }
       ]
     }
   ]
@@ -1670,14 +1673,14 @@ func (c *CollaboratorClient) PollCallbacks(ctx context.Context) chan CanaryCallb
 ### API endpoints
 
 ```
-POST /api/burp/import              Import Burp XML file (multipart upload)
-GET  /api/burp/export/scope        Download session targets as Burp scope XML
-GET  /api/burp/export/findings     Download NOX findings as Burp XML
-POST /api/burp/push-scope          Push NOX targets to running Burp (REST API mode)
-POST /api/burp/pull-issues         Pull Burp scanner issues into NOX session
-GET  /api/burp/status              Check if Burp REST API is reachable
-POST /api/burp/collaborator/setup  Configure collaborator/interactsh endpoint
-GET  /api/burp/collaborator/callbacks  Recent canary/collaborator callbacks
+POST /api/sessions/{id}/burp/import              Import Burp XML file (multipart upload)
+GET  /api/sessions/{id}/burp/export/scope        Download session targets as Burp scope XML
+GET  /api/sessions/{id}/burp/export/findings     Download NOX findings as Burp XML
+POST /api/sessions/{id}/burp/push-scope          Push NOX targets to running Burp (REST API mode)
+POST /api/sessions/{id}/burp/pull-issues         Pull Burp scanner issues into NOX session
+GET  /api/sessions/{id}/burp/status              Check if Burp REST API is reachable
+POST /api/burp/collaborator/setup                Configure collaborator/interactsh endpoint
+GET  /api/burp/collaborator/callbacks            Recent canary/collaborator callbacks
 ```
 
 ### CLI additions
