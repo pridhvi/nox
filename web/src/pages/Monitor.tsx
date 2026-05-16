@@ -80,7 +80,7 @@ export function Monitor() {
       </header>
 
       <div className="operator-grid">
-        <section className="scan-form">
+        <section className="scan-form monitor-form">
           <h2>New Monitor</h2>
           <form className="form-grid" onSubmit={(event) => { event.preventDefault(); createMutation.mutate(); }}>
             <label>Name

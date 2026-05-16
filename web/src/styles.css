@@ -685,6 +685,15 @@ html[data-theme="dark"] .primary {
   gap: 14px;
 }
 
+.action-panel .action-row {
+  flex: 1 1 360px;
+}
+
+.action-panel .action-row input {
+  flex: 1 1 260px;
+  min-width: 240px;
+}
+
 .compact-control {
   min-width: 150px;
 }
@@ -1176,6 +1185,15 @@ html[data-theme="light"] .chart-panel {
   gap: 14px;
   grid-template-columns: 1fr auto;
   padding: 18px;
+}
+
+.monitor-form {
+  align-items: stretch;
+  grid-template-columns: 1fr;
+}
+
+.monitor-form .form-grid {
+  align-items: end;
 }
 
 .phase-option,
