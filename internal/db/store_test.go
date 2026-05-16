@@ -41,7 +41,7 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 			t.Fatalf("expected table %s: %v", table, err)
 		}
 	}
-	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars"} {
+	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode"} {
 		var got string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, version).Scan(&got); err != nil {
 			t.Fatalf("expected migration %s: %v", version, err)
@@ -425,7 +425,7 @@ func TestExistingInitialDatabaseMigratesToPhase2(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plugins'`).Scan(&pluginTable); err != nil {
 		t.Fatalf("expected plugins table after migration: %v", err)
 	}
-	for _, expected := range []string{"002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars"} {
+	for _, expected := range []string{"002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode"} {
 		var version string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, expected).Scan(&version); err != nil {
 			t.Fatalf("expected %s migration record: %v", expected, err)
@@ -445,6 +445,127 @@ func TestExistingInitialDatabaseMigratesToPhase2(t *testing.T) {
 		if count != 0 {
 			t.Fatalf("expected tool_runs.%s to be removed", column)
 		}
+	}
+	for _, column := range []string{"workload_mode", "source_path"} {
+		var name string
+		if err := store.db.QueryRowContext(ctx, `SELECT name FROM pragma_table_info('sessions') WHERE name = ?`, column).Scan(&name); err != nil {
+			t.Fatalf("expected sessions.%s after migration: %v", column, err)
+		}
+	}
+	for _, table := range []string{"source_findings", "attack_graph_edges"} {
+		var name string
+		if err := store.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name); err != nil {
+			t.Fatalf("expected %s table after migration: %v", table, err)
+		}
+	}
+}
+
+func TestAuditSourcePersistenceAndStats(t *testing.T) {
+	ctx := context.Background()
+	session, target, store := createTestStore(t, ctx)
+
+	staticFinding := models.Finding{
+		ID:          models.NewID(),
+		SessionID:   session.ID,
+		ToolID:      "audit/semgrep",
+		Type:        models.FindingTypeVulnerability,
+		Severity:    models.SeverityHigh,
+		Confidence:  0.7,
+		Title:       "Static SQL sink",
+		URL:         "file://app.py#L10",
+		CodeContext: "db.execute(query)",
+		Status:      "confirmed",
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := store.InsertFinding(ctx, staticFinding); err != nil {
+		t.Fatal(err)
+	}
+	dynamicFinding := models.Finding{
+		ID:         models.NewID(),
+		SessionID:  session.ID,
+		TargetID:   target.ID,
+		ToolID:     "sqlmap",
+		Type:       models.FindingTypeVulnerability,
+		Severity:   models.SeverityHigh,
+		Confidence: 0.8,
+		Title:      "Dynamic SQL injection",
+		URL:        "https://example.com/search?q=1",
+		CreatedAt:  time.Now().UTC(),
+	}
+	if err := store.InsertFinding(ctx, dynamicFinding); err != nil {
+		t.Fatal(err)
+	}
+	sourceFinding := models.SourceFinding{
+		ID:         models.NewID(),
+		SessionID:  session.ID,
+		Kind:       models.SourceKindSQLSink,
+		Language:   "python",
+		Framework:  "generic",
+		FilePath:   "app.py",
+		LineNumber: 10,
+		Value:      "/search",
+		Context:    "db.execute(query)",
+		CreatedAt:  time.Now().UTC(),
+	}
+	if err := store.InsertSourceFinding(ctx, sourceFinding); err != nil {
+		t.Fatal(err)
+	}
+	edge := models.AttackGraphEdge{
+		ID:         models.NewID(),
+		SessionID:  session.ID,
+		FromID:     "source:" + sourceFinding.ID,
+		ToID:       "finding:" + dynamicFinding.ID,
+		Relation:   models.RelationConfirms,
+		Confidence: 0.9,
+		CreatedAt:  time.Now().UTC(),
+	}
+	if err := store.InsertAttackGraphEdge(ctx, edge); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkSourceFindingConfirmed(ctx, sourceFinding.ID); err != nil {
+		t.Fatal(err)
+	}
+	cve := models.CVEMatch{
+		ID:              models.NewID(),
+		SessionID:       session.ID,
+		CVEID:           "CVE-2024-9999",
+		PackageName:     "demo",
+		PackageVersion:  "1.0.0",
+		Description:     "demo package CVE",
+		Source:          "audit/grype",
+		ConfidenceScore: 0.7,
+	}
+	if err := store.InsertCVEMatch(ctx, cve); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := store.Stats(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.StaticFindingCount != 1 || stats.DynamicFindingCount != 1 || stats.SourceFindingCount != 1 || stats.ConfirmedByBoth != 1 {
+		t.Fatalf("unexpected stats: %#v", stats)
+	}
+	sourceFindings, err := store.ListSourceFindings(ctx, session.ID, SourceFindingFilter{Kind: string(models.SourceKindSQLSink)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceFindings) != 1 || !sourceFindings[0].ConfirmedByDynamic {
+		t.Fatalf("unexpected source findings: %#v", sourceFindings)
+	}
+	edges, err := store.ListAttackGraphEdges(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edges) != 1 || edges[0].Relation != models.RelationConfirms {
+		t.Fatalf("unexpected graph edges: %#v", edges)
+	}
+	cves, err := store.ListCVEMatchesBySession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cves) != 1 || cves[0].PackageName != "demo" || cves[0].PackageVersion != "1.0.0" {
+		t.Fatalf("unexpected cves: %#v", cves)
 	}
 }
 

@@ -60,10 +60,7 @@ func renderSARIF(report models.Report) []byte {
 		if finding.Status != "" && finding.Status != "confirmed" {
 			continue
 		}
-		ruleID := finding.ToolID
-		if len(finding.Tags) > 0 {
-			ruleID += "/" + finding.Tags[len(finding.Tags)-1]
-		}
+		ruleID := finding.ToolID + "/" + string(finding.Type)
 		uri, line := sarifLocationFromFinding(finding)
 		rules[ruleID] = sarifRule{ID: ruleID, Name: finding.Title, Help: sarifMessage{Text: finding.Remediation}}
 		results = append(results, sarifResult{

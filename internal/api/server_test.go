@@ -196,6 +196,37 @@ func TestAPIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestSourceFindingsAndAttackGraphEndpoints(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "app.py"), []byte("@app.get(\"/search\")\ndef search():\n    q = request.args.get(\"q\")\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(Config{SessionDir: t.TempDir()}).Handler()
+	start := httptest.NewRecorder()
+	handler.ServeHTTP(start, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"source_path":"`+repo+`","name":"Static","mode":"passive"}`)))
+	if start.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d body=%s", start.Code, start.Body.String())
+	}
+	var created db.SessionRecord
+	if err := json.NewDecoder(start.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Session.WorkloadMode != models.WorkloadModeStatic || created.Session.SourcePath != repo {
+		t.Fatalf("unexpected static session: %#v", created.Session)
+	}
+	waitForCompletedScan(t, handler, created.Session.ID)
+	sourceFindings := httptest.NewRecorder()
+	handler.ServeHTTP(sourceFindings, httptest.NewRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/source-findings?kind=route", nil))
+	if sourceFindings.Code != http.StatusOK || !strings.Contains(sourceFindings.Body.String(), "/search") {
+		t.Fatalf("source findings status=%d body=%s", sourceFindings.Code, sourceFindings.Body.String())
+	}
+	edges := httptest.NewRecorder()
+	handler.ServeHTTP(edges, httptest.NewRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/attack-graph-edges", nil))
+	if edges.Code != http.StatusOK {
+		t.Fatalf("graph edges status=%d body=%s", edges.Code, edges.Body.String())
+	}
+}
+
 func TestOperatorConsoleAPI(t *testing.T) {
 	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {

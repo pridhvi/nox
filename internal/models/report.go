@@ -29,6 +29,10 @@ const (
 	ReportSectionCVEMatches       ReportSectionID = "cve_matches"
 	ReportSectionRemediation      ReportSectionID = "remediation_roadmap"
 	ReportSectionRawEvidence      ReportSectionID = "raw_tool_output"
+	ReportSectionSourceFindings   ReportSectionID = "source_findings"
+	ReportSectionSuppressed       ReportSectionID = "suppressed_findings"
+	ReportSectionToolCoverage     ReportSectionID = "tool_coverage"
+	ReportSectionCrossConfirmed   ReportSectionID = "cross_confirmed_findings"
 )
 
 type Report struct {

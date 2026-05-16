@@ -3,10 +3,12 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"net/url"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -135,8 +137,41 @@ func (a sourceStaticAdapter) Run(ctx context.Context, input StaticAdapterInput) 
 func parseStaticOutput(input StaticAdapterInput, toolID, raw string) ([]models.Finding, []models.CVEMatch) {
 	var decoded any
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		if toolID == "spotbugs" {
+			return parseSpotBugsXML(input, toolID, raw), nil
+		}
 		return nil, nil
 	}
+	switch toolID {
+	case "semgrep":
+		return parseSemgrep(input, decoded), nil
+	case "bandit":
+		return parseBandit(input, decoded), nil
+	case "gosec":
+		return parseGosec(input, decoded), nil
+	case "govulncheck":
+		return nil, parseGovulncheck(input, decoded, toolID)
+	case "npm-audit":
+		return nil, parseNPMAudit(input, decoded, toolID)
+	case "retirejs":
+		return parseRetireJS(input, decoded), parseRetireJSCVEs(input, decoded, toolID)
+	case "safety":
+		return nil, parseSafety(input, decoded, toolID)
+	case "brakeman":
+		return parseBrakeman(input, decoded), nil
+	case "psalm":
+		return parsePsalm(input, decoded), nil
+	case "trufflehog":
+		return parseSecrets(input, decoded, toolID), nil
+	case "gitleaks":
+		return parseSecrets(input, decoded, toolID), nil
+	case "grype":
+		return nil, parseGrype(input, decoded, toolID)
+	}
+	return parseGenericStaticOutput(input, toolID, decoded)
+}
+
+func parseGenericStaticOutput(input StaticAdapterInput, toolID string, decoded any) ([]models.Finding, []models.CVEMatch) {
 	var findings []models.Finding
 	var cves []models.CVEMatch
 	walkStaticJSON(decoded, func(obj map[string]any) {
@@ -181,6 +216,249 @@ func parseStaticOutput(input StaticAdapterInput, toolID, raw string) ([]models.F
 		})
 	})
 	return findings, cves
+}
+
+func parseSemgrep(input StaticAdapterInput, decoded any) []models.Finding {
+	var findings []models.Finding
+	for _, obj := range arrayAt(decoded, "results") {
+		path := firstString(obj, "path")
+		extra := mapAt(obj, "extra")
+		message := firstString(extra, "message", "metadata")
+		if message == "" {
+			message = firstString(obj, "check_id")
+		}
+		line := int(numberValue(mapAt(obj, "start"), "line"))
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			continue
+		}
+		findings = append(findings, staticFinding(input, "semgrep", path, line, message, severityFromString(firstString(extra, "severity")), obj))
+	}
+	return findings
+}
+
+func parseBandit(input StaticAdapterInput, decoded any) []models.Finding {
+	var findings []models.Finding
+	for _, obj := range arrayAt(decoded, "results") {
+		path := firstString(obj, "filename")
+		message := firstString(obj, "issue_text", "test_name", "test_id")
+		line := int(numberValue(obj, "line_number"))
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			continue
+		}
+		findings = append(findings, staticFinding(input, "bandit", path, line, message, severityFromString(firstString(obj, "issue_severity")), obj))
+	}
+	return findings
+}
+
+func parseGosec(input StaticAdapterInput, decoded any) []models.Finding {
+	var findings []models.Finding
+	for _, obj := range arrayAt(decoded, "Issues") {
+		path := firstString(obj, "file")
+		message := firstString(obj, "details", "rule_id")
+		line := int(numberValue(obj, "line"))
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			continue
+		}
+		findings = append(findings, staticFinding(input, "gosec", path, line, message, severityFromString(firstString(obj, "severity")), obj))
+	}
+	return findings
+}
+
+func parseBrakeman(input StaticAdapterInput, decoded any) []models.Finding {
+	var findings []models.Finding
+	for _, obj := range arrayAt(decoded, "warnings") {
+		path := firstString(obj, "file")
+		message := firstString(obj, "message", "warning_type")
+		line := int(numberValue(obj, "line"))
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			continue
+		}
+		findings = append(findings, staticFinding(input, "brakeman", path, line, message, confidenceSeverity(numberValue(obj, "confidence")), obj))
+	}
+	return findings
+}
+
+func parsePsalm(input StaticAdapterInput, decoded any) []models.Finding {
+	var findings []models.Finding
+	for _, obj := range anyArray(decoded) {
+		path := firstString(obj, "file_path", "file_name")
+		message := firstString(obj, "message", "type")
+		line := int(numberValue(obj, "line_from", "line"))
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			continue
+		}
+		findings = append(findings, staticFinding(input, "psalm", path, line, message, severityFromString(firstString(obj, "severity")), obj))
+	}
+	return findings
+}
+
+func parseRetireJS(input StaticAdapterInput, decoded any) []models.Finding {
+	var findings []models.Finding
+	walkStaticJSON(decoded, func(obj map[string]any) {
+		path := firstString(obj, "file", "fileName", "path")
+		message := firstString(obj, "component", "module", "name")
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			return
+		}
+		findings = append(findings, staticFinding(input, "retirejs", path, int(numberValue(obj, "line")), "vulnerable component "+message, models.SeverityMedium, obj))
+	})
+	return findings
+}
+
+func parseSecrets(input StaticAdapterInput, decoded any, toolID string) []models.Finding {
+	var findings []models.Finding
+	walkStaticJSON(decoded, func(obj map[string]any) {
+		path := firstString(obj, "SourceMetadata", "path", "file", "File", "filename")
+		if nested := mapAt(mapAt(obj, "SourceMetadata"), "Data"); nested != nil {
+			path = firstStaticNonEmpty(firstString(mapAt(nested, "Filesystem"), "file", "path"), firstString(mapAt(nested, "Git"), "file", "path"), path)
+		}
+		message := firstString(obj, "DetectorName", "Description", "RuleID", "rule", "description")
+		line := int(numberValue(obj, "StartLine", "line"))
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			return
+		}
+		findings = append(findings, staticFinding(input, toolID, path, line, "secret detected: "+message, models.SeverityHigh, obj))
+	})
+	return findings
+}
+
+func parseSpotBugsXML(input StaticAdapterInput, toolID, raw string) []models.Finding {
+	var report struct {
+		Bugs []struct {
+			Type     string `xml:"type,attr"`
+			Category string `xml:"category,attr"`
+			Priority string `xml:"priority,attr"`
+			Long     string `xml:"LongMessage"`
+			Source   struct {
+				Path  string `xml:"sourcepath,attr"`
+				Start int    `xml:"start,attr"`
+			} `xml:"SourceLine"`
+		} `xml:"BugInstance"`
+	}
+	if err := xml.Unmarshal([]byte(raw), &report); err != nil {
+		return nil
+	}
+	var findings []models.Finding
+	for _, bug := range report.Bugs {
+		path := bug.Source.Path
+		message := firstStaticNonEmpty(bug.Long, bug.Type, bug.Category)
+		if path == "" || message == "" || sourceFileExcluded(path) || !diffAllows(input.DiffPaths, path) {
+			continue
+		}
+		findings = append(findings, staticFinding(input, toolID, path, bug.Source.Start, message, spotbugsSeverity(bug.Priority), bug))
+	}
+	return findings
+}
+
+func parseGovulncheck(input StaticAdapterInput, decoded any, toolID string) []models.CVEMatch {
+	var cves []models.CVEMatch
+	walkStaticJSON(decoded, func(obj map[string]any) {
+		osv := mapAt(obj, "osv")
+		id := firstString(osv, "id")
+		if id == "" {
+			id = firstString(obj, "id")
+		}
+		if id == "" {
+			return
+		}
+		cves = append(cves, cveMatch(input, toolID, id, firstString(osv, "summary", "details"), firstString(obj, "module", "package"), firstString(obj, "version"), obj))
+	})
+	return cves
+}
+
+func parseNPMAudit(input StaticAdapterInput, decoded any, toolID string) []models.CVEMatch {
+	var cves []models.CVEMatch
+	if vulns := mapAtAny(decoded, "vulnerabilities"); vulns != nil {
+		for name, value := range vulns {
+			obj, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, via := range objArray(obj["via"]) {
+				id := firstCVE(firstString(via, "source", "url", "name", "cve"))
+				if id == "" {
+					continue
+				}
+				version := firstString(obj, "range", "version")
+				cves = append(cves, cveMatch(input, toolID, id, firstString(via, "title", "name"), name, version, via))
+			}
+		}
+		return cves
+	}
+	return parseGenericCVEs(input, decoded, toolID)
+}
+
+func parseRetireJSCVEs(input StaticAdapterInput, decoded any, toolID string) []models.CVEMatch {
+	return parseGenericCVEs(input, decoded, toolID)
+}
+
+func parseSafety(input StaticAdapterInput, decoded any, toolID string) []models.CVEMatch {
+	return parseGenericCVEs(input, decoded, toolID)
+}
+
+func parseGrype(input StaticAdapterInput, decoded any, toolID string) []models.CVEMatch {
+	var cves []models.CVEMatch
+	for _, obj := range arrayAt(decoded, "matches") {
+		vuln := mapAt(obj, "vulnerability")
+		artifact := mapAt(obj, "artifact")
+		id := firstString(vuln, "id")
+		if id == "" {
+			continue
+		}
+		match := cveMatch(input, toolID, id, firstString(vuln, "description"), firstString(artifact, "name"), firstString(artifact, "version"), obj)
+		match.FixedVersion = fixedVersion(vuln)
+		match.CVSSv3Score = cvssFromObject(vuln)
+		cves = append(cves, match)
+	}
+	return cves
+}
+
+func parseGenericCVEs(input StaticAdapterInput, decoded any, toolID string) []models.CVEMatch {
+	var cves []models.CVEMatch
+	walkStaticJSON(decoded, func(obj map[string]any) {
+		id := firstCVE(firstString(obj, "cve", "CVE", "id", "cve_id", "vulnerability_id", "advisory"))
+		if id == "" {
+			return
+		}
+		cves = append(cves, cveMatch(input, toolID, id, firstString(obj, "title", "summary", "description", "message"), firstString(obj, "package", "module", "name", "dependency"), firstString(obj, "version", "installed_version", "current_version"), obj))
+	})
+	return cves
+}
+
+func staticFinding(input StaticAdapterInput, toolID, path string, line int, message string, severity models.Severity, raw any) models.Finding {
+	return models.Finding{
+		ID:          models.NewID(),
+		SessionID:   input.SessionID,
+		ToolID:      "audit/" + toolID,
+		Type:        models.FindingTypeVulnerability,
+		Severity:    severity,
+		Confidence:  0.5,
+		Title:       message,
+		Description: message,
+		URL:         fileURL(path, line),
+		EvidenceRaw: mustJSON(raw),
+		CodeContext: firstString(mapFromAny(raw), "code", "context", "extra"),
+		Status:      "pending",
+		Tags:        []string{"audit", toolID},
+		CreatedAt:   time.Now().UTC(),
+	}
+}
+
+func cveMatch(input StaticAdapterInput, toolID, id, description, packageName, version string, raw any) models.CVEMatch {
+	return models.CVEMatch{
+		ID:              models.NewID(),
+		SessionID:       input.SessionID,
+		CVEID:           id,
+		CVSSv3Score:     numberValue(mapFromAny(raw), "cvss", "cvss_score", "score"),
+		Description:     description,
+		PackageName:     packageName,
+		PackageVersion:  version,
+		AffectedVersion: firstString(mapFromAny(raw), "affected_version", "installed_version", "version", "range"),
+		FixedVersion:    firstString(mapFromAny(raw), "fixed_version", "fixed", "fix"),
+		References:      stringArray(mapFromAny(raw), "references", "urls"),
+		Source:          "audit/" + toolID,
+		ConfidenceScore: 0.65,
+	}
 }
 
 func sourceFindingToAuditFinding(sessionID, toolID string, severity models.Severity, sf models.SourceFinding) models.Finding {
@@ -245,9 +523,158 @@ func numberValue(obj map[string]any, keys ...string) float64 {
 		case json.Number:
 			value, _ := typed.Float64()
 			return value
+		case string:
+			value, _ := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+			return value
 		}
 	}
 	return 0
+}
+
+func mapAt(obj map[string]any, key string) map[string]any {
+	if obj == nil {
+		return nil
+	}
+	if nested, ok := obj[key].(map[string]any); ok {
+		return nested
+	}
+	return nil
+}
+
+func mapAtAny(value any, key string) map[string]any {
+	return mapAt(mapFromAny(value), key)
+}
+
+func mapFromAny(value any) map[string]any {
+	if typed, ok := value.(map[string]any); ok {
+		return typed
+	}
+	return nil
+}
+
+func arrayAt(value any, key string) []map[string]any {
+	return objArray(mapFromAny(value)[key])
+}
+
+func anyArray(value any) []map[string]any {
+	return objArray(value)
+}
+
+func objArray(value any) []map[string]any {
+	var out []map[string]any
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if obj, ok := item.(map[string]any); ok {
+				out = append(out, obj)
+			}
+		}
+	case []map[string]any:
+		out = append(out, typed...)
+	case map[string]any:
+		out = append(out, typed)
+	}
+	return out
+}
+
+func stringArray(obj map[string]any, keys ...string) []string {
+	for _, key := range keys {
+		switch typed := obj[key].(type) {
+		case []any:
+			var out []string
+			for _, item := range typed {
+				if value := strings.TrimSpace(fmt.Sprint(item)); value != "" {
+					out = append(out, value)
+				}
+			}
+			return out
+		case []string:
+			return typed
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				return []string{strings.TrimSpace(typed)}
+			}
+		}
+	}
+	return nil
+}
+
+func firstStaticNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func firstCVE(value string) string {
+	upper := strings.ToUpper(value)
+	for _, prefix := range []string{"CVE-", "GHSA-"} {
+		if idx := strings.Index(upper, prefix); idx >= 0 {
+			id := upper[idx:]
+			for end, ch := range id {
+				if !(ch == '-' || ch == '_' || ch == '.' || ch == ':' || ch == '/' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9') {
+					return strings.Trim(id[:end], ".,);]")
+				}
+			}
+			return strings.Trim(id, ".,);]")
+		}
+	}
+	return ""
+}
+
+func fixedVersion(obj map[string]any) string {
+	if fix := mapAt(obj, "fix"); fix != nil {
+		if versions := stringArray(fix, "versions"); len(versions) > 0 {
+			return versions[0]
+		}
+	}
+	for _, fix := range objArray(obj["fix"]) {
+		if version := firstString(fix, "version"); version != "" {
+			return version
+		}
+	}
+	for _, fix := range objArray(obj["fixes"]) {
+		if version := firstString(fix, "version"); version != "" {
+			return version
+		}
+	}
+	return firstString(obj, "fixed", "fixed_version")
+}
+
+func cvssFromObject(obj map[string]any) float64 {
+	if score := numberValue(obj, "cvss", "cvss_score", "score"); score > 0 {
+		return score
+	}
+	for _, metric := range objArray(obj["cvss"]) {
+		if score := numberValue(metric, "baseScore", "score"); score > 0 {
+			return score
+		}
+	}
+	return 0
+}
+
+func confidenceSeverity(value float64) models.Severity {
+	switch {
+	case value <= 1:
+		return models.SeverityHigh
+	case value == 2:
+		return models.SeverityMedium
+	default:
+		return models.SeverityLow
+	}
+}
+
+func spotbugsSeverity(priority string) models.Severity {
+	switch strings.TrimSpace(priority) {
+	case "1":
+		return models.SeverityHigh
+	case "2":
+		return models.SeverityMedium
+	default:
+		return models.SeverityLow
+	}
 }
 
 func severityFromString(value string) models.Severity {

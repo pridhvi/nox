@@ -23,6 +23,7 @@ export function AttackGraph() {
   }, [edgesQuery.data, findingsQuery.data, severity, sourceQuery.data, targetsQuery.data, vectorsQuery.data]);
   const graphRef = useRef<HTMLDivElement | null>(null);
   const [selectedNode, setSelectedNode] = useState<{ label: string; detail: string } | null>(null);
+  const [selectedVectorID, setSelectedVectorID] = useState("");
 
   useEffect(() => {
     if (!graphRef.current) {
@@ -41,7 +42,7 @@ export function AttackGraph() {
         { selector: "node[type='vector']", style: { "background-color": "#111827", color: "#111827", shape: "hexagon" } },
         { selector: "node[type='source']", style: { "background-color": "#7c3aed", color: "#7c3aed", shape: "tag" } },
         { selector: "node:selected", style: { "border-color": "#f59e0b", "border-width": "5px" } },
-        { selector: "edge", style: { width: "2px", "line-color": "#9aa8b7", "target-arrow-color": "#9aa8b7", "target-arrow-shape": "triangle", "curve-style": "bezier", opacity: 0.78 } },
+        { selector: "edge", style: { label: "data(label)", "font-size": "9px", color: "#9aa8b7", "text-background-color": "#07110f", "text-background-opacity": 0.85, "text-background-padding": "2px", width: "2px", "line-color": "#9aa8b7", "target-arrow-color": "#9aa8b7", "target-arrow-shape": "triangle", "curve-style": "bezier", opacity: 0.78 } },
         { selector: "edge[type='attack']", style: { width: "3px", "line-color": "#111827", "target-arrow-color": "#111827" } },
       ] as any,
     });
@@ -126,10 +127,10 @@ export function AttackGraph() {
         <section className="graph-column">
           <h2>Attack Vectors</h2>
           {nodes.vectors.map((vector) => (
-            <article key={vector.id} className={`graph-node vector-node ${vector.severity}`}>
+            <article key={vector.id} className={`graph-node vector-node ${vector.severity} ${selectedVectorID === vector.id ? "selected-graph-node" : ""}`} onClick={() => setSelectedVectorID(vector.id)}>
               <span className={`severity ${vector.severity}`}>{vector.severity}</span>
               <strong>{vector.title}</strong>
-              <small>{vector.owasp_category || "uncategorized"} · confidence {Math.round(vector.confidence * 100)}%</small>
+              <small>{vector.owasp_category || "uncategorized"} · score {vectorScore(vector)} · confidence {Math.round(vector.confidence * 100)}%</small>
               {vector.steps.slice(0, 3).map((step) => <small key={step.order}>{step.order}. {step.description}</small>)}
             </article>
           ))}
@@ -187,7 +188,7 @@ export function graphElements(targets: Target[], findings: Finding[], vectors: A
     addNode({ data: { id: `source:${finding.id}`, label: finding.kind, type: "source", weight: finding.confirmed_dynamic ? 3 : 2, detail: `${finding.file_path}:${finding.line_number} ${finding.value}` } });
   }
   for (const edge of graphEdges) {
-    addEdge({ data: { id: `graph:${edge.id}`, source: edge.from_id, target: edge.to_id, label: edge.relation, type: "attack" } });
+      addEdge({ data: { id: `graph:${edge.id}`, source: edge.from_id, target: edge.to_id, label: edge.relation, type: "attack" } });
   }
   for (const vector of vectors) {
     addNode({ data: { id: `vector:${vector.id}`, label: vector.title, type: "vector", weight: severityWeight(vector.severity), detail: `${vector.severity} confidence ${Math.round(vector.confidence * 100)}%. ${vector.narrative}` } });
@@ -196,6 +197,10 @@ export function graphElements(targets: Target[], findings: Finding[], vectors: A
     }
   }
   return { elements, skippedEdges };
+}
+
+function vectorScore(vector: AttackVector) {
+  return Math.round(severityWeight(vector.severity) * vector.confidence * 20);
 }
 
 function severityColor(severity: string) {

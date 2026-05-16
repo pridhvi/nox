@@ -54,7 +54,59 @@ func TestGenerateMarkdownHTMLAndPDFReports(t *testing.T) {
 	if err := store.InsertFinding(ctx, finding); err != nil {
 		t.Fatal(err)
 	}
-	for _, format := range []models.ReportFormat{models.ReportFormatMarkdown, models.ReportFormatHTML, models.ReportFormatPDF} {
+	sourceFinding := models.SourceFinding{
+		ID:                 models.NewID(),
+		SessionID:          session.ID,
+		Kind:               models.SourceKindSQLSink,
+		Language:           "go",
+		Framework:          "generic",
+		FilePath:           "main.go",
+		LineNumber:         12,
+		Value:              "/search",
+		ConfirmedByDynamic: true,
+		CreatedAt:          time.Now().UTC(),
+	}
+	if err := store.InsertSourceFinding(ctx, sourceFinding); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertAttackGraphEdge(ctx, models.AttackGraphEdge{
+		ID:         models.NewID(),
+		SessionID:  session.ID,
+		FromID:     "source:" + sourceFinding.ID,
+		ToID:       "finding:" + finding.ID,
+		Relation:   models.RelationConfirms,
+		Confidence: 0.9,
+		CreatedAt:  time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertFinding(ctx, models.Finding{
+		ID:         models.NewID(),
+		SessionID:  session.ID,
+		ToolID:     "audit/test",
+		Type:       models.FindingTypeVulnerability,
+		Severity:   models.SeverityLow,
+		Confidence: 0.3,
+		Title:      "Suppressed finding",
+		URL:        "file://main.go#L20",
+		Status:     "suppressed",
+		CreatedAt:  time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertCVEMatch(ctx, models.CVEMatch{
+		ID:              models.NewID(),
+		SessionID:       session.ID,
+		CVEID:           "CVE-2024-1234",
+		PackageName:     "demo",
+		PackageVersion:  "1.0.0",
+		Description:     "demo cve",
+		Source:          "audit/grype",
+		ConfidenceScore: 0.7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []models.ReportFormat{models.ReportFormatMarkdown, models.ReportFormatHTML, models.ReportFormatPDF, models.ReportFormatSARIF} {
 		artifact, err := Generate(ctx, store, Options{Format: format, Mode: models.ReportModeTechnical})
 		if err != nil {
 			t.Fatal(err)
@@ -64,6 +116,20 @@ func TestGenerateMarkdownHTMLAndPDFReports(t *testing.T) {
 		}
 		if format == models.ReportFormatPDF && !strings.HasPrefix(string(artifact.Content), "%PDF-") {
 			t.Fatalf("expected PDF header, got %q", string(artifact.Content[:4]))
+		}
+		if format == models.ReportFormatMarkdown {
+			body := string(artifact.Content)
+			for _, expected := range []string{"Static Source Findings", "Cross-Confirmed Findings", "Tool Coverage", "Suppressed and Dismissed Findings", "package=demo@1.0.0"} {
+				if !strings.Contains(body, expected) {
+					t.Fatalf("expected markdown report to contain %q, got %s", expected, body)
+				}
+			}
+		}
+		if format == models.ReportFormatSARIF {
+			body := string(artifact.Content)
+			if !strings.Contains(body, `"version": "2.1.0"`) || strings.Contains(body, "Suppressed finding") {
+				t.Fatalf("unexpected sarif body: %s", body)
+			}
 		}
 	}
 }

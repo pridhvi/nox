@@ -116,7 +116,7 @@ func (r *AuditRunner) Run(ctx context.Context, session models.Session, repoPath 
 				return
 			}
 			dbMu.Unlock()
-			filtered := applySuppression(output.Findings, rules)
+			filtered := filterAuditFindingsByDiff(applySuppression(output.Findings, rules), r.options.DiffPaths)
 			if r.options.NoLLM || !r.options.LLMConfig.Configured() {
 				for i := range filtered {
 					if filtered[i].Status == "" || filtered[i].Status == "pending" {
@@ -253,6 +253,27 @@ func applySuppression(findings []models.Finding, rules []suppress.Rule) []models
 		}
 	}
 	return findings
+}
+
+func filterAuditFindingsByDiff(findings []models.Finding, diffPaths []string) []models.Finding {
+	if len(diffPaths) == 0 {
+		return findings
+	}
+	out := make([]models.Finding, 0, len(findings))
+	for _, finding := range findings {
+		path := filePathFromURL(finding.URL)
+		for _, diffPath := range diffPaths {
+			diffPath = filepath.ToSlash(strings.TrimSpace(diffPath))
+			if diffPath == "" {
+				continue
+			}
+			if filepath.ToSlash(path) == diffPath || strings.HasSuffix(filepath.ToSlash(path), diffPath) {
+				out = append(out, finding)
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (r *AuditRunner) writeRunLogs(sessionID, runID, stdout, stderr string) (string, string) {

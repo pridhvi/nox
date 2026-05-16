@@ -60,6 +60,7 @@ export function ScanBuilder() {
   const parsedTargets = useMemo(() => splitTargets(targets), [targets]);
   const hasSource = sourcePath.trim() !== "";
   const hasTargets = targets.trim() !== "";
+  const workloadMode = hasTargets && hasSource ? "combined" : hasSource ? "static" : "dynamic";
   const targetError = !hasTargets && !hasSource ? "Add at least one target or source repository." : hasTargets && parsedTargets.length === 0 ? "Enter valid http:// or https:// targets, separated by commas or new lines." : "";
   const phaseError = hasTargets && selectedEnabledPhaseCount === 0 ? "Select at least one scan phase." : "";
   const toolError = hasTargets && selectedTools.length === 0 ? "Select at least one tool." : hasTargets && installedSelectedTools.length === 0 ? "Select at least one installed or built-in tool." : "";
@@ -270,7 +271,7 @@ export function ScanBuilder() {
           {selectedProfile ? <p className="profile-description">{selectedProfile.description}</p> : null}
         </section>
         <section className="panel">
-          <h2>Scope</h2>
+          <h2>Scope <span className={`origin-badge ${workloadMode === "combined" ? "both" : workloadMode === "static" ? "static" : "dynamic"}`}>{workloadMode}</span></h2>
           <div className="form-grid">
             <label className="span-2">Targets {sourcePath.trim() ? null : <Required />}<textarea value={targets} onChange={(event) => setTargets(event.target.value)} rows={4} placeholder={"https://example.com\nhttps://example.org"} required={!sourcePath.trim()} /></label>
             {targetError ? <p className="field-error span-2">{targetError}</p> : null}
@@ -346,7 +347,7 @@ export function ScanBuilder() {
         <section className="panel span-2 action-panel">
           {mutation.error ? <p className="error-text">{mutation.error.message}</p> : null}
           <button className="primary" type="submit" disabled={!canStart}><Play size={16} />{mutation.isPending ? "Starting" : "Start Scan"}</button>
-          <span><ShieldCheck size={16} /> {hasTargets && hasSource ? "Combined mode runs source analysis and dynamic adapters in one session." : hasSource ? "Static audit runs without executing repository code." : "Scope validation is enforced before adapters run."}</span>
+          <span><ShieldCheck size={16} /> {workloadMode === "combined" ? "Combined mode runs audit first, then source-aware dynamic adapters in one session." : workloadMode === "static" ? "Static audit runs without executing repository code." : "Scope validation is enforced before adapters run."}</span>
         </section>
       </form>
       {configuredTool ? (

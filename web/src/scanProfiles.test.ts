@@ -11,6 +11,7 @@ describe("scan profile helpers", () => {
   it("builds reusable profiles without target-specific fields", () => {
     const profile = buildCustomProfileRequest("Active Web", {
       target: "https://example.com",
+      source_path: "/repo",
       name: "One-off",
       mode: "active",
       out_of_scope: ["admin.example.com"],
@@ -20,6 +21,7 @@ describe("scan profile helpers", () => {
     expect(profile.name).toBe("Active Web");
     expect(profile.request).toMatchObject({ mode: "active", tools: ["ffuf"], tool_parameters: { ffuf: { wordlist: "/tmp/words" } } });
     expect(profile.request.target).toBe("");
+    expect(profile.request.source_path).toBe("/repo");
     expect(profile.request).not.toHaveProperty("name");
   });
 

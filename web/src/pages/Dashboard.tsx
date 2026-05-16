@@ -112,13 +112,22 @@ export function Dashboard() {
     return lines.slice(0, 18);
   }, [scanEvents, toolRunsQuery.data]);
   const status = selectedRecord?.status ?? "";
+  const progressTracks = useMemo(() => {
+    const phases = ["source_analysis", "audit", "dynamic", "correlation"];
+    return phases.map((phase) => {
+      const event = scanEvents.find((item) => item.phase === phase);
+      const completed = scanEvents.some((item) => item.phase === phase && item.type === "phase_completed");
+      const started = scanEvents.some((item) => item.phase === phase && item.type === "phase_started");
+      return { phase, state: completed ? "completed" : started ? "running" : event ? "pending" : "pending" };
+    });
+  }, [scanEvents]);
 
   return (
     <section className="page">
       <header className="page-header">
         <div>
           <h1>Engagement Dashboard</h1>
-          <p>{selectedRecord ? `${selectedRecord.name || "Untitled engagement"} · ${selectedRecord.target_count} target${selectedRecord.target_count === 1 ? "" : "s"}` : "Start scoped scans, monitor findings, and review attack paths."}</p>
+          <p>{selectedRecord ? `${selectedRecord.name || "Untitled engagement"} · ${selectedRecord.workload_mode ?? "dynamic"} workload · ${selectedRecord.target_count} target${selectedRecord.target_count === 1 ? "" : "s"}` : "Start scoped scans, monitor findings, and review attack paths."}</p>
         </div>
         <div className="action-row">
           <Link className="primary link-button" to="/scan"><TerminalSquare size={16} />New Scan</Link>
@@ -137,6 +146,9 @@ export function Dashboard() {
         <article><Activity /><span>Active Sessions</span><strong>{totals.active}</strong></article>
         <article><AlertTriangle /><span>Total Findings</span><strong>{totals.findings}</strong></article>
         <article><Activity /><span>Tool Runs</span><strong>{statsQuery.data?.tool_run_count ?? 0}</strong></article>
+        <article><AlertTriangle /><span>Static / Dynamic</span><strong>{statsQuery.data?.static_finding_count ?? 0} / {statsQuery.data?.dynamic_finding_count ?? 0}</strong></article>
+        <article><Activity /><span>Source Findings</span><strong>{statsQuery.data?.source_finding_count ?? 0}</strong></article>
+        <article><AlertTriangle /><span>Confirmed By Both</span><strong>{statsQuery.data?.confirmed_by_both ?? 0}</strong></article>
       </div>
       <div className="data-grid">
         <section className="panel">
@@ -200,7 +212,12 @@ export function Dashboard() {
         </section>
       </div>
       <section className="panel event-panel">
-        <h2>Live Progress</h2>
+          <h2>Live Progress</h2>
+        {selectedRecord?.workload_mode === "combined" || selectedRecord?.workload_mode === "static" ? (
+          <div className="progress-tracks">
+            {progressTracks.map((track) => <span key={track.phase} className={`track ${track.state}`}>{track.phase.replace("_", " ")}</span>)}
+          </div>
+        ) : null}
         <div className="event-list">
           {highLevelEvents.map((event) => (
             <article key={`${event.type}-${event.at}-${event.tool_id ?? ""}-${event.finding_id ?? ""}`} className={`event-item ${eventTone(event)}`}>

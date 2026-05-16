@@ -99,7 +99,9 @@ func (m *ScanManager) runSession(ctx context.Context, store *db.Store, session m
 		if err := audit.Run(ctx, session, session.SourcePath); err != nil {
 			return err
 		}
+		m.Publish(engine.ScanEvent{Type: engine.ScanEventPhaseStarted, SessionID: session.ID, Phase: "dynamic", Message: "Dynamic scan started", At: time.Now().UTC()})
 		dynamicErr := m.runDynamic(ctx, store, session)
+		m.Publish(engine.ScanEvent{Type: engine.ScanEventPhaseCompleted, SessionID: session.ID, Phase: "dynamic", Message: "Dynamic scan completed", At: time.Now().UTC()})
 		return dynamicErr
 	default:
 		return m.runDynamic(ctx, store, session)

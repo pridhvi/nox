@@ -49,6 +49,7 @@ Nox improves on this concept in every dimension:
 6. **One directory per engagement.** Each session directory contains `session.db` plus optional `runs/` sidecar logs, and can be exported as a zip for sharing.
 7. **Workload-aware sessions.** `sessions.mode` records scan aggressiveness (`passive`, `active`, `stealth`) while `sessions.workload_mode` records the workload (`dynamic`, `static`, `combined`). Static-only sessions may have zero targets.
 8. **Zero required config.** `nox scan --target example.com` and `nox audit ./repo --no-llm` should work out of the box with sensible defaults. Everything else is opt-in.
+9. **Source-aware correlation.** Combined sessions run source/audit first, dynamic scan second, and a final correlation phase that emits CVEs, graph edges, attack vectors, and static/dynamic confirmations.
 8. **Air-gap capable.** Can run fully offline with a local LLM and an offline CVE mirror. No external dependencies required.
 
 ---
@@ -1434,6 +1435,11 @@ nox config init                       Create default config file (~/.nox/config.
 nox config show                       Show current config
 ```
 
+Audit adapters normalize native output from Semgrep, Bandit, gosec,
+govulncheck, npm audit, retire.js, safety, Brakeman, SpotBugs, Psalm,
+trufflehog, gitleaks, and grype into findings or dependency CVE records.
+Unknown JSON-shaped output falls back to generic traversal.
+
 ---
 
 ## 15. Web UI Pages
@@ -1444,8 +1450,8 @@ The frontend is a React SPA embedded in the Go binary. Routes:
 - Active and recent sessions list
 - Quick-start new scan form (target input, mode selector, name)
 - Global stats: total findings by severity across all sessions
-- Combined-mode sessions show static and dynamic progress tracks through the
-  same scan event stream.
+- Combined-mode sessions show source analysis, audit, dynamic, and correlation
+  progress tracks through the same scan event stream.
 
 ### 15.2 Session Detail (`/sessions/:id`)
 - Session metadata (target, mode, duration, status)
@@ -1467,7 +1473,7 @@ The frontend is a React SPA embedded in the Go binary. Routes:
 - Full findings table with all fields
 - Expandable rows showing raw evidence, HTTP request/response, CVE matches
 - Bulk actions: export selected, change severity, add notes
-- Filters: severity, type, tool, OWASP category, has CVE, has exploit
+- Filters: severity, origin, status, type, tool, OWASP category, has CVE, has exploit
 - Origin badges distinguish dynamic, static, and static + dynamic findings.
 - Audit fields include status, notes, code context, and flow summary.
 
@@ -1475,6 +1481,7 @@ The frontend is a React SPA embedded in the Go binary. Routes:
 - Source finding table with context snippets, language/framework, kind, method,
   file path, line number, and risky-kind severity styling.
 - Static + dynamic badges mark source findings confirmed by dynamic evidence.
+- Filters support source kind and static-only versus static + dynamic state.
 
 ### 15.5 LLM Chat (`/sessions/:id/llm`)
 - Chat interface with the LLM analyst
@@ -1498,6 +1505,7 @@ The frontend is a React SPA embedded in the Go binary. Routes:
   - Medium & low findings (summary table)
   - Attack vectors (with step-by-step chains and graph-derived paths)
   - CVE matches with patch availability and dependency package metadata
+  - Tool coverage
   - Dismissed and suppressed audit findings
   - Cross-confirmed static/dynamic findings
   - Remediation roadmap (prioritised by severity)

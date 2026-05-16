@@ -91,9 +91,12 @@ work and must be carried forward:
   `audit/<tool>` adapters with `.nox-audit-ignore` suppression, sidecar logs,
   optional LLM triage/dataflow/narrative passes, and terminal/JSON/SARIF/HTML/MD
   output. `nox scan --source` runs static-only without a target and combined
-  source-aware mode with a target; combined orchestration currently runs the
-  audit phase first, then dynamic adapters consume the persisted source hints in
-  the same session.
+  source-aware mode with a target; combined orchestration runs source/audit
+  first for SQLite reliability, then dynamic adapters consume persisted source
+  hints, then a shared correlation phase generates CVEs, graph edges, attack
+  vectors, dynamic confirmations, and optional LLM review. Static parser
+  coverage is tool-specific for the registered audit tools with a generic JSON
+  fallback for future adapter shapes.
 - **LLM analyst:** Optional local-first OpenAI-compatible client implemented
   through `github.com/sashabaranov/go-openai`, structured scan context builder,
   constrained LLM tools, evidence truncation, and persisted
@@ -112,11 +115,13 @@ work and must be carried forward:
   Nox logo/favicon, dashboard controls and live terminal feed, multi-target scan
   and source scan builder, per-tool configuration modals, profile import/export,
   Recharts severity chart, Cytoscape attack graph with safe edge filtering,
-  source nodes and labelled graph edges, source finding page, sortable
-  finding/CVE tables with static/dynamic badges, bulk finding workflow, finding
-  evidence/edit workflow, global plugin registration, LLM model probing,
-  settings health panels, and report pages backed by real API data. Built assets
-  are embedded into
+  source nodes and labelled graph edges, source finding page with filters and
+  context expansion, sortable finding/CVE tables with static/dynamic/status
+  filters, bulk finding workflow, finding evidence/edit workflow, global plugin
+  registration, LLM model probing, settings health panels, and report pages
+  backed by real API data. Reports include source findings, suppressed findings,
+  tool coverage, dependency CVEs, and cross-confirmed static/dynamic evidence.
+  Built assets are embedded into
   `internal/api/web/dist`.
 - **Verification:** `go test ./...` and `npm run build` pass for the current
   working set.

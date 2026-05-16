@@ -34,6 +34,8 @@ type Store interface {
 	ListAttackVectors(ctx context.Context, sessionID string) ([]models.AttackVector, error)
 	ListToolRuns(ctx context.Context, sessionID string) ([]models.ToolRun, error)
 	ListLLMAnalyses(ctx context.Context, sessionID string) ([]models.LLMAnalysis, error)
+	ListSourceFindings(ctx context.Context, sessionID string, filter db.SourceFindingFilter) ([]models.SourceFinding, error)
+	ListAttackGraphEdges(ctx context.Context, sessionID string) ([]models.AttackGraphEdge, error)
 	Stats(ctx context.Context, sessionID string) (db.SessionStats, error)
 }
 
@@ -76,10 +78,18 @@ func Generate(ctx context.Context, store Store, options Options) (Artifact, erro
 	if err != nil {
 		return Artifact{}, err
 	}
-	sections := buildSections(session, targets, findings, cves, vectors, runs, analyses, stats, options.Mode)
+	sourceFindings, err := store.ListSourceFindings(ctx, session.ID, db.SourceFindingFilter{})
+	if err != nil {
+		return Artifact{}, err
+	}
+	graphEdges, err := store.ListAttackGraphEdges(ctx, session.ID)
+	if err != nil {
+		return Artifact{}, err
+	}
+	sections := buildSections(session, targets, findings, sourceFindings, graphEdges, cves, vectors, runs, analyses, stats, options.Mode)
 	summary := sections[0].Content
 	if options.Format == models.ReportFormatSARIF {
-		if body, err := json.Marshal(findings); err == nil {
+		if body, err := json.Marshal(activeFindings(findings)); err == nil {
 			summary = string(body)
 		}
 	}
@@ -110,19 +120,24 @@ func Generate(ctx context.Context, store Store, options Options) (Artifact, erro
 	}, nil
 }
 
-func buildSections(session models.Session, targets []models.Target, findings []models.Finding, cves []models.CVEMatch, vectors []models.AttackVector, runs []models.ToolRun, analyses []models.LLMAnalysis, stats db.SessionStats, mode models.ReportMode) []models.ReportSection {
-	highs, lows := splitFindings(findings)
+func buildSections(session models.Session, targets []models.Target, findings []models.Finding, sourceFindings []models.SourceFinding, graphEdges []models.AttackGraphEdge, cves []models.CVEMatch, vectors []models.AttackVector, runs []models.ToolRun, analyses []models.LLMAnalysis, stats db.SessionStats, mode models.ReportMode) []models.ReportSection {
+	active := activeFindings(findings)
+	highs, lows := splitFindings(active)
 	sections := []models.ReportSection{
-		{ID: models.ReportSectionExecutiveSummary, Title: "Executive Summary", Content: executiveSummary(session, findings, vectors, analyses, stats), Position: 1},
+		{ID: models.ReportSectionExecutiveSummary, Title: "Executive Summary", Content: executiveSummary(session, active, vectors, analyses, stats), Position: 1},
 		{ID: models.ReportSectionScopeMethodology, Title: "Scope and Methodology", Content: scopeMethodology(session, targets, runs), Position: 2},
-		{ID: models.ReportSectionHighFindings, Title: "Critical and High Findings", Content: findingsMarkdown(highs, true), Position: 3},
-		{ID: models.ReportSectionLowerFindings, Title: "Medium, Low, and Informational Findings", Content: findingsMarkdown(lows, mode == models.ReportModeTechnical), Position: 4},
-		{ID: models.ReportSectionAttackVectors, Title: "Attack Vectors", Content: vectorsMarkdown(vectors), Position: 5},
-		{ID: models.ReportSectionCVEMatches, Title: "CVE Matches", Content: cvesMarkdown(cves), Position: 6},
-		{ID: models.ReportSectionRemediation, Title: "Remediation Roadmap", Content: remediationMarkdown(findings, cves), Position: 7},
+		{ID: models.ReportSectionSourceFindings, Title: "Static Source Findings", Content: sourceFindingsMarkdown(sourceFindings), Position: 3},
+		{ID: models.ReportSectionHighFindings, Title: "Critical and High Findings", Content: findingsMarkdown(highs, true), Position: 4},
+		{ID: models.ReportSectionLowerFindings, Title: "Medium, Low, and Informational Findings", Content: findingsMarkdown(lows, mode == models.ReportModeTechnical), Position: 5},
+		{ID: models.ReportSectionCrossConfirmed, Title: "Cross-Confirmed Findings", Content: crossConfirmedMarkdown(findings, sourceFindings, graphEdges), Position: 6},
+		{ID: models.ReportSectionAttackVectors, Title: "Attack Vectors", Content: vectorsMarkdown(vectors), Position: 7},
+		{ID: models.ReportSectionCVEMatches, Title: "Dependency and CVE Matches", Content: cvesMarkdown(cves), Position: 8},
+		{ID: models.ReportSectionToolCoverage, Title: "Tool Coverage", Content: toolCoverageMarkdown(runs), Position: 9},
+		{ID: models.ReportSectionSuppressed, Title: "Suppressed and Dismissed Findings", Content: suppressedFindingsMarkdown(findings), Position: 10},
+		{ID: models.ReportSectionRemediation, Title: "Remediation Roadmap", Content: remediationMarkdown(active, cves), Position: 11},
 	}
 	if mode == models.ReportModeTechnical {
-		sections = append(sections, models.ReportSection{ID: models.ReportSectionRawEvidence, Title: "Raw Tool Output Appendix", Content: rawEvidenceMarkdown(findings, runs), Position: 8})
+		sections = append(sections, models.ReportSection{ID: models.ReportSectionRawEvidence, Title: "Raw Tool Output Appendix", Content: rawEvidenceMarkdown(active, runs), Position: 12})
 	}
 	return sections
 }
@@ -143,7 +158,7 @@ func executiveSummary(session models.Session, findings []models.Finding, vectors
 
 func scopeMethodology(session models.Session, targets []models.Target, runs []models.ToolRun) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "- Target input: %s\n- Mode: %s\n- In scope: %s\n- Out of scope: %s\n\n", session.TargetInput, session.Mode, strings.Join(session.InScope, ", "), strings.Join(session.OutOfScope, ", "))
+	fmt.Fprintf(&b, "- Target input: %s\n- Source path: %s\n- Mode: %s\n- Workload mode: %s\n- In scope: %s\n- Out of scope: %s\n\n", firstNonEmpty(session.TargetInput, "(none)"), firstNonEmpty(session.SourcePath, "(none)"), session.Mode, session.WorkloadMode, strings.Join(session.InScope, ", "), strings.Join(session.OutOfScope, ", "))
 	b.WriteString("Targets:\n")
 	for _, target := range targets {
 		fmt.Fprintf(&b, "- %s://%s:%d alive=%t discovered_by=%s\n", target.Protocol, target.Host, target.Port, target.IsAlive, target.DiscoveredBy)
@@ -190,9 +205,99 @@ func cvesMarkdown(cves []models.CVEMatch) string {
 	}
 	var b strings.Builder
 	for _, cve := range cves {
-		fmt.Fprintf(&b, "- **%s** CVSS %.1f patch=%t exploit=%t source=%s\n  %s\n", cve.CVEID, cve.CVSSv3Score, cve.PatchAvailable, cve.ExploitAvailable, cve.Source, cve.Description)
+		pkg := strings.TrimSpace(cve.PackageName)
+		if cve.PackageVersion != "" {
+			pkg += "@" + cve.PackageVersion
+		}
+		if pkg != "" {
+			pkg = " package=" + pkg
+		}
+		fmt.Fprintf(&b, "- **%s** CVSS %.1f patch=%t exploit=%t source=%s%s\n  %s\n", cve.CVEID, cve.CVSSv3Score, cve.PatchAvailable, cve.ExploitAvailable, cve.Source, pkg, cve.Description)
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func sourceFindingsMarkdown(findings []models.SourceFinding) string {
+	if len(findings) == 0 {
+		return "No static source findings were recorded."
+	}
+	var b strings.Builder
+	for _, finding := range findings {
+		state := "static"
+		if finding.ConfirmedByDynamic {
+			state = "static + dynamic"
+		}
+		fmt.Fprintf(&b, "- **%s** %s:%d `%s` [%s]\n", finding.Kind, finding.FilePath, finding.LineNumber, finding.Value, state)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func crossConfirmedMarkdown(findings []models.Finding, sourceFindings []models.SourceFinding, edges []models.AttackGraphEdge) string {
+	if len(edges) == 0 {
+		return "No static and dynamic confirmations were generated."
+	}
+	findingByID := map[string]models.Finding{}
+	sourceByID := map[string]models.SourceFinding{}
+	for _, finding := range findings {
+		findingByID["finding:"+finding.ID] = finding
+	}
+	for _, finding := range sourceFindings {
+		sourceByID["source:"+finding.ID] = finding
+	}
+	var b strings.Builder
+	for _, edge := range edges {
+		if edge.Relation != models.RelationConfirms {
+			continue
+		}
+		source, sourceOK := sourceByID[edge.FromID]
+		finding, findingOK := findingByID[edge.ToID]
+		if sourceOK && findingOK {
+			fmt.Fprintf(&b, "- %s:%d `%s` confirms **%s** (confidence %.2f)\n", source.FilePath, source.LineNumber, source.Value, finding.Title, edge.Confidence)
+		}
+	}
+	if strings.TrimSpace(b.String()) == "" {
+		return "No static and dynamic confirmations were generated."
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func toolCoverageMarkdown(runs []models.ToolRun) string {
+	if len(runs) == 0 {
+		return "No tool runs were recorded."
+	}
+	var b strings.Builder
+	for _, run := range runs {
+		logState := "logs unavailable"
+		if run.StdoutPath != "" || run.StderrPath != "" {
+			logState = "logs retained"
+		}
+		fmt.Fprintf(&b, "- %s exit=%d findings=%d duration_ms=%d %s\n", run.ToolID, run.ExitCode, run.FindingCount, run.DurationMS, logState)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func suppressedFindingsMarkdown(findings []models.Finding) string {
+	var b strings.Builder
+	for _, finding := range findings {
+		if finding.Status == "suppressed" || finding.Status == "dismissed" {
+			fmt.Fprintf(&b, "- **%s** [%s] %s (%s)\n", finding.Title, finding.Status, finding.URL, finding.ToolID)
+		}
+	}
+	if strings.TrimSpace(b.String()) == "" {
+		return "No suppressed or dismissed findings were recorded."
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func activeFindings(findings []models.Finding) []models.Finding {
+	out := make([]models.Finding, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Status == "suppressed" || finding.Status == "dismissed" {
+			continue
+		}
+		out = append(out, finding)
+	}
+	return out
 }
 
 func remediationMarkdown(findings []models.Finding, cves []models.CVEMatch) string {

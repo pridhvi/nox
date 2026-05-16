@@ -169,7 +169,7 @@ var routePatterns = map[string][]routePattern{
 		{regexp.MustCompile(`path\(\s*["']([^"']+)`), 1, 0},
 	},
 	"javascript": {
-		{regexp.MustCompile(`(?:app|router)\.(get|post|put|delete|patch|use)\(\s*["']([^"']+)`), 1, 0},
+		{regexp.MustCompile(`(?:app|router)\.(get|post|put|delete|patch|use)\(\s*["']([^"']+)`), 2, 1},
 	},
 	"go": {
 		{regexp.MustCompile(`\.(GET|POST|PUT|DELETE|PATCH)\(\s*["']([^"']+)`), 2, 1},
@@ -189,7 +189,7 @@ var routePatterns = map[string][]routePattern{
 var parameterPatterns = map[string][]*regexp.Regexp{
 	"python":     {regexp.MustCompile(`request\.(?:args|form|GET|POST)\.get\(\s*["']([^"']+)`)},
 	"javascript": {regexp.MustCompile(`req\.(?:query|body|params)\.([A-Za-z_][A-Za-z0-9_]*)`)},
-	"go":         {regexp.MustCompile(`(?:Query|Param)\(\s*["']([^"']+)`)},
+	"go":         {regexp.MustCompile(`(?:Query|Param)\(\s*["']([^"']+)`), regexp.MustCompile(`Query\(\)\.Get\(\s*["']([^"']+)`)},
 	"php":        {regexp.MustCompile(`\$_(?:GET|POST|REQUEST)\[['"]([^'"]+)`)},
 	"ruby":       {regexp.MustCompile(`params\[[':]?([A-Za-z_][A-Za-z0-9_]*)`)},
 	"java":       {regexp.MustCompile(`@RequestParam\(\s*["']([^"']+)`)},
@@ -197,7 +197,7 @@ var parameterPatterns = map[string][]*regexp.Regexp{
 
 var (
 	sqlSinkPattern     = regexp.MustCompile(`(?i)(raw\(|\.Raw\(|text\(|SELECT .*\+|WHERE .*\+|query\([^)]*\+)`)
-	fileUploadPattern  = regexp.MustCompile(`(?i)(request\.FILES|multer|move_uploaded_file|multipart\.Form|MultipartFile)`)
+	fileUploadPattern  = regexp.MustCompile(`(?i)(request\.FILES|multer|upload\.single|move_uploaded_file|multipart\.Form|MultipartFile)`)
 	authPattern        = regexp.MustCompile(`(?i)(auth|login_required|permission|authenticate|authorize|jwt|session)`)
 	secretPattern      = regexp.MustCompile(`(?i)(AKIA[A-Z0-9]{16}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|password\s*=|secret\s*=|api[_-]?key\s*=)`)
 	ssrfPattern        = regexp.MustCompile(`(?i)(requests\.(get|post)\(|http\.Get\(|fetch\(|Net::HTTP|curl_exec)`)

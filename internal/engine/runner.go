@@ -247,6 +247,7 @@ func (r *Runner) Run(ctx context.Context, session models.Session) error {
 	}
 	finalCtx := context.WithoutCancel(ctx)
 	if !cancelled {
+		r.emit(ScanEvent{Type: ScanEventPhaseStarted, SessionID: session.ID, Phase: "correlation", Message: "Correlation started", At: time.Now().UTC()})
 		if cveErr := r.runCVECorrelation(finalCtx, session); cveErr != nil {
 			scanErr = cveErr
 		}
@@ -256,6 +257,7 @@ func (r *Runner) Run(ctx context.Context, session models.Session) error {
 		if llmErr := r.runLLMAnalysis(finalCtx, session); llmErr != nil {
 			scanErr = llmErr
 		}
+		r.emit(ScanEvent{Type: ScanEventPhaseCompleted, SessionID: session.ID, Phase: "correlation", Message: "Correlation completed", At: time.Now().UTC()})
 	}
 	if err := r.store.UpdateSessionCounts(finalCtx, session.ID); err != nil {
 		return err

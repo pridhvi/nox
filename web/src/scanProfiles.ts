@@ -87,6 +87,7 @@ export function buildCustomProfileRequest(name: string, request: StartScanReques
     description: "Saved scan builder preset.",
     request: {
       target: "",
+      source_path: request.source_path,
       mode: request.mode,
       enabled_phases: request.enabled_phases ?? [],
       tools: request.tools ?? [],

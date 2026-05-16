@@ -874,6 +874,33 @@ tbody tr:hover, .selected-row {
   gap: 10px;
 }
 
+.progress-tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.track {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 6px 10px;
+  text-transform: capitalize;
+}
+
+.track.running {
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #67e8f9;
+}
+
+.track.completed {
+  border-color: rgba(37, 208, 153, 0.6);
+  color: #25d099;
+}
+
 .event-item {
   align-items: center;
   border: 1px solid var(--border);
@@ -1142,6 +1169,11 @@ tbody tr:hover, .selected-row {
   display: grid;
   gap: 6px;
   padding: 12px;
+}
+
+.selected-graph-node {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
 }
 
 .target-node {

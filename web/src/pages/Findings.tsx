@@ -8,6 +8,8 @@ export function Findings() {
   const queryClient = useQueryClient();
   const { selectedSessionID: selected } = useSessionContext();
   const [severity, setSeverity] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [status, setStatus] = useState("");
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [selectedFindingIDs, setSelectedFindingIDs] = useState<Set<string>>(() => new Set());
   const [editSeverity, setEditSeverity] = useState("");
@@ -15,8 +17,8 @@ export function Findings() {
   const [bulkSeverity, setBulkSeverity] = useState("");
   const [bulkRemediation, setBulkRemediation] = useState("");
   const findingsQuery = useQuery({
-    queryKey: ["findings-page", selected, severity],
-    queryFn: () => listFindings(selected, severity ? { severity } : {}),
+    queryKey: ["findings-page", selected, severity, origin, status],
+    queryFn: () => listFindings(selected, cleanFilters({ severity, origin, status })),
     enabled: selected !== "",
   });
   const findings = findingsQuery.data ?? [];
@@ -106,6 +108,24 @@ export function Findings() {
             <option value="medium">Medium</option>
             <option value="low">Low</option>
             <option value="info">Info</option>
+          </select>
+        </label>
+        <label className="compact-control">
+          Origin
+          <select value={origin} onChange={(event) => setOrigin(event.target.value)}>
+            <option value="">All</option>
+            <option value="dynamic">Dynamic</option>
+            <option value="static">Static</option>
+          </select>
+        </label>
+        <label className="compact-control">
+          Status
+          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option value="">All</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="pending">Pending</option>
+            <option value="suppressed">Suppressed</option>
+            <option value="dismissed">Dismissed</option>
           </select>
         </label>
       </header>
@@ -252,7 +272,7 @@ function severityRank(severity: string) {
   return { info: 1, low: 2, medium: 3, high: 4, critical: 5 }[severity] ?? 0;
 }
 
-function findingOrigin(finding: Finding) {
+export function findingOrigin(finding: Finding) {
   const isStatic = finding.tool_id.startsWith("audit/") || !finding.target_id;
   const hasDynamic = Boolean(finding.target_id);
   if (isStatic && hasDynamic) return "both";
@@ -262,4 +282,8 @@ function findingOrigin(finding: Finding) {
 function originLabel(origin: string) {
   if (origin === "both") return "Static + Dynamic";
   return origin === "static" ? "Static" : "Dynamic";
+}
+
+function cleanFilters(filters: Record<string, string>) {
+  return Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
 }

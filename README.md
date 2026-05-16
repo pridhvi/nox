@@ -36,11 +36,11 @@ Static and combined source-aware modes use the same session database and report 
 
 - **Scan pipeline:** DAG-driven execution across reconnaissance, fingerprinting, enumeration, and vulnerability phases with optional subprocess tools.
 - **Built-in audit:** `nox audit` performs static extraction and optional SAST/dependency tool execution for Python, JavaScript/TypeScript, Go, PHP, Ruby, and Java repositories without executing repository code.
-- **Combined mode:** `nox scan --source <repo>` seeds dynamic adapters with source-discovered routes and parameters, then stores static and dynamic findings in one session.
+- **Combined mode:** `nox scan --source <repo>` runs audit first, then source-aware dynamic adapters, then a shared correlation phase in one session.
 - **Findings & evidence:** Normalized findings, sidecar stdout/stderr retention, HTTP request/response evidence, technologies, CVE correlation, and tool-run history.
 - **Attack vector engine:** Rule-based and graph-derived chains with confidence scoring, ordered steps, labelled edges, prerequisite findings, and OWASP mapping.
 - **LLM analysis:** OpenAI-compatible local model support, constrained tool calling, persisted audit trail, post-scan analysis, and interactive chat.
-- **Reporting:** Markdown, HTML, SARIF 2.1.0, and PDF output in executive or technical modes.
+- **Reporting:** Markdown, HTML, SARIF 2.1.0, and PDF output with source findings, tool coverage, dependency CVEs, suppressed findings, and cross-confirmed evidence.
 - **Plugin system:** Subprocess JSON contract so adapters can be written in any language.
 - **Web UI:** Scan builder, session dashboard, findings workflow, attack graph, CVE table, tool status, LLM chat, settings, and report preview.
 
@@ -55,7 +55,7 @@ All external tools are optional. Missing tools are recorded as tool runs and the
 | Enumeration | `ffuf`, `arjun`, `linkfinder`, `gitleaks`, JavaScript secret scanning, CORS checks, scoped cloud bucket checks |
 | Vulnerability | `nuclei-vuln`, `sqlmap`, `dalfox`, SSRFmap, `jwt_tool`, OAuth checks, SSTI checks, XXE fuzzing, `nikto` |
 
-Static audit tools are registered as `audit/<id>`. Built-in source analyzers always run; optional tools such as `semgrep`, `bandit`, `gosec`, `govulncheck`, `npm audit`, `retire.js`, `safety`, `brakeman`, `spotbugs`, `psalm`, `trufflehog`, `gitleaks`, and `grype` run when installed.
+Static audit tools are registered as `audit/<id>`. Built-in source analyzers always run; optional tools such as `semgrep`, `bandit`, `gosec`, `govulncheck`, `npm audit`, `retire.js`, `safety`, `brakeman`, `spotbugs`, `psalm`, `trufflehog`, `gitleaks`, and `grype` run when installed. Their native outputs are parsed into normalized findings or package CVEs where possible, with a generic JSON fallback for future adapter shapes.
 
 ## Configuration
 

@@ -44,7 +44,7 @@ func (m ScanMode) Valid() bool {
 
 func (f ReportFormat) Valid() bool {
 	switch f {
-	case ReportFormatMarkdown, ReportFormatHTML, ReportFormatPDF:
+	case ReportFormatMarkdown, ReportFormatHTML, ReportFormatPDF, ReportFormatSARIF:
 		return true
 	default:
 		return false
