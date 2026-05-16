@@ -208,7 +208,7 @@ export function Dashboard() {
         </section>
         <section className="panel">
           <h2>Selected Risk Mix</h2>
-          <div className="chart-panel" aria-label="Findings by severity">
+          <div className="chart-panel" aria-hidden="true">
             {severityData.length > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
@@ -238,7 +238,7 @@ export function Dashboard() {
       <div className="data-grid">
         <section className="panel">
           <h2>Sessions</h2>
-          <div className="session-grid scroll-panel">
+          <div className="session-grid scroll-panel" tabIndex={0}>
             {sessions.map((record) => (
               <article
                 key={record.session.id}
@@ -264,7 +264,7 @@ export function Dashboard() {
           <div className="target-strip">
             {(targetsQuery.data ?? []).slice(0, 6).map((target) => <span key={target.id}>{target.protocol}://{target.host}{target.port ? `:${target.port}` : ""}</span>)}
           </div>
-          <div className="finding-list scroll-panel">
+          <div className="finding-list scroll-panel" tabIndex={0}>
             {priorityFindings.map((finding) => (
               <article key={finding.id} className="finding-item">
                 <span className={`severity ${finding.severity}`}>{finding.severity}</span>

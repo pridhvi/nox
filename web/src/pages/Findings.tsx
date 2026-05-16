@@ -176,6 +176,30 @@ export function Findings() {
       </section>
       <div className="split-workspace triage-workspace">
       <section className="panel">
+        <div className="finding-card-list">
+          {sortedFindings.map((finding) => (
+            <article key={finding.id} className={`finding-card ${finding.severity} ${selectedFinding?.id === finding.id ? "selected-row" : ""}`}>
+              <div className="finding-card-top">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${finding.title}`}
+                  checked={selectedFindingIDs.has(finding.id)}
+                  onChange={() => toggleFindingSelection(finding.id)}
+                />
+                <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+                <span className={`origin-badge ${findingOrigin(finding)}`}>{originLabel(findingOrigin(finding))}</span>
+                {finding.status ? <span className={`status ${finding.status}`}>{finding.status}</span> : null}
+              </div>
+              <button className="finding-card-main" type="button" onClick={() => openFinding(finding)}>
+                <strong>{finding.title}</strong>
+                <small>{finding.tool_id} · {finding.type}</small>
+                <small>{finding.url || "No URL"}</small>
+                <code>{finding.evidence_normalized || finding.evidence_raw || "No normalized evidence"}</code>
+              </button>
+            </article>
+          ))}
+          {findings.length === 0 ? <div className="empty-state">No findings for the selected filters.</div> : null}
+        </div>
         <div className="table-wrap">
           <table>
             <thead>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listSourceFindings } from "../api/client";
 import { useSessionContext } from "../session";
@@ -17,6 +17,18 @@ export function Source() {
   const allFindings = sourceQuery.data ?? [];
   const findings = allFindings.filter((finding) => state === "" || (state === "confirmed" ? finding.confirmed_dynamic : !finding.confirmed_dynamic));
   const kinds = [...new Set(allFindings.map((finding) => finding.kind))].sort();
+  const groupedFindings = useMemo(() => {
+    const groups = new Map<string, { file: string; kind: string; count: number; confirmed: number; firstLine: number }>();
+    for (const finding of findings) {
+      const key = `${finding.file_path}:${finding.kind}`;
+      const group = groups.get(key) ?? { file: finding.file_path, kind: finding.kind, count: 0, confirmed: 0, firstLine: finding.line_number };
+      group.count += 1;
+      group.confirmed += finding.confirmed_dynamic ? 1 : 0;
+      group.firstLine = Math.min(group.firstLine, finding.line_number);
+      groups.set(key, group);
+    }
+    return [...groups.values()].sort((a, b) => a.file.localeCompare(b.file) || a.kind.localeCompare(b.kind));
+  }, [findings]);
 
   return (
     <section className="page wide-page">
@@ -44,6 +56,15 @@ export function Source() {
         </label>
         <span className="badge">{findings.length} visible</span>
         <span className="badge">{allFindings.filter((finding) => finding.confirmed_dynamic).length} confirmed</span>
+      </section>
+      <section className="source-group-grid" aria-label="Source finding groups">
+        {groupedFindings.map((group) => (
+          <article key={`${group.file}:${group.kind}`} className="source-group-card">
+            <span className={`source-kind ${riskyKinds.has(group.kind) ? "risky" : ""}`}>{group.kind}</span>
+            <strong>{group.file}</strong>
+            <small>first line {group.firstLine} · {group.count} observation{group.count === 1 ? "" : "s"} · {group.confirmed} confirmed</small>
+          </article>
+        ))}
       </section>
       <section className="panel">
         <div className="table-wrap">

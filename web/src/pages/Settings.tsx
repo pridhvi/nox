@@ -44,7 +44,10 @@ export function Settings() {
         <section className="panel">
           <h2>Tools</h2>
           <dl><dt>Installed</dt><dd>{installed}</dd><dt>Missing</dt><dd>{missing}</dd><dt>Configured Paths</dt><dd>{Object.keys(cfg?.tools ?? {}).length}</dd></dl>
-          <pre>{JSON.stringify(cfg?.tools ?? {}, null, 2)}</pre>
+          <details className="raw-config">
+            <summary>Raw tool configuration</summary>
+            <pre>{JSON.stringify(cfg?.tools ?? {}, null, 2)}</pre>
+          </details>
         </section>
         <section className="panel">
           <h2>Plugins</h2>
@@ -56,7 +59,10 @@ export function Settings() {
         </section>
         <section className="panel">
           <h2>CVE</h2>
-          <pre>{JSON.stringify(cfg?.cve ?? {}, null, 2)}</pre>
+          <details className="raw-config">
+            <summary>Raw CVE configuration</summary>
+            <pre>{JSON.stringify(cfg?.cve ?? {}, null, 2)}</pre>
+          </details>
         </section>
       </div>
     </section>

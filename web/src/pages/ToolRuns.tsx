@@ -32,7 +32,7 @@ export function ToolRuns() {
     <section className="page wide-page">
       <header className="page-header"><div><h1>Evidence Runs</h1><p>Arguments, status, stdout, stderr, duration, and finding counts.</p></div></header>
       <section className="panel">
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0}>
           <table>
             <thead><tr><th>Tool</th><th>Status</th><th>Findings</th><th>Duration</th><th>Args</th><th>Started</th></tr></thead>
             <tbody>
@@ -48,7 +48,7 @@ export function ToolRuns() {
       </section>
       {selectedRun ? (
         <div className="drawer-backdrop" onMouseDown={() => setSelectedRun(null)}>
-          <aside className="drawer finding-detail-panel" onMouseDown={(event) => event.stopPropagation()} aria-label="Tool run logs">
+          <aside className="drawer log-drawer" onMouseDown={(event) => event.stopPropagation()} aria-label="Tool run logs">
             <div className="detail-header">
               <div>
                 <h2>{selectedRun.tool_id}</h2>
@@ -72,10 +72,10 @@ export function ToolRuns() {
 
 function LogPanel({ title, value, loading }: { title: string; value?: string | null; loading: boolean }) {
   return (
-    <article>
+    <article className="log-panel">
       <h3>{title}</h3>
-      {loading ? <pre>Loading...</pre> : null}
-      {!loading && value != null ? <pre>{value || "-"}</pre> : null}
+      {loading ? <pre className="log-viewer">Loading...</pre> : null}
+      {!loading && value != null ? <pre className="log-viewer">{value || "-"}</pre> : null}
       {!loading && value == null ? (
         <div className="empty-state">
           <strong>Raw output not available</strong>

@@ -57,6 +57,25 @@ export function Tools() {
             <button className={toolFilter === "missing" ? "active" : ""} type="button" onClick={() => setToolFilter("missing")}>Missing {tools.length - readyCount}</button>
           </div>
         </div>
+        <div className="tool-card-list">
+          {visibleTools.map((tool) => (
+            <article key={tool.id} className={`tool-inventory-card ${tool.installed ? "ready" : "missing"}`}>
+              <div>
+                <span className={`status ${tool.installed ? "completed" : "failed"} icon-status`}>{tool.installed ? <CheckCircle2 size={14} /> : <XCircle size={14} />}{tool.installed ? "ready" : "missing"}</span>
+                <strong>{tool.id}</strong>
+                <small>{tool.name}</small>
+              </div>
+              <dl>
+                <dt>Phase</dt><dd>{tool.phase}</dd>
+                <dt>Kind</dt><dd>{kindLabel(tool)}</dd>
+                <dt>Binary</dt><dd><code>{tool.binary_path || "-"}</code></dd>
+                <dt>Version</dt><dd>{tool.version || "-"}</dd>
+              </dl>
+              {tool.depends_on.length ? <p>Depends on {tool.depends_on.join(", ")}</p> : tool.install_hint ? <p>{tool.install_hint}</p> : null}
+            </article>
+          ))}
+          {visibleTools.length === 0 ? <div className="empty-state">No tools match this filter.</div> : null}
+        </div>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Status</th><th>Tool</th><th>Phase</th><th>Kind</th><th>Binary</th><th>Version</th><th>Last Run</th></tr></thead>

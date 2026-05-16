@@ -114,16 +114,20 @@ work and must be carried forward:
   a compatibility alias.
 - **Reporting and UI:** Markdown/HTML/SARIF/paginated-PDF report generation,
   CLI/API/UI report access, and React/Vite dark-default operator console with a
-  Nox logo/favicon, dashboard controls and live terminal feed, multi-target scan
-  and source scan builder, per-tool configuration modals, profile import/export,
-  Recharts severity chart, Cytoscape attack graph with safe edge filtering,
-  source nodes and labelled graph edges, source finding page with filters and
-  context expansion, sortable finding/CVE tables with static/dynamic/status
-  filters, bulk finding workflow, finding evidence/edit workflow, global plugin
-  registration, LLM model probing, settings health panels, and report pages
-  backed by real API data. Reports include source findings, suppressed findings,
-  tool coverage, dependency CVEs, and cross-confirmed static/dynamic evidence.
-  Built assets are embedded into
+  Nox logo/favicon, dashboard controls and live terminal feed, responsive mobile
+  topbar actions, multi-target scan and source scan builder with a
+  non-overlapping launch review, per-tool configuration modals, profile
+  import/export, Recharts severity chart with theme-aware surfaces, simplified
+  Cytoscape attack graph views with safe edge filtering, source nodes, labelled
+  graph edge data, deduplicated ranked chains, and selected-chain focus, grouped
+  source finding summaries with filters and context expansion, sortable
+  finding/CVE tables with static/dynamic/status filters, mobile finding cards,
+  bulk finding workflow, finding evidence/edit workflow, global plugin
+  registration, responsive tool inventory cards, polished stdout/stderr log
+  drawers, LLM model probing, settings health panels with collapsible raw config,
+  and report pages backed by real API data. Reports include source findings,
+  suppressed findings, tool coverage, dependency CVEs, and cross-confirmed
+  static/dynamic evidence. Built assets are embedded into
   `internal/api/web/dist`.
 - **Verification:** `go test ./...` and `npm run build` pass for the current
   working set.
