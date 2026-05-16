@@ -1215,6 +1215,14 @@ html[data-theme="light"] .chart-panel {
   padding: 10px;
 }
 
+.tool-check {
+  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  height: 86px;
+  overflow: visible;
+}
+
 .phase-option.selected,
 .tool-check.selected {
   background: var(--accent-dim);
@@ -1254,10 +1262,41 @@ html[data-theme="light"] .chart-panel {
 }
 
 .tool-check label {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
   flex: 1;
   gap: 9px;
+  min-width: 0;
+}
+
+.tool-copy {
+  align-content: center;
+}
+
+.tool-name-row {
+  align-items: center;
+  display: flex !important;
+  gap: 5px;
+  min-width: 0;
+}
+
+.tool-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-name-row .info-tip {
+  color: var(--muted);
+  flex: 0 0 auto;
+  opacity: 0.78;
+}
+
+.tool-name-row .info-tip svg {
+  color: currentColor;
+  height: 14px;
+  width: 14px;
 }
 
 .tool-check.builtin_http svg {
@@ -1270,6 +1309,17 @@ html[data-theme="light"] .chart-panel {
 
 .tool-check.missing svg {
   color: var(--danger);
+}
+
+.tool-check .icon-button {
+  align-self: center;
+  color: var(--muted);
+  justify-self: end;
+}
+
+.tool-check .tool-name-row .info-tip svg,
+.tool-check .icon-button svg {
+  color: var(--muted);
 }
 
 .profile-bar {
@@ -2113,6 +2163,7 @@ html[data-theme="light"] .cy-graph {
   display: inline-flex;
   font-size: 10px;
   font-weight: 700;
+  justify-self: start;
   margin-left: 6px;
   padding: 3px 7px;
   text-transform: uppercase;
@@ -2311,6 +2362,7 @@ html[data-theme="light"] .cy-graph {
   }
 
   .metric-grid,
+  .builder-main,
   .form-grid,
   .form-grid.compact,
   .graph-summary,
@@ -2322,6 +2374,19 @@ html[data-theme="light"] .cy-graph {
 
   .event-item {
     grid-template-columns: 1fr;
+  }
+
+  .action-panel .action-row {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+
+  .action-panel .action-row input,
+  .action-panel .power-credential-controls input,
+  .action-panel .power-credential-controls input:first-child {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: 100%;
   }
 
   .message {

@@ -360,7 +360,13 @@ export function ScanBuilder() {
                     <label>
                       <input type="checkbox" disabled={!selectedPhases.includes(phase.id) || !tool.installed} checked={selectedTools.includes(tool.id)} onChange={() => toggleTool(tool)} />
                       {tool.installed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-                      <span><strong>{tool.id} <InfoTip text={`${tool.name}. ${tool.description || tool.install_hint}${tool.homepage_url ? ` ${tool.homepage_url}` : ""}`} /></strong><small>{toolStatus(tool)}</small></span>
+                      <span className="tool-copy">
+                        <span className="tool-name-row">
+                          <strong className="tool-name" title={tool.id}>{tool.id}</strong>
+                          <InfoTip text={`${tool.name}. ${tool.description || tool.install_hint}${tool.homepage_url ? ` ${tool.homepage_url}` : ""}`} />
+                        </span>
+                        <small>{toolStatus(tool)}</small>
+                      </span>
                     </label>
                     <button className="icon-button" type="button" disabled={!selectedPhases.includes(phase.id)} onClick={() => setConfiguredTool(tool)} aria-label={`Configure ${tool.id}`}><Settings size={16} /></button>
                   </div>
