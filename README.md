@@ -99,6 +99,16 @@ NOX_RUN_INTEGRATION=1 make test-integration
 
 It starts the built-in vulnerable fixture and verifies dynamic scans, static audits, combined source-aware correlation, reports, and lean sidecar-log behavior. The same suite runs in GitHub Actions on a nightly schedule and on manual dispatch.
 
+For Linux VM validation with the broader external scanner toolchain, use:
+
+```sh
+scripts/install-linux-tools.sh
+scripts/tool-version-smoke.sh linux-full
+NOX_RUN_LINUX_FULL=1 make linux-full-smoke
+```
+
+See [docs/linux-vm-validation.md](docs/linux-vm-validation.md) for the full checklist, strict all-tools gate, artifact locations, and real-target readiness notes.
+
 Docker smoke validation builds the image, starts the API, checks health/tools endpoints, runs `nox version`, and verifies bundled scanner versions:
 
 ```sh

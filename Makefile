@@ -1,4 +1,4 @@
-.PHONY: build ci dev test test-integration tool-version-smoke lint web web-build run sqlc migrate-up docker-smoke compose-config clean release-snapshot
+.PHONY: build ci dev test test-integration tool-version-smoke linux-full-smoke lint web web-build run sqlc migrate-up docker-smoke compose-config clean release-snapshot
 
 build:
 	cd web && npm run build
@@ -18,6 +18,9 @@ test-integration:
 
 tool-version-smoke:
 	./scripts/tool-version-smoke.sh host
+
+linux-full-smoke:
+	./scripts/linux-full-smoke.sh
 
 lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run; else echo "golangci-lint not installed; skipping Go lint"; fi

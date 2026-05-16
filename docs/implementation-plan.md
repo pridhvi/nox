@@ -1178,11 +1178,18 @@ work and must be carried forward:
   It runs manually/nightly in a dedicated GitHub Actions workflow and uploads
   fixture logs, scan logs, SARIF, and Markdown reports on failure.
 - Docker smoke is part of CI.
+- Linux VM full-tool validation is documented in `docs/linux-vm-validation.md`
+  and guarded by `NOX_RUN_LINUX_FULL=1`. It uses the deterministic fixture to
+  exercise broader subprocess adapters, sidecar logs, lean scans, audit,
+  combined mode, reports, and confirmation edges on hosts where external tools
+  are installed.
 
 ### Spec Alignment Follow-ups
 
 - CI should not require dangerous external scanners or vulnerable targets unless
   explicitly running integration tests.
+- Full external scanner validation should remain a Linux VM/manual acceptance
+  path until tool installation/runtime variance is low enough for CI.
 - Add more fixture coverage for future adapters as they become richer.
 
 ### Acceptance Criteria
@@ -1243,9 +1250,9 @@ greenfield assumptions:
 | 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nox/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, logging settings, tool path maps, plugin directories, CVE settings, and CLI override paths exist. |
 | 17. Scope Validation | Phase 3 | Implemented | Checker, adapter boundary tests, cancellation, lifecycle status coverage, and privileged API source/LLM allowlist controls exist. |
 | 18. Error Handling & Logging | Phases 3, 4, 5 | Implemented | Tool failures persist without failing scans; structured slog configuration supports `NOX_LOG_LEVEL` and `NOX_LOG_FORMAT`, and non-fatal adapter failures are logged. |
-| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM tests, frontend CI build, Docker smoke, and scheduled/manual fixture-backed integration smoke exist. |
+| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM tests, frontend CI build, Docker smoke, scheduled/manual fixture-backed integration smoke, and opt-in Linux full-tool fixture validation exist. |
 | 20. Docker Setup | Phase 17 | Implemented | Dockerfile, healthcheck, compose, deployment docs, bundled scanner version smoke, and Docker smoke exist. |
-| 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, tool-version smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
+| 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, tool-version smoke, Linux full smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
 | 22. Build Order Recommendation | This plan | Implemented | This roadmap follows the spec build order while preserving current work. |
 | 23. Security & Legal Notes | Phase 0 | Implemented | README and CLI help include prominent authorized-use warnings; scope remains a hard implementation boundary. |
 
