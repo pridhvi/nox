@@ -1694,6 +1694,8 @@ Any adapter that attempts to connect to an out-of-scope host must receive an err
 - **Unit tests** for: scope checker, DAG topological sort, Finding normalization helpers, CVE correlator matching logic, attack vector rule evaluation.
 - **Adapter tests** use fixture files: each adapter has a `testdata/` directory with sample raw tool output. Tests verify the adapter produces the expected normalized findings from the fixture.
 - **Integration tests** are opt-in with `NOX_RUN_INTEGRATION=1`: start the deterministic Go vulnerable fixture, run dynamic scans, static audits, combined source-aware scans, report generation, and lean sidecar-log checks.
+- **Power integration tests** are opt-in with `NOX_RUN_POWER_INTEGRATION=1`: exercise safe payload validation, credential redaction, provider skip states, PoC records, and power report sections.
+- **Browser smoke tests** are opt-in with `NOX_RUN_BROWSER_SMOKE=1`: start a fixture-backed UI session, drive dashboard/findings/power/reports/attack-path pages in Chromium, fail on console errors, and write screenshots to `/tmp/nox-browser-*.png`.
 - **Linux full-tool validation** is opt-in with `NOX_RUN_LINUX_FULL=1`: after external tools are installed, run the fixture-backed dynamic, lean, audit, and combined paths with broader subprocess adapter coverage. `scripts/tool-version-smoke.sh linux-full` reports scanner versions and can be made strict with `NOX_TOOL_SMOKE_STRICT=1`.
 - **API tests** use `net/http/httptest` to test all REST endpoints against an in-memory SQLite DB.
 

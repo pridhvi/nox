@@ -296,21 +296,28 @@ func powerEvidenceMarkdown(power powerEvidence) string {
 		return "No power-feature evidence was recorded."
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Summary: payloads=%d, credentials=%d, osint=%d, ad_entities=%d, ad_relationships=%d, poc_results=%d, callbacks=%d, block_events=%d, provider_statuses=%d.\n\n",
+	fmt.Fprintf(&b, "Power evidence summary: payloads=%d, credentials=%d, osint=%d, ad_entities=%d, ad_relationships=%d, poc_results=%d, callbacks=%d, block_events=%d, provider_statuses=%d.\n\n",
 		len(power.Payloads), len(power.Credentials), len(power.OSINT), len(power.ADEntities), len(power.ADRelations), len(power.PoCs), len(power.Callbacks), len(power.Blocks), len(power.Providers))
+	if len(power.Providers) > 0 {
+		writePowerSubsection(&b, "Provider statuses", len(power.Providers))
+		for _, status := range power.Providers {
+			fmt.Fprintf(&b, "- `%s/%s` **%s**: %s\n", status.Provider, status.Module, status.Status, firstNonEmpty(status.Message, "(no message)"))
+		}
+		b.WriteString("\n")
+	}
 	if len(power.Payloads) > 0 {
-		b.WriteString("Generated payloads:\n")
+		writePowerSubsection(&b, "Generated and validated payloads", len(power.Payloads))
 		for _, payload := range power.Payloads {
 			state := "unvalidated"
 			if payload.Validated {
 				state = "validated"
 			}
-			fmt.Fprintf(&b, "- %s %s confidence=%.2f %s\n", payload.PayloadType, state, payload.Confidence, truncate(payload.Context, 180))
+			fmt.Fprintf(&b, "- `%s` **%s** confidence=%.2f bypass=%s context=%s\n", payload.PayloadType, state, payload.Confidence, firstNonEmpty(payload.BypassTechnique, "none"), truncate(payload.Context, 180))
 		}
 		b.WriteString("\n")
 	}
 	if len(power.Credentials) > 0 {
-		b.WriteString("Credential checks:\n")
+		writePowerSubsection(&b, "Credential checks", len(power.Credentials))
 		for _, credential := range power.Credentials {
 			status := "unconfirmed"
 			if credential.Valid {
@@ -319,52 +326,63 @@ func powerEvidenceMarkdown(power powerEvidence) string {
 			if credential.LockoutDetected {
 				status = "lockout_detected"
 			}
-			fmt.Fprintf(&b, "- %s user=%s service=%s status=%s evidence=%s\n", credential.CredentialType, credential.Username, credential.Service, status, truncate(credential.Evidence, 180))
+			fmt.Fprintf(&b, "- `%s` user=%s service=%s status=**%s** password=%s evidence=%s\n", credential.CredentialType, credential.Username, credential.Service, status, redactReportSecret(credential.Password), truncate(credential.Evidence, 180))
 		}
 		b.WriteString("\n")
 	}
 	if len(power.OSINT) > 0 {
-		b.WriteString("OSINT records:\n")
+		writePowerSubsection(&b, "OSINT findings", len(power.OSINT))
 		for _, finding := range power.OSINT {
 			fmt.Fprintf(&b, "- %s %s source=%s confidence=%.2f\n", finding.Kind, finding.Value, finding.Source, finding.Confidence)
 		}
 		b.WriteString("\n")
 	}
 	if len(power.ADEntities) > 0 {
-		b.WriteString("AD/Internal records:\n")
+		writePowerSubsection(&b, "AD/Internal records", len(power.ADEntities))
 		for _, entity := range power.ADEntities {
 			fmt.Fprintf(&b, "- %s %s domain=%s\n", entity.EntityType, entity.Name, entity.Domain)
+		}
+		if len(power.ADRelations) > 0 {
+			fmt.Fprintf(&b, "- relationship records: %d\n", len(power.ADRelations))
 		}
 		b.WriteString("\n")
 	}
 	if len(power.PoCs) > 0 {
-		b.WriteString("PoC results:\n")
+		writePowerSubsection(&b, "PoC impact records", len(power.PoCs))
 		for _, result := range power.PoCs {
 			fmt.Fprintf(&b, "- %s status=%s callback=%t evidence=%s\n", result.PoCType, result.Status, result.CallbackReceived, truncate(result.Evidence, 220))
 		}
 		b.WriteString("\n")
 	}
 	if len(power.Callbacks) > 0 {
-		b.WriteString("Callback evidence:\n")
+		writePowerSubsection(&b, "Callback evidence", len(power.Callbacks))
 		for _, callback := range power.Callbacks {
 			fmt.Fprintf(&b, "- provider=%s token=%s received=%t source_ip=%s\n", callback.Provider, callback.Token, callback.Received, callback.SourceIP)
 		}
 		b.WriteString("\n")
 	}
 	if len(power.Blocks) > 0 {
-		b.WriteString("Block/backoff events:\n")
+		writePowerSubsection(&b, "Block and backoff events", len(power.Blocks))
 		for _, event := range power.Blocks {
 			fmt.Fprintf(&b, "- %s status=%d signal=%s backoff_ms=%d\n", event.ToolID, event.StatusCode, event.Signal, event.BackoffMS)
 		}
 		b.WriteString("\n")
 	}
-	if len(power.Providers) > 0 {
-		b.WriteString("Provider statuses:\n")
-		for _, status := range power.Providers {
-			fmt.Fprintf(&b, "- %s/%s %s: %s\n", status.Module, status.Provider, status.Status, status.Message)
-		}
-	}
 	return strings.TrimSpace(b.String())
+}
+
+func writePowerSubsection(b *strings.Builder, title string, count int) {
+	fmt.Fprintf(b, "### %s (%d)\n", title, count)
+}
+
+func redactReportSecret(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "(empty)"
+	}
+	if value == "********" {
+		return value
+	}
+	return "********"
 }
 
 func crossConfirmedMarkdown(findings []models.Finding, sourceFindings []models.SourceFinding, edges []models.AttackGraphEdge) string {

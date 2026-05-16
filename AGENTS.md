@@ -22,5 +22,6 @@ The phase roadmap in `docs/implementation-plan.md` is complete from the reposito
 1. Turn Linux full-tool acceptance findings into parser/timeout/install fixes.
 2. Add optional code-splitting for any remaining large frontend graph/chart bundle paths.
 3. Add more vulnerable fixture scenarios as new deterministic adapters are introduced.
-4. Expand power integration fixtures as new safe validation classes are added.
-5. Promote selected safe slices from operator-triggered action mode into scanner adapters only after Linux/tool validation and a separate safety review.
+4. Use `NOX_RUN_BROWSER_SMOKE=1 make browser-smoke` for UI regression checks after operator-console changes.
+5. Expand power integration fixtures as new safe validation classes are added.
+6. Promote selected safe slices from operator-triggered action mode into scanner adapters only after Linux/tool validation and a separate safety review.

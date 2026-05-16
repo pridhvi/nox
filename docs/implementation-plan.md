@@ -1275,9 +1275,9 @@ greenfield assumptions:
 | 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nox/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, logging settings, tool path maps, plugin directories, CVE settings, power provider/callback/credential/validation settings with redaction, and CLI override paths exist. |
 | 17. Scope Validation | Phase 3 | Implemented | Checker, adapter boundary tests, cancellation, lifecycle status coverage, and privileged API source/LLM allowlist controls exist. |
 | 18. Error Handling & Logging | Phases 3, 4, 5 | Implemented | Tool failures persist without failing scans; structured slog configuration supports `NOX_LOG_LEVEL` and `NOX_LOG_FORMAT`, and non-fatal adapter failures are logged. |
-| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM/power tests, frontend CI build, Docker smoke, scheduled/manual fixture-backed integration smoke, opt-in power integration smoke, and opt-in Linux full-tool fixture validation scripts exist. |
+| 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM/power tests, frontend CI build, Docker smoke, scheduled/manual fixture-backed integration smoke, opt-in power integration smoke, opt-in browser smoke with screenshot capture and console-error checks, and opt-in Linux full-tool fixture validation scripts exist. |
 | 20. Docker Setup | Phase 17 | Implemented | Dockerfile, healthcheck, compose, deployment docs, bundled scanner version smoke, and Docker smoke exist. |
-| 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, power integration smoke, tool-version smoke, Linux full smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
+| 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, power integration smoke, browser smoke, tool-version smoke, Linux full smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
 | 22. Build Order Recommendation | This plan | Implemented | This roadmap follows the spec build order while preserving current work. |
 | 23. Security & Legal Notes | Phase 0 | Implemented | README and CLI help include prominent authorized-use warnings; scope remains a hard implementation boundary. |
 

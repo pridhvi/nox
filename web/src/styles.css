@@ -694,6 +694,15 @@ html[data-theme="dark"] .primary {
   min-width: 240px;
 }
 
+.action-panel .power-credential-controls input {
+  flex: 1 1 160px;
+  min-width: 150px;
+}
+
+.action-panel .power-credential-controls input:first-child {
+  flex-basis: 280px;
+}
+
 .compact-control {
   min-width: 150px;
 }

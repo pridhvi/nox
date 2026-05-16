@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	appconfig "github.com/pridhvi/nox/internal/config"
 	"github.com/pridhvi/nox/internal/db"
 	"github.com/pridhvi/nox/internal/engine"
 	"github.com/pridhvi/nox/internal/models"
@@ -391,16 +393,33 @@ func TestMonitorConfigAPIRequiresConfiguredAPIKeyAndRedactsSecrets(t *testing.T)
 func TestPowerFeatureEndpointsPersistAndGateActiveActions(t *testing.T) {
 	ctx := t.Context()
 	sessionDir := t.TempDir()
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			_ = r.ParseForm()
+			if r.FormValue("username") == "admin" && r.FormValue("password") == "password" {
+				_, _ = w.Write([]byte("success welcome dashboard"))
+				return
+			}
+			http.Error(w, "invalid", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte("reflected " + r.URL.Query().Get("q")))
+	}))
+	defer targetServer.Close()
+	parsedTarget, err := url.Parse(targetServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	session := models.Session{
 		ID:          models.NewID(),
 		Name:        "Power",
 		Status:      models.SessionStatusCompleted,
 		Mode:        models.ScanModeActive,
-		TargetInput: "https://example.test",
-		InScope:     []string{"https://example.test"},
+		TargetInput: targetServer.URL,
+		InScope:     []string{targetServer.URL},
 		CreatedAt:   time.Now().UTC(),
 	}
-	target := models.Target{ID: models.NewID(), SessionID: session.ID, Host: "example.test", Port: 443, Protocol: "https", IsAlive: true, CreatedAt: time.Now().UTC()}
+	target := models.Target{ID: models.NewID(), SessionID: session.ID, Host: parsedTarget.Hostname(), Port: 80, Protocol: "http", IsAlive: true, CreatedAt: time.Now().UTC()}
 	if _, err := db.CreateSessionDB(ctx, sessionDir, session, target); err != nil {
 		t.Fatal(err)
 	}
@@ -408,18 +427,44 @@ func TestPowerFeatureEndpointsPersistAndGateActiveActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	finding := models.Finding{ID: models.NewID(), SessionID: session.ID, TargetID: target.ID, ToolID: "test", Type: models.FindingTypeVulnerability, Severity: models.SeverityHigh, Title: "Reflected XSS", URL: "https://example.test/?q=x", Tags: []string{"xss"}, CreatedAt: time.Now().UTC()}
+	finding := models.Finding{ID: models.NewID(), SessionID: session.ID, TargetID: target.ID, ToolID: "test", Type: models.FindingTypeVulnerability, Severity: models.SeverityHigh, Title: "Reflected XSS", URL: targetServer.URL + "/search?q=x", Tags: []string{"xss"}, CreatedAt: time.Now().UTC()}
 	if err := store.InsertFinding(ctx, finding); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	handler := NewServer(Config{SessionDir: sessionDir, APIKey: "secret"}).Handler()
+	cfg := appconfig.Default()
+	cfg.Database.SessionDir = sessionDir
+	cfg.Power.ActiveValidation.Enabled = true
+	cfg.Power.Credentials.DelaySeconds = 0
+	handler := NewServer(Config{SessionDir: sessionDir, APIKey: "secret", AppConfig: cfg, HTTPClient: targetServer.Client()}).Handler()
 	payloads := httptest.NewRecorder()
 	handler.ServeHTTP(payloads, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/findings/"+finding.ID+"/generate-payloads", bytes.NewBufferString(`{}`)))
 	if payloads.Code != http.StatusOK || !strings.Contains(payloads.Body.String(), "confirm") {
 		t.Fatalf("payload status=%d body=%s", payloads.Code, payloads.Body.String())
+	}
+	var generated []models.Payload
+	if err := json.NewDecoder(payloads.Body).Decode(&generated); err != nil {
+		t.Fatal(err)
+	}
+	if len(generated) == 0 {
+		t.Fatal("expected generated payloads")
+	}
+	validateBlocked := httptest.NewRecorder()
+	handler.ServeHTTP(validateBlocked, httptest.NewRequest(http.MethodPost, "/api/sessions/"+session.ID+"/payloads/"+generated[0].ID+"/validate", bytes.NewBufferString(`{"confirm":true}`)))
+	if validateBlocked.Code != http.StatusUnauthorized {
+		t.Fatalf("expected auth on payload validation, got %d body=%s", validateBlocked.Code, validateBlocked.Body.String())
+	}
+	validateMissingConfirm := httptest.NewRecorder()
+	handler.ServeHTTP(validateMissingConfirm, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/payloads/"+generated[0].ID+"/validate", bytes.NewBufferString(`{"confirm":false}`)))
+	if validateMissingConfirm.Code != http.StatusBadRequest || !strings.Contains(validateMissingConfirm.Body.String(), "confirm=true") {
+		t.Fatalf("expected confirmation rejection, got %d body=%s", validateMissingConfirm.Code, validateMissingConfirm.Body.String())
+	}
+	validateOK := httptest.NewRecorder()
+	handler.ServeHTTP(validateOK, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/payloads/"+generated[0].ID+"/validate", bytes.NewBufferString(`{"confirm":true}`)))
+	if validateOK.Code != http.StatusOK || !strings.Contains(validateOK.Body.String(), `"validated":true`) {
+		t.Fatalf("expected payload validation success, got %d body=%s", validateOK.Code, validateOK.Body.String())
 	}
 	blocked := httptest.NewRecorder()
 	handler.ServeHTTP(blocked, httptest.NewRequest(http.MethodPost, "/api/sessions/"+session.ID+"/credentials/test", bytes.NewBufferString(`{"mode":"correlate"}`)))
@@ -430,6 +475,21 @@ func TestPowerFeatureEndpointsPersistAndGateActiveActions(t *testing.T) {
 	handler.ServeHTTP(creds, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/credentials/test", bytes.NewBufferString(`{"mode":"correlate","username":"admin","password":"secret"}`)))
 	if creds.Code != http.StatusOK || strings.Contains(creds.Body.String(), "secret") {
 		t.Fatalf("credential status=%d body=%s", creds.Code, creds.Body.String())
+	}
+	activeCreds := httptest.NewRecorder()
+	handler.ServeHTTP(activeCreds, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/credentials/test", bytes.NewBufferString(`{"mode":"defaults","url":"`+targetServer.URL+`/login","username":"admin","password":"password","confirm":true,"max_attempts":2}`)))
+	if activeCreds.Code != http.StatusOK || !strings.Contains(activeCreds.Body.String(), `"valid":true`) || strings.Contains(activeCreds.Body.String(), `"password":"password"`) {
+		t.Fatalf("active credential status=%d body=%s", activeCreds.Code, activeCreds.Body.String())
+	}
+	kerberoastNoConfirm := httptest.NewRecorder()
+	handler.ServeHTTP(kerberoastNoConfirm, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/ad/kerberoast", bytes.NewBufferString(`{"username":"svc-http"}`)))
+	if kerberoastNoConfirm.Code != http.StatusBadRequest || !strings.Contains(kerberoastNoConfirm.Body.String(), "confirm=true") {
+		t.Fatalf("expected kerberoast confirmation gate, got %d body=%s", kerberoastNoConfirm.Code, kerberoastNoConfirm.Body.String())
+	}
+	burpBlocked := httptest.NewRecorder()
+	handler.ServeHTTP(burpBlocked, httptest.NewRequest(http.MethodPost, "/api/sessions/"+session.ID+"/burp/push-scope", nil))
+	if burpBlocked.Code != http.StatusUnauthorized {
+		t.Fatalf("expected auth on burp push-scope, got %d body=%s", burpBlocked.Code, burpBlocked.Body.String())
 	}
 }
 

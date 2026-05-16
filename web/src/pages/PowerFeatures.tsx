@@ -2,7 +2,7 @@ import { useState } from "react";
 import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FlaskConical, KeyRound, Network, PlugZap, Radar, ShieldAlert, Sparkles } from "lucide-react";
-import { generatePayloads, getBurpStatus, listADEntities, listADRelationships, listBlockEvents, listCredentials, listFindings, listOSINT, listPayloads, listPoCResults, listPowerCallbacks, listProviderStatuses, pullBurpIssues, pushBurpScope, runADKerberoast, runOSINT, runPoC, testCredentials, validatePayload } from "../api/client";
+import { effectiveConfig, generatePayloads, getBurpStatus, listADEntities, listADRelationships, listBlockEvents, listCredentials, listFindings, listOSINT, listPayloads, listPoCResults, listPowerCallbacks, listProviderStatuses, pullBurpIssues, pushBurpScope, runADKerberoast, runOSINT, runPoC, testCredentials, validatePayload, type BurpStatusResponse, type CredentialFinding, type Payload, type PowerCallback, type ProviderStatus } from "../api/client";
 import { useSessionContext } from "../session";
 
 const tabs = ["payloads", "credentials", "osint", "ad", "poc", "callbacks", "burp", "evasion"] as const;
@@ -28,6 +28,8 @@ export function PowerFeatures() {
   const pocQuery = useQuery({ queryKey: ["poc-results", selectedSessionID], queryFn: () => listPoCResults(selectedSessionID), enabled });
   const callbacksQuery = useQuery({ queryKey: ["callbacks", selectedSessionID], queryFn: () => listPowerCallbacks(selectedSessionID), enabled });
   const blockQuery = useQuery({ queryKey: ["block-events", selectedSessionID], queryFn: () => listBlockEvents(selectedSessionID), enabled });
+  const configQuery = useQuery({ queryKey: ["effective-config"], queryFn: effectiveConfig });
+  const powerConfig = powerState(configQuery.data?.power);
   const generateMutation = useMutation({
     mutationFn: () => generatePayloads(selectedSessionID, findingID || findingsQuery.data?.[0]?.id || ""),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["payloads", selectedSessionID] }),
@@ -78,19 +80,29 @@ export function PowerFeatures() {
         {tabs.map((item) => <button key={item} className={tab === item ? "primary" : "secondary"} onClick={() => setTab(item)}>{item.replace("-", " ")}</button>)}
       </div>
       <section className="panel">
+        <div className="action-panel">
+          <h2><ShieldAlert size={17} />Safety Controls</h2>
+          <span className={`status ${powerConfig.activeValidation ? "completed" : "paused"}`}>active validation {powerConfig.activeValidation ? "enabled" : "disabled"}</span>
+          <span className="badge">credential limit {powerConfig.maxAttempts} / user</span>
+          <span className="badge">callback provider {powerConfig.callbackProvider}</span>
+          <span className="badge">secrets redacted</span>
+        </div>
+        <p className="warning-text">Active validation, credential checks, AD requests, and Burp sync remain manual, scope-checked actions. Server-side API-key enforcement still applies.</p>
+      </section>
+      <section className="panel">
         {tab === "payloads" ? (
           <FeatureSection icon={<Sparkles size={17} />} title="AI Payload Generation" action={<ActionControls value={findingID} onChange={setFindingID} onRun={() => generateMutation.mutate()} label="Generate" disabled={!enabled || generateMutation.isPending} />}>
-            <RecordTable rows={(payloadsQuery.data ?? []).map((item) => [item.payload_type, item.payload, item.validated ? "validated" : "unvalidated", item.bypass_technique || "-", `${Math.round(item.confidence * 100)}%`, item.validated ? item.validated_response || "validated" : "validate"])} headers={["Type", "Payload", "State", "Bypass", "Confidence", "Action"]} actions={(payloadsQuery.data ?? []).map((item) => item.validated ? null : <button className="secondary" onClick={() => validateMutation.mutate(item.id)} disabled={validateMutation.isPending}>Validate</button>)} />
+            <RecordTable rows={payloadRows(payloadsQuery.data ?? [])} headers={["Type", "Payload", "State", "Bypass", "Confidence", "Action"]} actions={(payloadsQuery.data ?? []).map((item) => item.validated ? null : <button className="secondary" title={powerConfig.activeValidation ? "Validate this payload with a safe marker request" : "Enable power.active_validation.enabled before validation"} onClick={() => validateMutation.mutate(item.id)} disabled={validateMutation.isPending || !powerConfig.activeValidation}>Validate</button>)} />
           </FeatureSection>
         ) : null}
         {tab === "credentials" ? (
-          <FeatureSection icon={<KeyRound size={17} />} title="Credential Testing" action={<div className="action-row"><input value={credentialURL} onChange={(event) => setCredentialURL(event.target.value)} placeholder="Login URL for confirmed fixture-safe checks" /><input value={credentialUser} onChange={(event) => setCredentialUser(event.target.value)} placeholder="Username" /><input value={credentialPass} onChange={(event) => setCredentialPass(event.target.value)} placeholder="Password" /><button className="primary" onClick={() => credMutation.mutate()} disabled={!enabled || credMutation.isPending}>Run</button></div>}>
-            <RecordTable rows={(credentialsQuery.data ?? []).map((item) => [item.credential_type, item.username, item.password, item.valid ? "valid" : "unconfirmed", item.evidence])} headers={["Type", "Username", "Password", "Status", "Evidence"]} />
+          <FeatureSection icon={<KeyRound size={17} />} title="Credential Testing" action={<div className="action-row power-credential-controls"><input value={credentialURL} onChange={(event) => setCredentialURL(event.target.value)} placeholder="Login URL for confirmed checks" /><input value={credentialUser} onChange={(event) => setCredentialUser(event.target.value)} placeholder="Username" /><input value={credentialPass} onChange={(event) => setCredentialPass(event.target.value)} placeholder="Password" /><button className="primary" onClick={() => credMutation.mutate()} disabled={!enabled || credMutation.isPending}>Run</button></div>}>
+            <RecordTable rows={credentialRows(credentialsQuery.data ?? [])} headers={["Type", "Username", "Password", "Status", "Evidence"]} />
           </FeatureSection>
         ) : null}
         {tab === "osint" ? (
           <FeatureSection icon={<Radar size={17} />} title="OSINT Expansion" action={<div className="action-row"><input value={providers} onChange={(event) => setProviders(event.target.value)} placeholder="Providers" /><button className="primary" onClick={() => osintMutation.mutate()} disabled={!enabled || osintMutation.isPending}>Run Providers</button></div>}>
-            <RecordTable rows={(providersQuery.data ?? []).map((item) => [item.provider, item.module, item.status, item.message])} headers={["Provider", "Module", "Status", "Message"]} />
+            <RecordTable rows={providerStatusRows(providersQuery.data ?? [])} headers={["Provider", "Module", "Status", "Message"]} />
             <RecordTable rows={(osintQuery.data ?? []).map((item) => [item.kind, item.value, item.source, `${Math.round(item.confidence * 100)}%`])} headers={["Kind", "Value", "Source", "Confidence"]} />
           </FeatureSection>
         ) : null}
@@ -107,12 +119,12 @@ export function PowerFeatures() {
         ) : null}
         {tab === "callbacks" ? (
           <FeatureSection icon={<PlugZap size={17} />} title="Callback Evidence">
-            <RecordTable rows={(callbacksQuery.data ?? []).map((item) => [item.provider, item.received ? "received" : "pending", item.url, item.source_ip || "-", item.raw_event || "-"])} headers={["Provider", "Status", "URL", "Source", "Event"]} />
+            <RecordTable rows={callbackRows(callbacksQuery.data ?? [])} headers={["Provider", "Status", "URL", "Source", "Event"]} />
           </FeatureSection>
         ) : null}
         {tab === "burp" ? (
           <FeatureSection icon={<PlugZap size={17} />} title="Burp REST / Collaborator" action={<div className="action-row"><button className="secondary" onClick={() => burpStatusMutation.mutate()} disabled={!enabled || burpStatusMutation.isPending}>Status</button><button className="secondary" onClick={() => burpPushMutation.mutate()} disabled={!enabled || burpPushMutation.isPending}>Push Scope</button><button className="primary" onClick={() => burpPullMutation.mutate()} disabled={!enabled || burpPullMutation.isPending}>Pull Issues</button></div>}>
-            <RecordTable rows={[[burpStatusMutation.data ? (burpStatusMutation.data.available ? "available" : "unavailable") : burpPushMutation.data?.available ? "available" : "idle", burpStatusMutation.data?.result.message || burpPushMutation.data?.message || `${burpPullMutation.data?.length ?? 0} imported issues`]]} headers={["Status", "Message"]} />
+            <RecordTable rows={[burpResultRow(burpStatusMutation.data, burpPushMutation.data?.message, burpPushMutation.data?.available, burpPullMutation.data?.length)]} headers={["Status", "Message"]} />
           </FeatureSection>
         ) : null}
         {tab === "evasion" ? (
@@ -123,6 +135,50 @@ export function PowerFeatures() {
       </section>
     </section>
   );
+}
+
+export function powerState(power: Record<string, unknown> | undefined) {
+  const activeValidation = Boolean((power?.active_validation as { enabled?: boolean } | undefined)?.enabled);
+  const credentials = power?.credentials as { max_attempts_per_user?: number } | undefined;
+  const callbacks = power?.callbacks as { provider?: string } | undefined;
+  return {
+    activeValidation,
+    maxAttempts: credentials?.max_attempts_per_user ?? 3,
+    callbackProvider: callbacks?.provider || "builtin",
+  };
+}
+
+export function payloadRows(payloads: Payload[]) {
+  return payloads.map((item) => [item.payload_type, item.payload, item.validated ? "validated" : "unvalidated", item.bypass_technique || "-", `${Math.round(item.confidence * 100)}%`, item.validated ? item.validated_response || "validated" : "validate"]);
+}
+
+export function credentialRows(credentials: CredentialFinding[]) {
+  return credentials.map((item) => [item.credential_type, item.username, item.password, credentialState(item), item.evidence]);
+}
+
+export function credentialState(item: CredentialFinding) {
+  if (item.lockout_detected) {
+    return "lockout detected";
+  }
+  return item.valid ? "valid" : "unconfirmed";
+}
+
+export function providerStatusRows(statuses: ProviderStatus[]) {
+  return statuses.map((item) => [item.provider, item.module, item.status, item.message]);
+}
+
+export function callbackRows(callbacks: PowerCallback[]) {
+  return callbacks.map((item) => [item.provider, item.received ? "received" : "pending", item.url, item.source_ip || "-", item.raw_event || "-"]);
+}
+
+export function burpResultRow(status?: BurpStatusResponse, pushMessage = "", pushAvailable = false, importedCount = 0) {
+  if (status) {
+    return [status.available ? "available" : "unavailable", status.result.message];
+  }
+  if (pushMessage) {
+    return [pushAvailable ? "available" : "unavailable", pushMessage];
+  }
+  return ["idle", `${importedCount} imported issues`];
 }
 
 function FeatureSection({ icon, title, action, children }: { icon: React.ReactNode; title: string; action?: React.ReactNode; children: React.ReactNode }) {

@@ -142,15 +142,19 @@ Run the deeper local fixture integration suite with:
 ```sh
 NOX_RUN_INTEGRATION=1 make test-integration
 NOX_RUN_POWER_INTEGRATION=1 make power-integration
+NOX_RUN_BROWSER_SMOKE=1 make browser-smoke
 ```
 
 The integration smoke starts the built-in vulnerable fixture and verifies
 dynamic scans, static audits, combined source-aware correlation, reports, and
 lean sidecar-log behavior. The power integration smoke additionally verifies
 payload validation, credential redaction, provider skip status, PoC records, and
-power report sections against deterministic fixture routes. The standard
+power report sections against deterministic fixture routes. The browser smoke
+starts a fixture-backed session, serves the embedded UI, checks dashboard,
+findings, power, reports, and attack-path pages in Chromium, fails on console
+errors, and writes screenshots to `/tmp/nox-browser-*.png`. The standard
 integration suite runs in GitHub Actions on a nightly schedule and on manual
-dispatch; the power suite is local opt-in for now.
+dispatch; the power and browser suites are local opt-in for now.
 
 Docker smoke validation builds the image, starts the API, checks health/tools endpoints, runs `nox version`, and verifies bundled scanner versions:
 
