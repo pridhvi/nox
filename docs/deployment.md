@@ -6,8 +6,9 @@ Build and run the container locally:
 
 ```sh
 docker build -t nox:local .
-docker run --rm -p 127.0.0.1:8080:8080 -v nox-data:/home/nox/.nox nox:local
-curl http://127.0.0.1:8080/api/health
+NOX_API_KEY=$(openssl rand -hex 24)
+docker run --rm -p 127.0.0.1:8080:8080 -e NOX_API_KEY="$NOX_API_KEY" -v nox-data:/home/nox/.nox nox:local serve --host 0.0.0.0 --port 8080
+curl -H "X-Nox-API-Key: $NOX_API_KEY" http://127.0.0.1:8080/api/health
 ```
 
 Run the packaged smoke check:
@@ -24,8 +25,11 @@ The smoke check builds the image, starts Nox, verifies `/api/health`, verifies
 `docker-compose.yml` starts Nox and Ollama with persistent volumes:
 
 ```sh
+export NOX_API_KEY=$(openssl rand -hex 24)
 docker compose up --build
 ```
+
+Compose publishes Nox on `127.0.0.1:6767` and requires `NOX_API_KEY`. Nox refuses to bind to non-loopback interfaces without an API key.
 
 For containerized custom config, create a config file and mount it at
 `/home/nox/.nox/config.yaml`:
@@ -34,6 +38,7 @@ For containerized custom config, create a config file and mount it at
 mkdir -p config
 nox config init --path config/nox.yaml
 docker run --rm -p 127.0.0.1:8080:8080 \
+  -e NOX_API_KEY="$NOX_API_KEY" \
   -v nox-data:/home/nox/.nox \
   -v "$PWD/config/nox.yaml:/config/nox.yaml:ro" \
   nox:local serve --config /config/nox.yaml --host 0.0.0.0 --port 8080

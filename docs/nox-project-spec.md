@@ -10,7 +10,7 @@
 **Nox** is an open-source, locally-run web application penetration testing framework. It orchestrates a suite of security tools in a dependency-aware pipeline, normalizes all output into a shared schema stored in a local database, correlates findings across tools to suggest concrete multi-step attack vectors, and uses a locally-hosted LLM to analyse results, suggest CVEs, and generate pentest report narratives.
 
 Nox is designed to be:
-- **100% local by default** — no telemetry, no cloud, no API keys required
+- **100% local by default** — no telemetry, no cloud, no hosted LLM required; API keys are required for network-exposed serving and host-privileged API operations
 - **Web-app focused** — goes well beyond port scanning into SQLi, XSS, SSRF, JWT attacks, CORS, SSTI, XXE, and OAuth misconfigurations
 - **Extensible** — plugin-based tool adapter system; community can ship new adapters in any language
 - **Cross-platform** — single Go binary + Docker image; runs on Linux, macOS, Windows
@@ -1334,7 +1334,7 @@ var DefaultRules = []Rule{
 
 ## 13. REST API Surface
 
-The chi router exposes these endpoints. All responses are JSON. Authentication is a local API key stored in the Nox config file (for when the web UI is accessible on a local network).
+The chi router exposes these endpoints. All responses are JSON. Authentication is a local API key stored in the Nox config file. Nox refuses non-loopback serving without an API key, and host-privileged API operations such as plugin management, API source scans, and LLM endpoint probing require API-key authentication.
 
 ```
 POST   /api/scan/start              Start a new scan session
@@ -1544,7 +1544,7 @@ database:
 server:
   host: 127.0.0.1
   port: 8080
-  api_key: ""               # Empty = no auth (localhost only). Set for network access.
+  api_key: ""               # Empty = no auth for loopback-only local use. Required for network access and privileged API operations.
 
 # Default scan settings
 scan:

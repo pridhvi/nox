@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -196,14 +197,95 @@ func TestAPIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestPrivilegedOperationsRequireConfiguredAPIKey(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "app.py"), []byte("api_key = \"FAKE_SECRET\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(Config{SessionDir: t.TempDir()})
+	if err := server.writeGlobalPlugins([]models.PluginRecord{{
+		ID:      "plugin-1",
+		Name:    "existing",
+		Binary:  "sh",
+		Phase:   "recon",
+		Enabled: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	handler := server.Handler()
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{name: "global plugin create", method: http.MethodPost, path: "/api/plugins", body: `{"name":"poc","binary":"sh","phase":"recon"}`},
+		{name: "plugin upload", method: http.MethodPost, path: "/api/plugins/upload", body: ""},
+		{name: "llm probe", method: http.MethodPost, path: "/api/llm/models", body: `{"base_url":"http://127.0.0.1:11434"}`},
+		{name: "source scan", method: http.MethodPost, path: "/api/scan/start", body: `{"source_path":"` + repo + `"}`},
+		{name: "plugin scan", method: http.MethodPost, path: "/api/scan/start", body: `{"target":"http://127.0.0.1:1","tools":["plugin:poc"]}`},
+		{name: "default scan with existing global plugin", method: http.MethodPost, path: "/api/scan/start", body: `{"target":"http://127.0.0.1:1"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("expected forbidden, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+
+}
+
+func TestLLMModelsDoesNotReflectUpstreamErrorBody(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal-secret-token", http.StatusInternalServerError)
+	}))
+	defer targetServer.Close()
+	handler := NewServer(Config{SessionDir: t.TempDir(), APIKey: "secret", HTTPClient: targetServer.Client()}).Handler()
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, apiKeyRequest(http.MethodPost, "/api/llm/models", bytes.NewBufferString(`{"base_url":"`+targetServer.URL+`"}`)))
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected bad gateway, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "internal-secret-token") {
+		t.Fatalf("upstream response body leaked: %s", rec.Body.String())
+	}
+}
+
+func TestServerRejectsUnauthenticatedNetworkBind(t *testing.T) {
+	server := NewServer(Config{Host: "0.0.0.0", Port: 0, SessionDir: t.TempDir()})
+	if err := server.validateExposure(); err == nil {
+		t.Fatal("expected network bind without API key to be rejected")
+	}
+	server.cfg.APIKey = "secret"
+	if err := server.validateExposure(); err != nil {
+		t.Fatalf("expected API-key-protected network bind to be allowed: %v", err)
+	}
+}
+
+func TestCrossOriginStateChangingRequestsRejected(t *testing.T) {
+	handler := NewServer(Config{SessionDir: t.TempDir()}).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/scan/start", strings.NewReader(`{"target":"http://127.0.0.1:1"}`))
+	req.Header.Set("Origin", "https://attacker.example")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected cross-origin request rejection, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSourceFindingsAndAttackGraphEndpoints(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "app.py"), []byte("@app.get(\"/search\")\ndef search():\n    q = request.args.get(\"q\")\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	handler := NewServer(Config{SessionDir: t.TempDir()}).Handler()
+	handler := NewServer(Config{SessionDir: t.TempDir(), APIKey: "secret"}).Handler()
 	start := httptest.NewRecorder()
-	handler.ServeHTTP(start, httptest.NewRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"source_path":"`+repo+`","name":"Static","mode":"passive"}`)))
+	handler.ServeHTTP(start, apiKeyRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"source_path":"`+repo+`","name":"Static","mode":"passive"}`)))
 	if start.Code != http.StatusAccepted {
 		t.Fatalf("start status = %d body=%s", start.Code, start.Body.String())
 	}
@@ -211,17 +293,21 @@ func TestSourceFindingsAndAttackGraphEndpoints(t *testing.T) {
 	if err := json.NewDecoder(start.Body).Decode(&created); err != nil {
 		t.Fatal(err)
 	}
-	if created.Session.WorkloadMode != models.WorkloadModeStatic || created.Session.SourcePath != repo {
+	resolvedRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Session.WorkloadMode != models.WorkloadModeStatic || created.Session.SourcePath != resolvedRepo {
 		t.Fatalf("unexpected static session: %#v", created.Session)
 	}
-	waitForCompletedScan(t, handler, created.Session.ID)
+	waitForCompletedScanWithKey(t, handler, created.Session.ID, "secret")
 	sourceFindings := httptest.NewRecorder()
-	handler.ServeHTTP(sourceFindings, httptest.NewRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/source-findings?kind=route", nil))
+	handler.ServeHTTP(sourceFindings, apiKeyRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/source-findings?kind=route", nil))
 	if sourceFindings.Code != http.StatusOK || !strings.Contains(sourceFindings.Body.String(), "/search") {
 		t.Fatalf("source findings status=%d body=%s", sourceFindings.Code, sourceFindings.Body.String())
 	}
 	edges := httptest.NewRecorder()
-	handler.ServeHTTP(edges, httptest.NewRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/attack-graph-edges", nil))
+	handler.ServeHTTP(edges, apiKeyRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/attack-graph-edges", nil))
 	if edges.Code != http.StatusOK {
 		t.Fatalf("graph edges status=%d body=%s", edges.Code, edges.Body.String())
 	}
@@ -237,7 +323,8 @@ func TestOperatorConsoleAPI(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	}))
 	defer targetServer.Close()
-	handler := NewServer(Config{SessionDir: t.TempDir(), HTTPClient: targetServer.Client()}).Handler()
+	server := NewServer(Config{SessionDir: t.TempDir(), HTTPClient: targetServer.Client()})
+	handler := server.Handler()
 
 	tools := httptest.NewRecorder()
 	handler.ServeHTTP(tools, httptest.NewRequest(http.MethodGet, "/api/tools", nil))
@@ -337,8 +424,9 @@ func TestOperatorConsoleAPI(t *testing.T) {
 		t.Fatalf("profile delete status = %d body=%s", profileDelete.Code, profileDelete.Body.String())
 	}
 
+	server.cfg.APIKey = "secret"
 	badPlugin := httptest.NewRecorder()
-	handler.ServeHTTP(badPlugin, httptest.NewRequest(http.MethodPost, "/api/sessions/"+created.Session.ID+"/plugins", bytes.NewBufferString(`{"binary":"definitely-not-a-real-plugin-binary"}`)))
+	handler.ServeHTTP(badPlugin, apiKeyRequest(http.MethodPost, "/api/sessions/"+created.Session.ID+"/plugins", bytes.NewBufferString(`{"binary":"definitely-not-a-real-plugin-binary"}`)))
 	if badPlugin.Code != http.StatusBadRequest {
 		t.Fatalf("expected bad request for missing plugin binary, got %d", badPlugin.Code)
 	}
@@ -348,26 +436,32 @@ func TestOperatorConsoleAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	globalPlugin := httptest.NewRecorder()
-	handler.ServeHTTP(globalPlugin, httptest.NewRequest(http.MethodPost, "/api/plugins", bytes.NewBufferString(`{"name":"custom-check","binary":"`+pluginBinary+`","phase":"enumerate","description":"custom scanner","homepage_url":"https://example.com","enabled":true}`)))
+	handler.ServeHTTP(globalPlugin, apiKeyRequest(http.MethodPost, "/api/plugins", bytes.NewBufferString(`{"name":"custom-check","binary":"`+pluginBinary+`","phase":"enumerate","description":"custom scanner","homepage_url":"https://example.com","enabled":true}`)))
 	if globalPlugin.Code != http.StatusCreated {
 		t.Fatalf("global plugin create status = %d body=%s", globalPlugin.Code, globalPlugin.Body.String())
 	}
 	globalPluginList := httptest.NewRecorder()
-	handler.ServeHTTP(globalPluginList, httptest.NewRequest(http.MethodGet, "/api/plugins", nil))
+	handler.ServeHTTP(globalPluginList, apiKeyRequest(http.MethodGet, "/api/plugins", nil))
 	if globalPluginList.Code != http.StatusOK || !strings.Contains(globalPluginList.Body.String(), "custom-check") {
 		t.Fatalf("global plugin list status = %d body=%s", globalPluginList.Code, globalPluginList.Body.String())
 	}
 	toolsWithPlugin := httptest.NewRecorder()
-	handler.ServeHTTP(toolsWithPlugin, httptest.NewRequest(http.MethodGet, "/api/tools", nil))
+	handler.ServeHTTP(toolsWithPlugin, apiKeyRequest(http.MethodGet, "/api/tools", nil))
 	if toolsWithPlugin.Code != http.StatusOK || !strings.Contains(toolsWithPlugin.Body.String(), "plugin:custom-check") {
 		t.Fatalf("expected global plugin in tools, got status=%d body=%s", toolsWithPlugin.Code, toolsWithPlugin.Body.String())
 	}
 
 	models := httptest.NewRecorder()
-	handler.ServeHTTP(models, httptest.NewRequest(http.MethodPost, "/api/llm/models", bytes.NewBufferString(`{"base_url":"`+targetServer.URL+`"}`)))
+	handler.ServeHTTP(models, apiKeyRequest(http.MethodPost, "/api/llm/models", bytes.NewBufferString(`{"base_url":"`+targetServer.URL+`"}`)))
 	if models.Code != http.StatusOK || !strings.Contains(models.Body.String(), "llama3:8b") {
 		t.Fatalf("models status = %d body=%s", models.Code, models.Body.String())
 	}
+}
+
+func apiKeyRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	req.Header.Set("X-Nox-API-Key", "secret")
+	return req
 }
 
 func waitForCompletedScan(t *testing.T, handler http.Handler, sessionID string) {
@@ -375,12 +469,26 @@ func waitForCompletedScan(t *testing.T, handler http.Handler, sessionID string) 
 	waitForScanStatus(t, handler, sessionID, models.SessionStatusCompleted)
 }
 
+func waitForCompletedScanWithKey(t *testing.T, handler http.Handler, sessionID, apiKey string) {
+	t.Helper()
+	waitForScanStatusWithKey(t, handler, sessionID, models.SessionStatusCompleted, apiKey)
+}
+
 func waitForScanStatus(t *testing.T, handler http.Handler, sessionID string, want models.SessionStatus) {
+	t.Helper()
+	waitForScanStatusWithKey(t, handler, sessionID, want, "")
+}
+
+func waitForScanStatusWithKey(t *testing.T, handler http.Handler, sessionID string, want models.SessionStatus, apiKey string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		status := httptest.NewRecorder()
-		handler.ServeHTTP(status, httptest.NewRequest(http.MethodGet, "/api/scan/"+sessionID+"/status", nil))
+		req := httptest.NewRequest(http.MethodGet, "/api/scan/"+sessionID+"/status", nil)
+		if apiKey != "" {
+			req.Header.Set("X-Nox-API-Key", apiKey)
+		}
+		handler.ServeHTTP(status, req)
 		if status.Code != http.StatusOK {
 			t.Fatalf("scan status = %d", status.Code)
 		}

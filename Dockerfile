@@ -39,6 +39,6 @@ WORKDIR /home/nox
 COPY --from=backend /out/nox /usr/local/bin/nox
 EXPOSE 6767
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:6767/api/health >/dev/null || exit 1
+  CMD-SHELL 'curl -fsS ${NOX_API_KEY:+-H "X-Nox-API-Key: $NOX_API_KEY"} http://127.0.0.1:6767/api/health >/dev/null || exit 1'
 ENTRYPOINT ["nox"]
 CMD ["serve", "--host", "0.0.0.0", "--port", "6767"]

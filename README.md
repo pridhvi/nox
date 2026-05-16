@@ -12,11 +12,13 @@ At a high level, nox creates a scoped session, runs a dependency-aware tool pipe
 
 It runs entirely locally by default. There is no telemetry, no required cloud service, and no required hosted LLM. Ollama, LM Studio, llama.cpp, and OpenAI-compatible endpoints can be used when LLM analysis is enabled.
 
+When serving beyond loopback, Nox requires `NOX_API_KEY` or `server.api_key`. Host-privileged API operations, including plugin management, API source scans, and LLM endpoint probing, require API-key authentication even in local mode.
+
 ## Quick start
 
 | Docker Compose | Single binary |
 | --- | --- |
-| `docker compose up --build` | `make build` |
+| `NOX_API_KEY=$(openssl rand -hex 24) docker compose up --build` | `make build` |
 | `curl http://127.0.0.1:6767/api/health` | `./bin/nox scan --target https://example.com --no-llm` |
 
 After building the binary, you can also run:

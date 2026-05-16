@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,6 +59,9 @@ func NewServer(cfg Config) *Server {
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	if err := s.validateExposure(); err != nil {
+		return err
+	}
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port),
 		Handler:           s.Handler(),
@@ -78,6 +83,24 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 		return err
 	}
+}
+
+func (s *Server) validateExposure() error {
+	if strings.TrimSpace(s.cfg.APIKey) != "" {
+		return nil
+	}
+	host := strings.TrimSpace(s.cfg.Host)
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		return fmt.Errorf("NOX_API_KEY or server.api_key is required when binding Nox to a non-loopback interface")
+	}
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf("NOX_API_KEY or server.api_key is required when binding Nox to %s", host)
+	}
+	return nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -634,6 +657,14 @@ func (s *Server) pluginBinDir() string {
 	return filepath.Join(s.stateDir(), "plugins", "bin")
 }
 
+func (s *Server) requireConfiguredAPIKey(w http.ResponseWriter, reason string) bool {
+	if strings.TrimSpace(s.cfg.APIKey) != "" {
+		return true
+	}
+	writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": reason})
+	return false
+}
+
 func (s *Server) listGlobalPlugins(w http.ResponseWriter, r *http.Request) {
 	plugins, err := s.readGlobalPlugins()
 	if err != nil {
@@ -644,6 +675,9 @@ func (s *Server) listGlobalPlugins(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createGlobalPlugin(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "global plugin management requires API key authentication") {
+		return
+	}
 	var req pluginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -668,6 +702,9 @@ func (s *Server) createGlobalPlugin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateGlobalPlugin(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "global plugin management requires API key authentication") {
+		return
+	}
 	plugins, err := s.readGlobalPlugins()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -721,6 +758,9 @@ func (s *Server) updateGlobalPlugin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteGlobalPlugin(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "global plugin management requires API key authentication") {
+		return
+	}
 	plugins, err := s.readGlobalPlugins()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -748,6 +788,9 @@ func (s *Server) deleteGlobalPlugin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) uploadPluginBinary(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "plugin upload requires API key authentication") {
+		return
+	}
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -762,12 +805,15 @@ func (s *Server) uploadPluginBinary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	name := filepath.Base(header.Filename)
+	name := safePluginFilename(header.Filename)
 	if name == "." || name == string(filepath.Separator) || name == "" {
 		name = "plugin-" + models.NewID()
 	}
 	path := filepath.Join(s.pluginBinDir(), name)
-	out, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if _, err := os.Stat(path); err == nil {
+		path = filepath.Join(s.pluginBinDir(), models.NewID()+"-"+name)
+	}
+	out, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -778,6 +824,17 @@ func (s *Server) uploadPluginBinary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"binary": path})
+}
+
+func safePluginFilename(name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (s *Server) readGlobalPlugins() ([]models.PluginRecord, error) {
@@ -853,6 +910,9 @@ func validatePluginPhase(phase string) error {
 }
 
 func (s *Server) upsertPlugin(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "session plugin management requires API key authentication") {
+		return
+	}
 	store, _, ok := s.openSession(w, r)
 	if !ok {
 		return
@@ -890,6 +950,9 @@ func (s *Server) upsertPlugin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updatePlugin(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "session plugin management requires API key authentication") {
+		return
+	}
 	store, _, ok := s.openSession(w, r)
 	if !ok {
 		return
@@ -1148,6 +1211,9 @@ type llmModelsResponse struct {
 }
 
 func (s *Server) llmModels(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "LLM model probing requires API key authentication") {
+		return
+	}
 	var req llmModelsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -1156,6 +1222,10 @@ func (s *Server) llmModels(w http.ResponseWriter, r *http.Request) {
 	baseURL := strings.TrimSpace(req.BaseURL)
 	if baseURL == "" {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("base_url is required"))
+		return
+	}
+	if err := validateLLMProbeURL(baseURL); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -1187,7 +1257,7 @@ func (s *Server) llmModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("llm models request failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body))))
+		writeError(w, http.StatusBadGateway, fmt.Errorf("llm models request failed: status %d", resp.StatusCode))
 		return
 	}
 	var decoded struct {
@@ -1240,6 +1310,26 @@ func llmModelsURL(baseURL string) string {
 		return base + "/models"
 	}
 	return base + "/v1/models"
+}
+
+func validateLLMProbeURL(baseURL string) error {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Scheme == "" || parsed.Hostname() == "" {
+		return fmt.Errorf("base_url must be an absolute http or https URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("base_url must use http or https")
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "metadata.google.internal" {
+		return fmt.Errorf("metadata service endpoints are not allowed")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() {
+			return fmt.Errorf("link-local, multicast, and unspecified LLM endpoints are not allowed")
+		}
+	}
+	return nil
 }
 
 func (s *Server) llmChat(w http.ResponseWriter, r *http.Request) {
@@ -1322,6 +1412,17 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	if len(req.Targets) > 0 {
 		req.Target = strings.Join(req.Targets, "\n")
 	}
+	if requiresPrivilegedScan(req, len(s.enabledGlobalPlugins()) > 0) && !s.requireConfiguredAPIKey(w, "source and plugin scans require API key authentication") {
+		return
+	}
+	if req.SourcePath != "" {
+		sourcePath, err := canonicalSourcePath(req.SourcePath)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		req.SourcePath = sourcePath
+	}
 	if err := validateTools(req.Tools); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1373,6 +1474,37 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusAccepted, record)
 }
 
+func requiresPrivilegedScan(req startScanRequest, enabledGlobalPlugins bool) bool {
+	if strings.TrimSpace(req.SourcePath) != "" {
+		return true
+	}
+	for _, tool := range req.Tools {
+		if strings.HasPrefix(strings.TrimSpace(tool), "plugin:") {
+			return true
+		}
+	}
+	return enabledGlobalPlugins && len(req.Tools) == 0
+}
+
+func canonicalSourcePath(value string) (string, error) {
+	path := strings.TrimSpace(value)
+	if path == "" {
+		return "", nil
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("source_path is not accessible: %w", err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("source_path is not accessible: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("source_path must be a directory")
+	}
+	return filepath.Clean(resolved), nil
+}
+
 func (s *Server) openSession(w http.ResponseWriter, r *http.Request) (*db.Store, models.Session, bool) {
 	store, err := db.OpenSession(r.Context(), s.cfg.SessionDir, r.PathValue("id"))
 	if err != nil {
@@ -1389,11 +1521,16 @@ func (s *Server) openSession(w http.ResponseWriter, r *http.Request) (*db.Store,
 }
 
 func (s *Server) withAuth(next http.Handler) http.Handler {
-	if strings.TrimSpace(s.cfg.APIKey) == "" {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/ws/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if crossOriginUnsafeRequest(r) {
+			writeError(w, http.StatusForbidden, fmt.Errorf("cross-origin state-changing requests are not allowed"))
+			return
+		}
+		if strings.TrimSpace(s.cfg.APIKey) == "" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1410,6 +1547,39 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func crossOriginUnsafeRequest(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return false
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return true
+	}
+	return !sameHost(parsed.Host, r.Host)
+}
+
+func sameHost(left, right string) bool {
+	leftHost, leftPort := splitHostPort(left)
+	rightHost, rightPort := splitHostPort(right)
+	if !strings.EqualFold(leftHost, rightHost) {
+		return false
+	}
+	return leftPort == rightPort
+}
+
+func splitHostPort(value string) (string, string) {
+	host, port, err := net.SplitHostPort(value)
+	if err == nil {
+		return strings.Trim(host, "[]"), port
+	}
+	return strings.Trim(value, "[]"), ""
 }
 
 func readiness(ok bool) string {

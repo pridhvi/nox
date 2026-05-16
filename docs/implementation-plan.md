@@ -104,7 +104,9 @@ work and must be carried forward:
 - **API:** Health, tools, sessions, targets, findings, source findings, tool
   runs, stats, scan start/status/pause/resume/stop, vectors, attack graph edges,
   CVEs, reports, LLM history/analysis/chat, session deletion, scan profiles,
-  global plugins, LLM model probing, optional API-key auth, and scan lifecycle
+  API-key-protected global plugins, API-key-protected LLM model probing,
+  API-key enforcement for non-loopback serving and host-privileged API
+  operations, and scan lifecycle
   WebSocket event stream. Scan start accepts legacy `target`, multi-target
   `targets`, `source_path`, and combined target+source requests.
 - **WebSocket progress:** Current endpoint is `GET /api/scan/{id}/events` with
@@ -828,7 +830,9 @@ work and must be carried forward:
   - page
   - limit
   - CVE/exploit filters where supported
-- Added local API-key auth for API and WebSocket routes when configured.
+- Added local API-key auth for API and WebSocket routes when configured, with
+  API-key requirements for non-loopback binds, plugin management, API source
+  scans, and LLM endpoint probing.
 - Expanded health output:
   - DB readiness
   - LLM configuration status

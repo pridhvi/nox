@@ -39,7 +39,7 @@ docker-smoke:
 	./scripts/docker-smoke.sh
 
 compose-config:
-	docker compose config >/dev/null
+	NOX_API_KEY=nox-compose-config docker compose config >/dev/null
 
 clean:
 	rm -rf bin coverage web/dist
