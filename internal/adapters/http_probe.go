@@ -43,7 +43,7 @@ func (a HTTPProbe) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	}
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		run.ExitCode = 1
-		run.StderrRaw = reason
+		run.RawStderr = reason
 		run.DurationMS = time.Since(started).Milliseconds()
 		return AdapterOutput{ToolRun: run}, fmt.Errorf("scope rejected %s: %s", input.Target.Host, reason)
 	}
@@ -54,7 +54,7 @@ func (a HTTPProbe) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		run.ExitCode = 1
-		run.StderrRaw = err.Error()
+		run.RawStderr = err.Error()
 		run.DurationMS = time.Since(started).Milliseconds()
 		return AdapterOutput{ToolRun: run}, err
 	}
@@ -62,7 +62,7 @@ func (a HTTPProbe) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	resp, err := client.Do(req)
 	if err != nil {
 		run.ExitCode = 1
-		run.StderrRaw = err.Error()
+		run.RawStderr = err.Error()
 		run.DurationMS = time.Since(started).Milliseconds()
 		return AdapterOutput{ToolRun: run}, err
 	}
@@ -78,7 +78,7 @@ func (a HTTPProbe) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	normalized, _ := json.Marshal(evidence)
 	target := input.Target
 	target.IsAlive = resp.StatusCode > 0 && resp.StatusCode < 600
-	run.StdoutRaw = string(normalized)
+	run.RawStdout = string(normalized)
 	run.DurationMS = time.Since(started).Milliseconds()
 	now := time.Now().UTC()
 	run.NormalizedAt = &now

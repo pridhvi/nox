@@ -60,7 +60,7 @@ func SessionDBPath(dir, sessionID string) (string, error) {
 	if !validSessionID(sessionID) {
 		return "", fmt.Errorf("invalid session id %q", sessionID)
 	}
-	return filepath.Join(dir, sessionID+".db"), nil
+	return filepath.Join(dir, sessionID, "session.db"), nil
 }
 
 func CreateSessionDB(ctx context.Context, dir string, session models.Session, target models.Target) (SessionRecord, error) {
@@ -514,7 +514,7 @@ func (s *Store) InsertToolRun(ctx context.Context, run models.ToolRun) error {
 	}
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO tool_runs (
-	id, session_id, target_id, tool_id, args, stdout_raw, stderr_raw, exit_code,
+	id, session_id, target_id, tool_id, args, stdout_path, stderr_path, exit_code,
 	duration_ms, finding_count, normalized_at, started_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		run.ID,
@@ -522,8 +522,8 @@ INSERT INTO tool_runs (
 		nullableString(run.TargetID),
 		run.ToolID,
 		string(args),
-		run.StdoutRaw,
-		run.StderrRaw,
+		run.StdoutPath,
+		run.StderrPath,
 		run.ExitCode,
 		run.DurationMS,
 		run.FindingCount,
@@ -770,7 +770,7 @@ ORDER BY name ASC`)
 
 func (s *Store) ListToolRuns(ctx context.Context, sessionID string) ([]models.ToolRun, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, session_id, COALESCE(target_id, ''), tool_id, args, stdout_raw, stderr_raw,
+SELECT id, session_id, COALESCE(target_id, ''), tool_id, args, stdout_path, stderr_path,
        exit_code, duration_ms, finding_count, normalized_at, started_at
 FROM tool_runs
 WHERE session_id = ?
@@ -837,10 +837,13 @@ func ListSessions(ctx context.Context, dir string) ([]SessionRecord, error) {
 	}
 	records := make([]SessionRecord, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".db" {
+		if !entry.IsDir() || !validSessionID(entry.Name()) {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
+		path := filepath.Join(dir, entry.Name(), "session.db")
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
 		store, err := Open(ctx, path)
 		if err != nil {
 			continue
@@ -882,10 +885,11 @@ func DeleteSession(ctx context.Context, dir, sessionID string) error {
 		return err
 	}
 	path := store.Path()
+	sessionDir := filepath.Dir(path)
 	if err := store.Close(); err != nil {
 		return err
 	}
-	return os.Remove(path)
+	return os.RemoveAll(sessionDir)
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -1266,8 +1270,8 @@ func scanToolRun(row rowScanner) (models.ToolRun, error) {
 		&run.TargetID,
 		&run.ToolID,
 		&args,
-		&run.StdoutRaw,
-		&run.StderrRaw,
+		&run.StdoutPath,
+		&run.StderrPath,
 		&run.ExitCode,
 		&run.DurationMS,
 		&run.FindingCount,

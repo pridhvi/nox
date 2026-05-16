@@ -124,8 +124,8 @@ func TestSessionTargetToolRunSerializationAndValidation(t *testing.T) {
 		TargetID:     "target-1",
 		ToolID:       "nmap",
 		Args:         []string{"-sV", "example.test"},
-		StdoutRaw:    "stdout",
-		StderrRaw:    "stderr",
+		StdoutPath:   "/tmp/run.stdout.log",
+		StderrPath:   "/tmp/run.stderr.log",
 		ExitCode:     0,
 		DurationMS:   456,
 		FindingCount: 1,
@@ -136,8 +136,8 @@ func TestSessionTargetToolRunSerializationAndValidation(t *testing.T) {
 		t.Fatalf("expected tool run to validate: %v", err)
 	}
 	assertJSONFields(t, run, []string{
-		"id", "session_id", "target_id", "tool_id", "args", "stdout_raw",
-		"stderr_raw", "exit_code", "duration_ms", "finding_count",
+		"id", "session_id", "target_id", "tool_id", "args", "stdout_path",
+		"stderr_path", "exit_code", "duration_ms", "finding_count",
 		"normalized_at", "started_at",
 	})
 }

@@ -116,7 +116,7 @@ func (a GraphQLIntrospection) Run(ctx context.Context, input AdapterInput) (Adap
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	findings := parseGraphQLIntrospection(input, endpoint, resp.StatusCode, string(respBody))
-	run.StdoutRaw = string(respBody)
+	run.RawStdout = string(respBody)
 	run.ExitCode = 0
 	run.FindingCount = len(findings)
 	run.DurationMS = time.Since(run.StartedAt).Milliseconds()
@@ -164,7 +164,7 @@ func (a OpenAPIDiscovery) Run(ctx context.Context, input AdapterInput) (AdapterO
 		raw = append(raw, fmt.Sprintf("%s status=%d body=%s", endpoint, resp.StatusCode, string(body)))
 		findings = append(findings, parseOpenAPIDocument(input, endpoint, resp.StatusCode, string(body))...)
 	}
-	run.StdoutRaw = strings.Join(raw, "\n")
+	run.RawStdout = strings.Join(raw, "\n")
 	run.ExitCode = 0
 	run.FindingCount = len(findings)
 	run.DurationMS = time.Since(run.StartedAt).Milliseconds()

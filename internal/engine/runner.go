@@ -3,7 +3,10 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -31,6 +34,7 @@ type RunnerOptions struct {
 	PerToolConcurrency int
 	ToolDelay          time.Duration
 	ToolTimeout        time.Duration
+	Lean               bool
 }
 
 func NewRunner(store *db.Store) *Runner {
@@ -406,11 +410,49 @@ func (r *Runner) persist(ctx context.Context, sessionID string, output adapters.
 		})
 	}
 	if output.ToolRun.ID != "" {
-		if err := r.store.InsertToolRun(ctx, output.ToolRun); err != nil {
+		run := output.ToolRun
+		stdoutPath, stderrPath := r.writeRunLogs(sessionID, run.ID, run.RawStdout, run.RawStderr)
+		run.StdoutPath = stdoutPath
+		run.StderrPath = stderrPath
+		if r.options.Lean {
+			removeRunLog(stdoutPath)
+			removeRunLog(stderrPath)
+			run.StdoutPath = ""
+			run.StderrPath = ""
+		}
+		if err := r.store.InsertToolRun(ctx, run); err != nil {
 			return err
 		}
 	}
 	return r.store.UpdateSessionCounts(ctx, sessionID)
+}
+
+func (r *Runner) writeRunLogs(sessionID, runID, stdout, stderr string) (string, string) {
+	if r.store == nil || runID == "" {
+		return "", ""
+	}
+	dir := filepath.Join(filepath.Dir(r.store.Path()), "runs")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		slog.Error("create tool run log directory", "session_id", sessionID, "run_id", runID, "error", err)
+		return "", ""
+	}
+	stdoutPath := filepath.Join(dir, runID+".stdout.log")
+	stderrPath := filepath.Join(dir, runID+".stderr.log")
+	if err := os.WriteFile(stdoutPath, []byte(stdout), 0o640); err != nil {
+		slog.Error("write tool stdout log", "session_id", sessionID, "run_id", runID, "error", err)
+		stdoutPath = ""
+	}
+	if err := os.WriteFile(stderrPath, []byte(stderr), 0o640); err != nil {
+		slog.Error("write tool stderr log", "session_id", sessionID, "run_id", runID, "error", err)
+		stderrPath = ""
+	}
+	return stdoutPath, stderrPath
+}
+
+func removeRunLog(path string) {
+	if path != "" {
+		_ = os.Remove(path)
+	}
 }
 
 type adapterRunResult struct {

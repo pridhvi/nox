@@ -96,7 +96,7 @@ func (a JavaScriptSecretScan) Run(ctx context.Context, input AdapterInput) (Adap
 		client = http.DefaultClient
 	}
 	raw, findings := fetchAndScanScripts(ctx, input, client, rawURL)
-	run.StdoutRaw = raw
+	run.RawStdout = raw
 	run.ExitCode = 0
 	run.FindingCount = len(findings)
 	run.DurationMS = time.Since(run.StartedAt).Milliseconds()
@@ -143,7 +143,7 @@ func (a CORSCheck) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	}
 	normalized, _ := json.Marshal(headers)
 	findings := parseCORSFindings(input, rawURL, origin, headers, string(normalized))
-	run.StdoutRaw = string(normalized)
+	run.RawStdout = string(normalized)
 	run.ExitCode = 0
 	run.FindingCount = len(findings)
 	run.DurationMS = time.Since(run.StartedAt).Milliseconds()
@@ -186,7 +186,7 @@ func (a CloudBucketCheck) Run(ctx context.Context, input AdapterInput) (AdapterO
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	findings := parseCloudBucketFindings(input, rawURL, resp.StatusCode, string(body))
-	run.StdoutRaw = string(body)
+	run.RawStdout = string(body)
 	run.ExitCode = 0
 	run.FindingCount = len(findings)
 	run.DurationMS = time.Since(run.StartedAt).Milliseconds()

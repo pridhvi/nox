@@ -61,7 +61,7 @@ func TestConfiguredPluginMissingBinaryReturnsFailedToolRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output.ToolRun.ExitCode == 0 || output.ToolRun.StderrRaw == "" {
+	if output.ToolRun.ExitCode == 0 || output.ToolRun.RawStderr == "" {
 		t.Fatalf("expected failed tool run, got %#v", output.ToolRun)
 	}
 }

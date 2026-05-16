@@ -8,8 +8,10 @@ type ToolRun struct {
 	TargetID     string     `json:"target_id,omitempty"`
 	ToolID       string     `json:"tool_id"`
 	Args         []string   `json:"args"`
-	StdoutRaw    string     `json:"stdout_raw"`
-	StderrRaw    string     `json:"stderr_raw"`
+	StdoutPath   string     `json:"stdout_path"`
+	StderrPath   string     `json:"stderr_path"`
+	RawStdout    string     `json:"-"`
+	RawStderr    string     `json:"-"`
 	ExitCode     int        `json:"exit_code"`
 	DurationMS   int64      `json:"duration_ms"`
 	FindingCount int        `json:"finding_count"`

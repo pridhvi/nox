@@ -110,6 +110,26 @@ func TestSessionAPI(t *testing.T) {
 			t.Fatalf("expected tool run %s in %#v", toolID, runIDs)
 		}
 	}
+	var runWithLog models.ToolRun
+	for _, run := range decodedRuns {
+		if run.StdoutPath != "" {
+			runWithLog = run
+			break
+		}
+	}
+	if runWithLog.ID == "" {
+		t.Fatalf("expected at least one tool run stdout sidecar, got %#v", decodedRuns)
+	}
+	stdout := httptest.NewRecorder()
+	handler.ServeHTTP(stdout, httptest.NewRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/tool-runs/"+runWithLog.ID+"/stdout", nil))
+	if stdout.Code != http.StatusOK {
+		t.Fatalf("stdout status = %d body=%s", stdout.Code, stdout.Body.String())
+	}
+	missingLog := httptest.NewRecorder()
+	handler.ServeHTTP(missingLog, httptest.NewRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/tool-runs/not-a-run/stdout", nil))
+	if missingLog.Code != http.StatusNotFound || !strings.Contains(missingLog.Body.String(), "log file not available") {
+		t.Fatalf("missing log status = %d body=%s", missingLog.Code, missingLog.Body.String())
+	}
 
 	stats := httptest.NewRecorder()
 	handler.ServeHTTP(stats, httptest.NewRequest(http.MethodGet, "/api/sessions/"+created.Session.ID+"/stats", nil))

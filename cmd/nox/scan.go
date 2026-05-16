@@ -26,6 +26,7 @@ func runScan(args []string) error {
 	noLLM := fs.Bool("no-llm", false, "disable post-scan LLM analysis")
 	concurrency := fs.Int("concurrency", 0, "global scan concurrency")
 	rateLimit := fs.String("rate-limit", "", "rate limit label for config compatibility")
+	lean := fs.Bool("lean", false, "delete raw tool run sidecar logs after normalization")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -72,8 +73,8 @@ func runScan(args []string) error {
 	}
 	defer store.Close()
 	runner := engine.NewRunner(store)
-	if *concurrency > 0 {
-		runner = engine.NewRunnerWithOptions(store, engine.DefaultSafeAdapters(), nil, engine.RunnerOptions{GlobalConcurrency: *concurrency, PerToolConcurrency: 1})
+	if *concurrency > 0 || *lean {
+		runner = engine.NewRunnerWithOptions(store, engine.DefaultSafeAdapters(), nil, engine.RunnerOptions{GlobalConcurrency: *concurrency, PerToolConcurrency: 1, Lean: *lean})
 	}
 	scanErr := runner.Run(context.Background(), record.Session)
 

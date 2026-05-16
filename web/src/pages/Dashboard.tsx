@@ -107,12 +107,7 @@ export function Dashboard() {
   const terminalLines = useMemo(() => {
     const lines = scanEvents.map((event) => event.message ?? event.finding_title ?? `${event.type}${event.tool_id ? ` ${event.tool_id}` : ""}`);
     for (const run of (toolRunsQuery.data ?? []).slice(0, 8)) {
-      if (run.stdout_raw) {
-        lines.push(`${run.tool_id}: ${run.stdout_raw.split("\n").find(Boolean) ?? "stdout captured"}`);
-      }
-      if (run.stderr_raw) {
-        lines.push(`${run.tool_id}: ${run.stderr_raw.split("\n").find(Boolean) ?? "stderr captured"}`);
-      }
+      lines.push(`${run.tool_id}: exit=${run.exit_code} findings=${run.finding_count}`);
     }
     return lines.slice(0, 18);
   }, [scanEvents, toolRunsQuery.data]);

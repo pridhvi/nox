@@ -3,8 +3,10 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,7 +41,7 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 			t.Fatalf("expected table %s: %v", table, err)
 		}
 	}
-	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console"} {
+	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars"} {
 		var got string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, version).Scan(&got); err != nil {
 			t.Fatalf("expected migration %s: %v", version, err)
@@ -81,6 +83,9 @@ func TestCreateListShowDeleteSessionLifecycle(t *testing.T) {
 	}
 	if _, err := os.Stat(record.DBPath); err != nil {
 		t.Fatal(err)
+	}
+	if filepath.Base(record.DBPath) != "session.db" || filepath.Base(filepath.Dir(record.DBPath)) != session.ID {
+		t.Fatalf("expected directory session layout, got %q", record.DBPath)
 	}
 
 	records, err := ListSessions(ctx, dir)
@@ -130,6 +135,9 @@ func TestCreateListShowDeleteSessionLifecycle(t *testing.T) {
 	if _, err := os.Stat(record.DBPath); !os.IsNotExist(err) {
 		t.Fatalf("expected deleted db, got err %v", err)
 	}
+	if _, err := os.Stat(filepath.Dir(record.DBPath)); !os.IsNotExist(err) {
+		t.Fatalf("expected deleted session directory, got err %v", err)
+	}
 }
 
 func TestListSessionsSkipsNonSessionFiles(t *testing.T) {
@@ -139,6 +147,10 @@ func TestListSessionsSkipsNonSessionFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "broken.db"), []byte("not sqlite"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacy := models.NewID()
+	if err := os.WriteFile(filepath.Join(dir, legacy+".db"), []byte("legacy"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	session := models.Session{
@@ -159,6 +171,9 @@ func TestListSessionsSkipsNonSessionFiles(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].Session.ID != session.ID {
 		t.Fatalf("unexpected records: %#v", records)
+	}
+	if _, err := OpenSession(ctx, dir, legacy); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected legacy flat db to be ignored, got %v", err)
 	}
 }
 
@@ -382,7 +397,9 @@ func TestExistingInitialDatabaseMigratesToPhase2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.ExecContext(ctx, string(body)); err != nil {
+	oldInitial := strings.ReplaceAll(string(body), "stdout_path", "stdout_raw")
+	oldInitial = strings.ReplaceAll(oldInitial, "stderr_path", "stderr_raw")
+	if _, err := database.ExecContext(ctx, oldInitial); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.ExecContext(ctx, `INSERT INTO schema_migrations (version, applied_at) VALUES ('001_initial', ?)`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
@@ -408,10 +425,25 @@ func TestExistingInitialDatabaseMigratesToPhase2(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plugins'`).Scan(&pluginTable); err != nil {
 		t.Fatalf("expected plugins table after migration: %v", err)
 	}
-	for _, expected := range []string{"002_phase2_persistence", "003_operator_console"} {
+	for _, expected := range []string{"002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars"} {
 		var version string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, expected).Scan(&version); err != nil {
 			t.Fatalf("expected %s migration record: %v", expected, err)
+		}
+	}
+	for _, column := range []string{"stdout_path", "stderr_path"} {
+		var name string
+		if err := store.db.QueryRowContext(ctx, `SELECT name FROM pragma_table_info('tool_runs') WHERE name = ?`, column).Scan(&name); err != nil {
+			t.Fatalf("expected tool_runs.%s after migration: %v", column, err)
+		}
+	}
+	for _, column := range []string{"stdout_raw", "stderr_raw"} {
+		var count int
+		if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('tool_runs') WHERE name = ?`, column).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("expected tool_runs.%s to be removed", column)
 		}
 	}
 }
@@ -440,11 +472,12 @@ func createTestStore(t *testing.T, ctx context.Context) (models.Session, models.
 		CreatedAt:   time.Now().UTC(),
 	}
 	target := testTarget(session.ID, "example.com", 443, "https")
-	record, err := CreateSessionDB(ctx, t.TempDir(), session, target)
+	sessionDir := t.TempDir()
+	_, err := CreateSessionDB(ctx, sessionDir, session, target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := OpenSession(ctx, filepath.Dir(record.DBPath), session.ID)
+	store, err := OpenSession(ctx, sessionDir, session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

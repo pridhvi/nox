@@ -101,6 +101,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/findings", s.listFindings)
 	mux.HandleFunc("PATCH /api/sessions/{id}/findings/{finding_id}", s.updateFinding)
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs", s.listToolRuns)
+	mux.HandleFunc("GET /api/sessions/{id}/tool-runs/{run_id}/stdout", s.toolRunLog("stdout"))
+	mux.HandleFunc("GET /api/sessions/{id}/tool-runs/{run_id}/stderr", s.toolRunLog("stderr"))
 	mux.HandleFunc("GET /api/sessions/{id}/plugins", s.listPlugins)
 	mux.HandleFunc("POST /api/sessions/{id}/plugins", s.upsertPlugin)
 	mux.HandleFunc("PATCH /api/sessions/{id}/plugins/{plugin_id}", s.updatePlugin)
@@ -963,6 +965,74 @@ func (s *Server) listToolRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, runs)
+}
+
+func (s *Server) toolRunLog(stream string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		store, err := db.OpenSession(r.Context(), s.cfg.SessionDir, r.PathValue("id"))
+		if err != nil {
+			writeDBError(w, err)
+			return
+		}
+		defer store.Close()
+		session, err := store.GetSession(r.Context())
+		if err != nil {
+			writeDBError(w, err)
+			return
+		}
+		runs, err := store.ListToolRuns(r.Context(), session.ID)
+		if err != nil {
+			writeDBError(w, err)
+			return
+		}
+		var logPath string
+		for _, run := range runs {
+			if run.ID != r.PathValue("run_id") {
+				continue
+			}
+			if stream == "stderr" {
+				logPath = run.StderrPath
+			} else {
+				logPath = run.StdoutPath
+			}
+			break
+		}
+		if logPath == "" || !pathInside(filepath.Dir(store.Path()), logPath) {
+			writeLogUnavailable(w)
+			return
+		}
+		body, err := os.ReadFile(logPath)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				writeLogUnavailable(w)
+				return
+			}
+			writeDBError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(body)
+	}
+}
+
+func writeLogUnavailable(w http.ResponseWriter) {
+	writeJSONStatus(w, http.StatusNotFound, map[string]any{
+		"available": false,
+		"reason":    "log file not available",
+	})
+}
+
+func pathInside(root, candidate string) bool {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	candidate, err = filepath.Abs(candidate)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, candidate)
+	return err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
 }
 
 func (s *Server) sessionStats(w http.ResponseWriter, r *http.Request) {

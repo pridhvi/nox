@@ -46,8 +46,8 @@ func newToolRun(input AdapterInput, toolID string, args []string) models.ToolRun
 }
 
 func finishToolRun(run models.ToolRun, result CommandResult, findingCount int) models.ToolRun {
-	run.StdoutRaw = result.Stdout
-	run.StderrRaw = result.Stderr
+	run.RawStdout = result.Stdout
+	run.RawStderr = result.Stderr
 	run.ExitCode = result.ExitCode
 	run.DurationMS = result.DurationMS
 	run.FindingCount = findingCount
@@ -58,7 +58,7 @@ func finishToolRun(run models.ToolRun, result CommandResult, findingCount int) m
 
 func failedToolRun(input AdapterInput, toolID string, args []string, message string, exitCode int) models.ToolRun {
 	run := newToolRun(input, toolID, args)
-	run.StderrRaw = message
+	run.RawStderr = message
 	run.ExitCode = exitCode
 	run.DurationMS = time.Since(run.StartedAt).Milliseconds()
 	now := time.Now().UTC()

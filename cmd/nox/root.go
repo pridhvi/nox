@@ -62,6 +62,7 @@ Usage:
   nox sessions delete <id>
   nox sessions findings <id>
   nox sessions runs <id>
+  nox sessions export <id> --output session.zip
   nox plugins list
   nox plugins install --name custom --phase vuln_scan <path>
   nox report <session-id> --format html|pdf|md --output report.html

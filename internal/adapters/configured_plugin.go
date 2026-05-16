@@ -51,7 +51,7 @@ func (p ConfiguredPlugin) Run(ctx context.Context, input AdapterInput) (AdapterO
 	}
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		run.ExitCode = 1
-		run.StderrRaw = reason
+		run.RawStderr = reason
 		run.DurationMS = time.Since(started).Milliseconds()
 		now := time.Now().UTC()
 		run.NormalizedAt = &now
@@ -70,7 +70,7 @@ func (p ConfiguredPlugin) Run(ctx context.Context, input AdapterInput) (AdapterO
 	run.NormalizedAt = &now
 	if err != nil {
 		run.ExitCode = 1
-		run.StderrRaw = err.Error()
+		run.RawStderr = err.Error()
 		return AdapterOutput{ToolRun: run}, nil
 	}
 	normalized := map[string]any{
@@ -82,10 +82,10 @@ func (p ConfiguredPlugin) Run(ctx context.Context, input AdapterInput) (AdapterO
 	body, marshalErr := marshalPluginSummary(normalized)
 	if marshalErr != nil {
 		run.ExitCode = 1
-		run.StderrRaw = marshalErr.Error()
+		run.RawStderr = marshalErr.Error()
 		return AdapterOutput{ToolRun: run}, nil
 	}
-	run.StdoutRaw = body
+	run.RawStdout = body
 	run.FindingCount = len(resp.Findings)
 	normalizePluginOutput(input, p.ID(), &resp)
 	return AdapterOutput{

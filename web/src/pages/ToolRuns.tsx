@@ -1,12 +1,22 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listToolRuns, type ToolRun } from "../api/client";
+import { getToolRunLog, listToolRuns, type ToolRun } from "../api/client";
 import { useSessionContext } from "../session";
 
 export function ToolRuns() {
   const { selectedSessionID } = useSessionContext();
   const [selectedRun, setSelectedRun] = useState<ToolRun | null>(null);
   const runsQuery = useQuery({ queryKey: ["tool-runs", selectedSessionID], queryFn: () => listToolRuns(selectedSessionID), enabled: selectedSessionID !== "" });
+  const stdoutQuery = useQuery({
+    queryKey: ["tool-run-log", selectedSessionID, selectedRun?.id, "stdout"],
+    queryFn: () => getToolRunLog(selectedSessionID, selectedRun!.id, "stdout"),
+    enabled: selectedSessionID !== "" && selectedRun != null,
+  });
+  const stderrQuery = useQuery({
+    queryKey: ["tool-run-log", selectedSessionID, selectedRun?.id, "stderr"],
+    queryFn: () => getToolRunLog(selectedSessionID, selectedRun!.id, "stderr"),
+    enabled: selectedSessionID !== "" && selectedRun != null,
+  });
   const runs = runsQuery.data ?? [];
   return (
     <section className="page wide-page">
@@ -26,7 +36,31 @@ export function ToolRuns() {
           </table>
         </div>
       </section>
-      {selectedRun ? <section className="panel finding-detail-panel"><h2>{selectedRun.tool_id}</h2><div className="evidence-grid"><article><h3>stdout</h3><pre>{selectedRun.stdout_raw || "-"}</pre></article><article><h3>stderr</h3><pre>{selectedRun.stderr_raw || "-"}</pre></article></div></section> : null}
+      {selectedRun ? (
+        <section className="panel finding-detail-panel">
+          <h2>{selectedRun.tool_id}</h2>
+          <div className="evidence-grid">
+            <LogPanel title="stdout" value={stdoutQuery.data} loading={stdoutQuery.isLoading} />
+            <LogPanel title="stderr" value={stderrQuery.data} loading={stderrQuery.isLoading} />
+          </div>
+        </section>
+      ) : null}
     </section>
+  );
+}
+
+function LogPanel({ title, value, loading }: { title: string; value?: string | null; loading: boolean }) {
+  return (
+    <article>
+      <h3>{title}</h3>
+      {loading ? <pre>Loading...</pre> : null}
+      {!loading && value != null ? <pre>{value || "-"}</pre> : null}
+      {!loading && value == null ? (
+        <div className="empty-state">
+          <strong>Raw output not available</strong>
+          <p>The log file for this tool run has been deleted or moved. Findings and evidence are still intact.</p>
+        </div>
+      ) : null}
+    </article>
   );
 }

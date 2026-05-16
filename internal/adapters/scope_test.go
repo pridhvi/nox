@@ -40,7 +40,7 @@ func TestHTTPAdaptersRejectOutOfScopeBeforeNetwork(t *testing.T) {
 			if client.calls != 0 {
 				t.Fatalf("expected no network calls, got %d", client.calls)
 			}
-			if output.ToolRun.ID == "" || output.ToolRun.ExitCode == 0 || output.ToolRun.StderrRaw == "" {
+			if output.ToolRun.ID == "" || output.ToolRun.ExitCode == 0 || output.ToolRun.RawStderr == "" {
 				t.Fatalf("expected failed tool run for scope rejection, got %#v", output.ToolRun)
 			}
 		})

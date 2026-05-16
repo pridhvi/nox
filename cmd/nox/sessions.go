@@ -1,10 +1,15 @@
 package nox
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/pridhvi/nox/internal/config"
@@ -13,7 +18,7 @@ import (
 
 func runSessions(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("supported sessions commands: list, show <id>, delete <id>")
+		return fmt.Errorf("supported sessions commands: list, show <id>, delete <id>, export <id> --output <file.zip>")
 	}
 	switch args[0] {
 	case "list":
@@ -38,8 +43,10 @@ func runSessions(args []string) error {
 			return fmt.Errorf("sessions runs requires a session id")
 		}
 		return listToolRuns(args[1])
+	case "export":
+		return exportSession(args[1:])
 	default:
-		return fmt.Errorf("supported sessions commands: list, show <id>, delete <id>, findings <id>, runs <id>")
+		return fmt.Errorf("supported sessions commands: list, show <id>, delete <id>, findings <id>, runs <id>, export <id> --output <file.zip>")
 	}
 }
 
@@ -187,6 +194,85 @@ func listToolRuns(sessionID string) error {
 		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%s\n", run.ToolID, run.ExitCode, run.DurationMS, run.FindingCount, run.StartedAt.Format("2006-01-02 15:04:05"))
 	}
 	return w.Flush()
+}
+
+func exportSession(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("sessions export requires a session id")
+	}
+	sessionID := args[0]
+	fs := flag.NewFlagSet("sessions export", flag.ContinueOnError)
+	output := fs.String("output", "", "output zip file")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*output) == "" {
+		return fmt.Errorf("sessions export requires --output <file.zip>")
+	}
+	sessionDir, cfgErr := configuredSessionDir("")
+	if cfgErr != nil {
+		return cfgErr
+	}
+	store, err := db.OpenSession(context.Background(), sessionDir, sessionID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return fmt.Errorf("session %s not found", sessionID)
+		}
+		return err
+	}
+	if _, err := store.GetSession(context.Background()); err != nil {
+		store.Close()
+		return err
+	}
+	root := filepath.Dir(store.Path())
+	if err := store.Close(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(*output), 0o755); err != nil && filepath.Dir(*output) != "." {
+		return err
+	}
+	file, err := os.Create(*output)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	archive := zip.NewWriter(file)
+	defer archive.Close()
+	runsCount := 0
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(rel, "runs"+string(filepath.Separator)) {
+			runsCount++
+		}
+		writer, err := archive.Create(filepath.ToSlash(rel))
+		if err != nil {
+			return err
+		}
+		input, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer input.Close()
+		_, err = io.Copy(writer, input)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("exported session %s to %s\n", sessionID, *output)
+	if runsCount == 0 {
+		fmt.Println("note: no run log files were included")
+	}
+	return nil
 }
 
 func configuredSessionDir(configPath string) (string, error) {

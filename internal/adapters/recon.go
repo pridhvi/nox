@@ -176,7 +176,7 @@ func (a CrtSH) Run(ctx context.Context, input AdapterInput) (AdapterOutput, erro
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, err.Error(), 1)}, nil
 	}
 	targets := parseCrtSHTargets(input, rows)
-	run.StdoutRaw = fmt.Sprintf("crt.sh targets: %d", len(targets))
+	run.RawStdout = fmt.Sprintf("crt.sh targets: %d", len(targets))
 	run.FindingCount = len(targets)
 	run.DurationMS = time.Since(run.StartedAt).Milliseconds()
 	now := time.Now().UTC()

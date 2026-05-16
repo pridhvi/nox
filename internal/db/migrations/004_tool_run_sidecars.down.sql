@@ -1,0 +1,1 @@
+-- SQLite cannot drop columns without rebuilding the table on older runtimes.

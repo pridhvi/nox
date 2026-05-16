@@ -42,11 +42,11 @@ Nox improves on this concept in every dimension:
 ## 2. Design Principles
 
 1. **Scope-first.** The user defines target scope before any scan starts. Hard blocks prevent out-of-scope requests. Every tool adapter respects scope.
-2. **Evidence-first.** Every finding stores raw evidence (full HTTP request/response, raw tool stdout) alongside the normalized result. Nothing is discarded.
+2. **Evidence-first.** Every finding stores raw evidence excerpts and full HTTP request/response data in SQLite, while full tool stdout/stderr is retained as session sidecar logs unless lean mode is requested.
 3. **Normalize everything.** Every tool, regardless of output format, writes to the same `Finding` struct before anything is persisted or analysed.
 4. **DAG, not sequence.** Tools run in dependency order. Phase 1 results unlock Phase 2 tools automatically. Phases parallelize where safe.
 5. **LLM augments, rules decide.** The attack vector engine is rule-based first, LLM-enhanced second. Don't rely on LLM reasoning for correctness-critical logic.
-6. **One file per engagement.** A single SQLite `.db` file contains the complete record of a scan session. Easy to back up, archive, and share.
+6. **One directory per engagement.** Each session directory contains `session.db` plus optional `runs/` sidecar logs, and can be exported as a zip for sharing.
 7. **Zero required config.** `nox scan --target example.com` should work out of the box with sensible defaults. Everything else is opt-in.
 8. **Air-gap capable.** Can run fully offline with a local LLM and an offline CVE mirror. No external dependencies required.
 
@@ -141,7 +141,7 @@ The frontend is built with `vite build` and the output `dist/` directory is embe
 
 ### 3.4 Database
 
-- **Default:** SQLite via `modernc.org/sqlite` (pure Go, no CGO, single `.db` file per session)
+- **Default:** SQLite via `modernc.org/sqlite` (pure Go, no CGO, one `session.db` per session directory)
 - **Optional:** PostgreSQL via `pgx/v5` for multi-user team deployments
 - **Migration tool:** `golang-migrate` with numbered SQL files in `internal/db/migrations/`
 - **Query layer:** `sqlc` — write `.sql` query files, generate type-safe Go code. Do NOT use an ORM.
@@ -532,8 +532,8 @@ type ToolRun struct {
     TargetID     string    `json:"target_id,omitempty"`
     ToolID       string    `json:"tool_id"`
     Args         []string  `json:"args"`
-    StdoutRaw    string    `json:"stdout_raw"`
-    StderrRaw    string    `json:"stderr_raw"`
+    StdoutPath   string    `json:"stdout_path"`
+    StderrPath   string    `json:"stderr_path"`
     ExitCode     int       `json:"exit_code"`
     DurationMS   int64     `json:"duration_ms"`
     FindingCount int       `json:"finding_count"` // findings produced by this run
@@ -669,8 +669,8 @@ CREATE TABLE tool_runs (
     target_id      TEXT REFERENCES targets(id) ON DELETE SET NULL,
     tool_id        TEXT NOT NULL,
     args           TEXT NOT NULL DEFAULT '[]',  -- JSON array
-    stdout_raw     TEXT NOT NULL DEFAULT '',
-    stderr_raw     TEXT NOT NULL DEFAULT '',
+    stdout_path    TEXT NOT NULL DEFAULT '',
+    stderr_path    TEXT NOT NULL DEFAULT '',
     exit_code      INTEGER NOT NULL DEFAULT 0,
     duration_ms    INTEGER NOT NULL DEFAULT 0,
     finding_count  INTEGER NOT NULL DEFAULT 0,
@@ -1496,7 +1496,7 @@ llm:
 # Database settings
 database:
   driver: sqlite            # sqlite | postgres
-  path: ~/.nox/data/        # SQLite: directory where .db files are stored
+  path: ~/.nox/data/        # SQLite: directory where session directories are stored
   # PostgreSQL only:
   # host: localhost
   # port: 5432
@@ -1569,7 +1569,7 @@ Any adapter that attempts to connect to an out-of-scope host must receive an err
 
 - Use Go's stdlib `log/slog` throughout (structured JSON logging).
 - Log level configurable: `debug | info | warn | error`
-- Tool adapter failures are non-fatal: log the error, record it in `tool_runs.stderr_raw`, continue the scan.
+- Tool adapter failures are non-fatal: log the error, write stderr to the run sidecar log when log retention is enabled, continue the scan.
 - A scan fails (status = "failed") only if the session-level context is cancelled or an unrecoverable DB error occurs.
 - Every tool run writes a `ToolRun` record regardless of success or failure.
 

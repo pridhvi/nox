@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -25,7 +26,7 @@ func TestRunnerTreatsAdapterErrorAsNonFatal(t *testing.T) {
 				SessionID: session.ID,
 				ToolID:    "nonfatal",
 				ExitCode:  1,
-				StderrRaw: "tool failed",
+				RawStderr: "tool failed",
 				StartedAt: time.Now().UTC(),
 			},
 		},
@@ -48,6 +49,16 @@ func TestRunnerTreatsAdapterErrorAsNonFatal(t *testing.T) {
 	if len(runs) != 1 || runs[0].ExitCode != 1 {
 		t.Fatalf("expected failed tool run to persist, got %#v", runs)
 	}
+	if runs[0].StderrPath == "" {
+		t.Fatalf("expected stderr sidecar path, got %#v", runs[0])
+	}
+	body, err := os.ReadFile(runs[0].StderrPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "tool failed" {
+		t.Fatalf("expected stderr sidecar content, got %q", string(body))
+	}
 }
 
 func TestRunnerCancellationSetsCancelledStatus(t *testing.T) {
@@ -65,7 +76,7 @@ func TestRunnerCancellationSetsCancelledStatus(t *testing.T) {
 					SessionID: input.Session.ID,
 					ToolID:    "blocking",
 					ExitCode:  1,
-					StderrRaw: ctx.Err().Error(),
+					RawStderr: ctx.Err().Error(),
 					StartedAt: time.Now().UTC(),
 				}}, ctx.Err()
 			},
@@ -88,6 +99,44 @@ func TestRunnerCancellationSetsCancelledStatus(t *testing.T) {
 	}
 	if got.Status != models.SessionStatusCancelled {
 		t.Fatalf("expected cancelled session, got %s", got.Status)
+	}
+}
+
+func TestRunnerLeanModeDropsSidecarLogs(t *testing.T) {
+	ctx := context.Background()
+	session, store := testRunnerStore(t, ctx)
+	runner := NewRunnerWithOptions(store, []adapters.Adapter{
+		fakeRunnerAdapter{
+			id: "lean",
+			run: models.ToolRun{
+				ID:        models.NewID(),
+				SessionID: session.ID,
+				ToolID:    "lean",
+				RawStdout: "large output",
+				StartedAt: time.Now().UTC(),
+			},
+		},
+	}, nil, RunnerOptions{GlobalConcurrency: 1, PerToolConcurrency: 1, Lean: true})
+
+	if err := runner.Run(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := store.ListToolRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected one tool run, got %#v", runs)
+	}
+	if runs[0].StdoutPath != "" || runs[0].StderrPath != "" {
+		t.Fatalf("expected lean mode to persist empty log paths, got %#v", runs[0])
+	}
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(store.Path()), "runs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected lean mode to remove sidecar logs, got %d files", len(entries))
 	}
 }
 
@@ -401,11 +450,12 @@ func testRunnerStore(t *testing.T, ctx context.Context) (models.Session, *db.Sto
 		DiscoveredBy: "test",
 		CreatedAt:    time.Now().UTC(),
 	}
-	record, err := db.CreateSessionDB(ctx, t.TempDir(), session, target)
+	sessionDir := t.TempDir()
+	_, err := db.CreateSessionDB(ctx, sessionDir, session, target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := db.OpenSession(ctx, filepath.Dir(record.DBPath), session.ID)
+	store, err := db.OpenSession(ctx, sessionDir, session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

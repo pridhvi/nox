@@ -205,16 +205,13 @@ func remediationMarkdown(findings []models.Finding, cves []models.CVEMatch) stri
 	return strings.TrimSpace(b.String())
 }
 
-func rawEvidenceMarkdown(findings []models.Finding, runs []models.ToolRun) string {
+func rawEvidenceMarkdown(findings []models.Finding, _ []models.ToolRun) string {
 	var b strings.Builder
 	for _, finding := range findings {
 		fmt.Fprintf(&b, "### %s\n\nRaw evidence:\n\n```text\n%s\n```\n\n", finding.Title, truncate(finding.EvidenceRaw, 2000))
 		if finding.HTTPEvidence != nil {
 			fmt.Fprintf(&b, "HTTP request:\n\n```text\n%s\n```\n\nHTTP response:\n\n```text\n%s\n```\n\n", truncate(finding.HTTPEvidence.RequestRaw, 2000), truncate(finding.HTTPEvidence.ResponseRaw, 2000))
 		}
-	}
-	for _, run := range runs {
-		fmt.Fprintf(&b, "### Tool run: %s\n\nstdout:\n\n```text\n%s\n```\n\nstderr:\n\n```text\n%s\n```\n\n", run.ToolID, truncate(run.StdoutRaw, 2000), truncate(run.StderrRaw, 2000))
 	}
 	if strings.TrimSpace(b.String()) == "" {
 		return "No raw evidence is available."

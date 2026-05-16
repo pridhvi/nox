@@ -122,8 +122,8 @@ export type ToolRun = {
   target_id?: string;
   tool_id: string;
   args: string[];
-  stdout_raw: string;
-  stderr_raw: string;
+  stdout_path: string;
+  stderr_path: string;
   exit_code: number;
   duration_ms: number;
   finding_count: number;
@@ -315,6 +315,17 @@ export function updateFinding(sessionID: string, findingID: string, payload: { s
 
 export function listToolRuns(sessionID: string) {
   return api<ToolRun[]>(`/api/sessions/${sessionID}/tool-runs`);
+}
+
+export async function getToolRunLog(sessionID: string, runID: string, stream: "stdout" | "stderr") {
+  const response = await fetch(`/api/sessions/${sessionID}/tool-runs/${runID}/${stream}`);
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(response.statusText);
+  }
+  return response.text();
 }
 
 export function listTools(sessionID?: string) {

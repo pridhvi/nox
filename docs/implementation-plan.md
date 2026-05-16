@@ -14,8 +14,9 @@ specific implementation is proven incompatible with the spec.
   implementation change.
 - Scope validation is a hard security boundary. Every network request and every
   subprocess scanner invocation must validate scope first.
-- Evidence is first-class data. Store raw stdout, stderr, HTTP request/response
-  evidence, and normalized output where the schema supports it.
+- Evidence is first-class data. Store full tool stdout/stderr in session
+  sidecar logs, keep HTTP request/response evidence in SQLite, and retain
+  normalized output where the schema supports it.
 - All scanner output must normalize into `internal/models.Finding` or one of the
   related canonical models before analysis.
 - External tools are optional. Missing binaries, unavailable wordlists,
@@ -42,7 +43,10 @@ scanner-specific improvements rather than adding new roadmap phases.
 
 ## Current Baseline
 
-The current repo is not greenfield. These items are valuable baseline work and
+The current repo is not greenfield. Sessions use `<session-id>/session.db` with
+tool run sidecar logs in `<session-id>/runs/`; `nox scan --lean` deletes those
+logs after normalization, and `nox sessions export` packages the directory. These
+items are valuable baseline work and
 must be carried forward:
 
 - **Foundation:** Buildable Go module at `github.com/pridhvi/nox` and CLI

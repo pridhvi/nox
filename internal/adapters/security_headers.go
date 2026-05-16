@@ -42,7 +42,7 @@ func (a SecurityHeaders) Run(ctx context.Context, input AdapterInput) (AdapterOu
 	}
 	if ok, reason := input.Scope.IsInScope(input.Target.Host); !ok {
 		run.ExitCode = 1
-		run.StderrRaw = reason
+		run.RawStderr = reason
 		run.DurationMS = time.Since(started).Milliseconds()
 		return AdapterOutput{ToolRun: run}, fmt.Errorf("scope rejected %s: %s", input.Target.Host, reason)
 	}
@@ -53,7 +53,7 @@ func (a SecurityHeaders) Run(ctx context.Context, input AdapterInput) (AdapterOu
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		run.ExitCode = 1
-		run.StderrRaw = err.Error()
+		run.RawStderr = err.Error()
 		run.DurationMS = time.Since(started).Milliseconds()
 		return AdapterOutput{ToolRun: run}, err
 	}
@@ -61,7 +61,7 @@ func (a SecurityHeaders) Run(ctx context.Context, input AdapterInput) (AdapterOu
 	resp, err := client.Do(req)
 	if err != nil {
 		run.ExitCode = 1
-		run.StderrRaw = err.Error()
+		run.RawStderr = err.Error()
 		run.DurationMS = time.Since(started).Milliseconds()
 		return AdapterOutput{ToolRun: run}, err
 	}
@@ -75,7 +75,7 @@ func (a SecurityHeaders) Run(ctx context.Context, input AdapterInput) (AdapterOu
 		"referrer-policy":           resp.Header.Get("Referrer-Policy"),
 	}
 	normalized, _ := json.Marshal(observed)
-	run.StdoutRaw = string(normalized)
+	run.RawStdout = string(normalized)
 	run.FindingCount = len(findings)
 	run.DurationMS = time.Since(started).Milliseconds()
 	now := time.Now().UTC()
