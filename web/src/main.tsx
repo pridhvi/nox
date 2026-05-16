@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import { Bot, Boxes, FileCode2, FileText, Menu, Moon, MoreHorizontal, Network, PackageSearch, RefreshCw, Search, Settings as SettingsIcon, Shield, Sun, TerminalSquare, Wrench, X } from "lucide-react";
+import { Bot, Boxes, FileCode2, FileText, Menu, Moon, MoreHorizontal, Network, PackageSearch, Radar, RefreshCw, Search, Settings as SettingsIcon, Shield, Sparkles, Sun, TerminalSquare, Wrench, X } from "lucide-react";
 import { login as loginAPI } from "./api/client";
 import { scopedSessionPath } from "./sessionRoutes";
 import { SessionProvider, useSessionContext } from "./session";
@@ -11,6 +11,8 @@ import "./styles.css";
 const queryClient = new QueryClient();
 const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })));
 const ScanBuilder = lazy(() => import("./pages/ScanBuilder").then((module) => ({ default: module.ScanBuilder })));
+const Monitor = lazy(() => import("./pages/Monitor").then((module) => ({ default: module.Monitor })));
+const PowerFeatures = lazy(() => import("./pages/PowerFeatures").then((module) => ({ default: module.PowerFeatures })));
 const Findings = lazy(() => import("./pages/Findings").then((module) => ({ default: module.Findings })));
 const Source = lazy(() => import("./pages/Source").then((module) => ({ default: module.Source })));
 const Tools = lazy(() => import("./pages/Tools").then((module) => ({ default: module.Tools })));
@@ -131,7 +133,7 @@ function OperatorShell() {
 
   const navGroups = [
     { label: "Command", items: [{ to: scoped(""), label: "Command Center", icon: Shield, active: location.pathname === scoped("") }] },
-    { label: "Build", items: [{ to: "/scan", label: "Scan Builder", icon: TerminalSquare }] },
+    { label: "Build", items: [{ to: "/scan", label: "Scan Builder", icon: TerminalSquare }, { to: "/monitor", label: "Monitor", icon: Radar }, { to: scoped("/power"), label: "Power Features", icon: Sparkles }] },
     { label: "Triage", items: [{ to: scoped("/findings"), label: "Findings", icon: Search }, { to: scoped("/source"), label: "Source", icon: FileCode2 }] },
     { label: "Evidence", items: [{ to: scoped("/runs"), label: "Tool Runs", icon: PackageSearch }, { to: scoped("/tools"), label: "Tools", icon: Wrench }] },
     { label: "Attack Paths", items: [{ to: scoped("/graph"), label: "Attack Paths", icon: Network }, { to: scoped("/cves"), label: "CVEs", icon: Boxes }] },
@@ -195,6 +197,9 @@ function OperatorShell() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/scan" element={<ScanBuilder />} />
+              <Route path="/monitor" element={<Monitor />} />
+              <Route path="/power" element={<PowerFeatures />} />
+              <Route path="/sessions/:sessionID/power" element={<PowerFeatures />} />
               <Route path="/tools" element={<Tools />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/sessions/:sessionID" element={<Dashboard />} />

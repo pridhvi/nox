@@ -4,6 +4,11 @@
 > **Purpose of this document:** This is a complete specification for eight enhancement modules that make NOX more powerful as a real-world penetration testing tool. Each module is self-contained and can be implemented independently or in any combination. The AI coding agent should ask the operator which modules to implement before beginning, then produce an implementation plan covering database changes, new packages, adapter additions, API endpoints, and UI updates for each selected module.
 >
 > **Read first:** `docs/nox-project-spec.md` for the base architecture and current audit/source-aware behavior, plus `docs/implementation-plan.md` for implementation traceability. All modules in this document build on top of the existing NOX codebase — nothing here replaces existing functionality.
+>
+> **Current implementation note:** All eight modules now have an initial
+> production-safe slice in the repository. The specifications below remain the
+> complete target state for future hardening, deeper automation, and fixture
+> coverage.
 
 ---
 
@@ -25,16 +30,16 @@ Each module is fully specified. Before writing any code, the agent should:
 
 ## Module Index
 
-| # | Module | Summary | Difficulty |
-|---|---|---|---|
-| 1 | AI Payload Generation | Context-aware WAF bypass and injection payload generation | High |
-| 2 | Continuous Attack Surface Monitoring | Scheduled scans with diff/alerting | Medium |
-| 3 | Credential Testing | Default creds, password spray, credential correlation | Medium |
-| 4 | OSINT Expansion | Employee enumeration, GitHub intel, job posting analysis, Shodan | Medium |
-| 5 | Active Directory & Internal Network | BloodHound, Kerberoasting, SMB/LDAP, relay attacks | High |
-| 6 | Evasion & Stealth Mode | Rate limiting, traffic blending, proxy chains, WAF bypass | Medium |
-| 7 | Automated PoC & Impact Demonstration | Safe automated exploitation, canary capture, evidence generation | High |
-| 8 | Burp Suite Bridge | Import/export, Collaborator/Interactsh integration | Medium |
+| # | Module | Summary | Difficulty | Status |
+|---|---|---|---|---|
+| 1 | AI Payload Generation | Context-aware WAF bypass and injection payload generation | High | Initial slice implemented |
+| 2 | Continuous Attack Surface Monitoring | Scheduled scans with diff/alerting | Medium | Initial slice implemented |
+| 3 | Credential Testing | Default creds, password spray, credential correlation | Medium | Initial slice implemented |
+| 4 | OSINT Expansion | Employee enumeration, GitHub intel, job posting analysis, Shodan | Medium | Initial slice implemented |
+| 5 | Active Directory & Internal Network | BloodHound, Kerberoasting, SMB/LDAP, relay attacks | High | Initial slice implemented |
+| 6 | Evasion & Stealth Mode | Rate limiting, traffic blending, proxy chains, WAF bypass | Medium | Initial slice implemented |
+| 7 | Automated PoC & Impact Demonstration | Safe automated exploitation, canary capture, evidence generation | High | Initial slice implemented |
+| 8 | Burp Suite Bridge | Import/export, Collaborator/Interactsh integration | Medium | Initial slice implemented |
 
 ---
 

@@ -1,5 +1,11 @@
 # Module 8 Implementation Plan: Burp Suite Bridge
 
+Current repository state: an initial production-safe slice is implemented with
+Burp XML import/export, global collaborator config/callback state, redaction,
+API/CLI/UI visibility, and REST actions returning clear unavailable states.
+Remaining depth should add duplicate suppression, fake-server REST tests,
+Collaborator/Interactsh polling, and session tool-run import summaries.
+
 ## Goal And Success Criteria
 
 Add two-way Burp Suite integration through file import/export and optional Burp

@@ -29,6 +29,13 @@ export type RunnerOptions = {
   tool_timeout_seconds?: number;
   tool_delay_ms?: number;
   rate_limit?: string;
+  evasion_profile?: string;
+  jitter_ms?: number;
+  proxy_url?: string;
+  user_agent_profile?: string;
+  header_profile?: string;
+  adaptive_backoff?: boolean;
+  max_backoff_seconds?: number;
 };
 
 export type SessionRecord = {
@@ -216,8 +223,109 @@ export type StartScanRequest = {
   tool_timeout_seconds?: number;
   tool_delay_ms?: number;
   rate_limit?: string;
+  evasion_profile?: string;
+  jitter_ms?: number;
+  proxy_url?: string;
+  user_agent_profile?: string;
+  header_profile?: string;
+  adaptive_backoff?: boolean;
+  max_backoff_seconds?: number;
   llm_model?: string;
   llm_base_url?: string;
+};
+
+export type Payload = {
+  id: string;
+  finding_id: string;
+  session_id: string;
+  payload_type: string;
+  payload: string;
+  context: string;
+  target_waf?: string;
+  target_db?: string;
+  bypass_technique?: string;
+  confidence: number;
+  validated: boolean;
+  validated_response?: string;
+  rank: number;
+  created_at: string;
+};
+
+export type CredentialFinding = {
+  id: string;
+  session_id: string;
+  target_id?: string;
+  finding_id?: string;
+  credential_type: string;
+  username: string;
+  password: string;
+  service: string;
+  url: string;
+  valid: boolean;
+  lockout_detected: boolean;
+  evidence: string;
+  created_at: string;
+};
+
+export type OSINTFinding = {
+  id: string;
+  session_id: string;
+  kind: string;
+  value: string;
+  source: string;
+  confidence: number;
+  target_id?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ADEntity = {
+  id: string;
+  session_id: string;
+  entity_type: string;
+  name: string;
+  domain: string;
+  sid: string;
+  distinguished_name: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ADRelationship = {
+  id: string;
+  session_id: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  relation: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type BlockEvent = {
+  id: string;
+  session_id: string;
+  target_id?: string;
+  tool_id: string;
+  url: string;
+  status_code: number;
+  signal: string;
+  response_snippet: string;
+  backoff_ms: number;
+  created_at: string;
+};
+
+export type PoCResult = {
+  id: string;
+  session_id: string;
+  finding_id: string;
+  target_id?: string;
+  poc_type: string;
+  status: string;
+  payload_id?: string;
+  evidence: string;
+  impact_narrative: string;
+  created_at: string;
+  completed_at?: string;
 };
 
 export type ScanProfileRecord = {
@@ -227,6 +335,59 @@ export type ScanProfileRecord = {
   request: StartScanRequest;
   created_at: string;
   updated_at: string;
+};
+
+export type MonitorNotificationConfig = {
+  slack_webhook_url?: string;
+  discord_webhook_url?: string;
+  email?: string;
+};
+
+export type MonitorConfig = {
+  id: string;
+  name: string;
+  target_input: string;
+  in_scope?: string[];
+  out_of_scope?: string[];
+  schedule: string;
+  enabled_phases?: string[];
+  enabled_tools?: string[];
+  tool_parameters?: Record<string, Record<string, unknown>>;
+  runner_options?: RunnerOptions;
+  alert_on?: string[];
+  notification_config?: MonitorNotificationConfig;
+  baseline_session_id?: string;
+  last_run_at?: string;
+  next_run_at?: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MonitorRun = {
+  id: string;
+  config_id: string;
+  session_id?: string;
+  status: "running" | "completed" | "failed";
+  changes_found: boolean;
+  error?: string;
+  started_at: string;
+  completed_at?: string;
+};
+
+export type SurfaceChange = {
+  id: string;
+  monitor_run_id: string;
+  session_id: string;
+  change_type: string;
+  severity: string;
+  description: string;
+  previous_value?: string;
+  current_value?: string;
+  target_id?: string;
+  finding_id?: string;
+  alerted: boolean;
+  created_at: string;
 };
 
 export type ToolParameter = {
@@ -364,6 +525,50 @@ export function listSourceFindings(sessionID: string, params: Record<string, str
   return api<SourceFinding[]>(`/api/sessions/${sessionID}/source-findings${suffix}`);
 }
 
+export function listPayloads(sessionID: string) {
+  return api<Payload[]>(`/api/sessions/${sessionID}/payloads`);
+}
+
+export function generatePayloads(sessionID: string, findingID: string, force_regenerate = false) {
+  return api<Payload[]>(`/api/sessions/${sessionID}/findings/${findingID}/generate-payloads`, { method: "POST", body: JSON.stringify({ force_regenerate }) });
+}
+
+export function listCredentials(sessionID: string) {
+  return api<CredentialFinding[]>(`/api/sessions/${sessionID}/credentials`);
+}
+
+export function testCredentials(sessionID: string, payload: { mode: string; username?: string; password?: string; service?: string; url?: string }) {
+  return api<CredentialFinding[]>(`/api/sessions/${sessionID}/credentials/test`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function listOSINT(sessionID: string) {
+  return api<OSINTFinding[]>(`/api/sessions/${sessionID}/osint`);
+}
+
+export function runOSINT(sessionID: string, providers: string[] = []) {
+  return api<OSINTFinding[]>(`/api/sessions/${sessionID}/osint/run`, { method: "POST", body: JSON.stringify({ providers }) });
+}
+
+export function listADEntities(sessionID: string) {
+  return api<ADEntity[]>(`/api/sessions/${sessionID}/ad/entities`);
+}
+
+export function listADRelationships(sessionID: string) {
+  return api<ADRelationship[]>(`/api/sessions/${sessionID}/ad/relationships`);
+}
+
+export function listBlockEvents(sessionID: string) {
+  return api<BlockEvent[]>(`/api/sessions/${sessionID}/block-events`);
+}
+
+export function listPoCResults(sessionID: string) {
+  return api<PoCResult[]>(`/api/sessions/${sessionID}/poc-results`);
+}
+
+export function runPoC(sessionID: string, findingID: string, confirm = true) {
+  return api<PoCResult>(`/api/sessions/${sessionID}/findings/${findingID}/poc/run`, { method: "POST", body: JSON.stringify({ confirm }) });
+}
+
 export function updateFinding(sessionID: string, findingID: string, payload: { severity?: string; remediation?: string }) {
   return api<Finding>(`/api/sessions/${sessionID}/findings/${findingID}`, {
     method: "PATCH",
@@ -405,6 +610,35 @@ export function createScanProfile(payload: { name: string; description?: string;
 
 export function deleteScanProfile(profileID: string) {
   return api<{ deleted: string }>(`/api/scan-profiles/${profileID}`, { method: "DELETE" });
+}
+
+export function listMonitorConfigs() {
+  return api<MonitorConfig[]>("/api/monitor/configs");
+}
+
+export function createMonitorConfig(payload: Partial<MonitorConfig>) {
+  return api<MonitorConfig>("/api/monitor/configs", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateMonitorConfig(configID: string, payload: Partial<MonitorConfig>) {
+  return api<MonitorConfig>(`/api/monitor/configs/${configID}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function deleteMonitorConfig(configID: string) {
+  return api<{ deleted: boolean }>(`/api/monitor/configs/${configID}`, { method: "DELETE" });
+}
+
+export function runMonitorConfig(configID: string) {
+  return api<{ run: MonitorRun; changes: SurfaceChange[] }>(`/api/monitor/configs/${configID}/run`, { method: "POST", body: "{}" });
+}
+
+export function listMonitorRuns(configID?: string) {
+  const suffix = configID ? `?config_id=${encodeURIComponent(configID)}` : "";
+  return api<MonitorRun[]>(`/api/monitor/runs${suffix}`);
+}
+
+export function listMonitorRunChanges(runID: string) {
+  return api<SurfaceChange[]>(`/api/monitor/runs/${runID}/changes`);
 }
 
 export function listPlugins() {

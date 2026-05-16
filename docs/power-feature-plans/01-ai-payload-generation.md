@@ -1,5 +1,11 @@
 # Module 1 Implementation Plan: AI Payload Generation
 
+Current repository state: an initial production-safe slice is implemented with
+session DB payload persistence, deterministic advisory payload generation,
+API/CLI/UI visibility, and explicit validation recording. Remaining depth should
+wire configured LLM generation, scoped live validation, WAF fingerprinting, and
+report appendices.
+
 ## Goal And Success Criteria
 
 Add operator-triggered payload generation for confirmed findings. Nox should

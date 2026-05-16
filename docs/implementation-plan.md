@@ -46,6 +46,8 @@ scanner-specific improvements rather than adding new roadmap phases.
 The current repo is not greenfield. Sessions use `<session-id>/session.db` with
 tool run sidecar logs in `<session-id>/runs/`; `nox scan --lean` deletes those
 logs after normalization, and `nox sessions export` packages the directory.
+Cross-session monitor state uses `<state-dir>/nox-state.db` for recurring
+monitor configs, monitor runs, and persisted attack-surface changes.
 Sessions preserve `mode` for scan aggressiveness and use `workload_mode` for
 `dynamic`, `static`, and `combined` workloads. These items are valuable baseline
 work and must be carried forward:
@@ -84,6 +86,16 @@ work and must be carried forward:
   findings, global plugin loading, cancellation, and cooperative pause/resume
   before starting the next tool. This should keep evolving incrementally into
   the full spec DAG scheduler instead of being thrown away.
+- **Continuous monitoring:** `nox monitor` and `/api/monitor/*` manage
+  host-privileged recurring scan configs, immediate monitor runs, scheduler
+  registration during `nox serve`, baseline comparison, Slack/Discord webhook
+  notification dispatch, and `surface_changes` persistence for target,
+  technology, and finding drift.
+- **Power-feature slices:** Payloads, credential records, OSINT findings,
+  AD/internal-network entities and relationships, evasion runner options and
+  block events, PoC results, and Burp import/export/collaborator state have
+  additive models, persistence, API/CLI access, and consolidated UI visibility.
+  Active behavior remains explicit, conservative, and API-key-gated.
 - **Audit and source-aware mode:** Static extractors cover Python,
   JavaScript/TypeScript, Go, PHP, Ruby, and Java for routes, parameters, SQL
   sinks, file uploads, auth middleware, secrets, SSRF sinks, deserialization
@@ -104,6 +116,8 @@ work and must be carried forward:
 - **API:** Health, tools, sessions, targets, findings, source findings, tool
   runs, stats, scan start/status/pause/resume/stop, vectors, attack graph edges,
   CVEs, reports, LLM history/analysis/chat, session deletion, scan profiles,
+  monitor configs/runs/surface changes, payloads, credentials, OSINT, AD,
+  block events, PoC results, Burp XML import/export/config callbacks,
   API-key-protected global plugins, API-key-protected LLM model probing,
   API-key enforcement for non-loopback serving and host-privileged API
   operations, and scan lifecycle
@@ -123,7 +137,7 @@ work and must be carried forward:
   source finding summaries with filters and context expansion, sortable
   finding/CVE tables with static/dynamic/status filters, mobile finding cards,
   bulk finding workflow, finding evidence/edit workflow, global plugin
-  registration, responsive tool inventory cards, polished stdout/stderr log
+  registration, monitor config/run/change review, responsive tool inventory cards, polished stdout/stderr log
   drawers, LLM model probing, settings health panels with collapsible raw config,
   and report pages backed by real API data. Reports include source findings,
   suppressed findings, tool coverage, dependency CVEs, and cross-confirmed
@@ -1248,9 +1262,9 @@ greenfield assumptions:
 | 10. LLM Integration | Phase 12 | Implemented | Optional OpenAI-compatible client, config, structured context builder, constrained tools, analyst loop, evidence truncation, persisted audit trails, vector annotations, API endpoints, CLI commands, and UI history/chat exist. |
 | 11. CVE Intelligence | Phase 10 | Implemented | Correlator, offline JSON source, Exploit-DB CSV source, cache, NVD/OSV/CIRCL/Vulners/GitHub parsers, evidence CVE extraction, persisted matches, and draft vectors exist. |
 | 12. Attack Vector Engine | Phase 11 | Implemented | Deterministic rule engine, default rules, scoring, steps, persistence integration, CVE vector merging, LLM review annotations, API exposure, and UI graph exposure exist. |
-| 13. REST API Surface | Phase 13 | Implemented | Spec endpoints for sessions, scans, findings, finding updates, vectors, CVEs, LLM, reports, health, tools, auth, and WebSocket alias exist. |
-| 14. CLI Commands | Phase 14 | Implemented | Scan flags, report generation, LLM commands, config init/show, plugins, sessions, serve, and version exist. |
-| 15. Web UI Pages | Phase 16 | Implemented | Dashboard, session route, Cytoscape graph, Recharts severity chart, finding evidence/edit workflow, LLM, and reports pages use real API data. |
+| 13. REST API Surface | Phase 13 | Implemented | Spec endpoints for sessions, scans, findings, finding updates, vectors, CVEs, LLM, reports, health, tools, auth, monitor configs/runs/changes, power-feature records/actions, and WebSocket alias exist. |
+| 14. CLI Commands | Phase 14 | Implemented | Scan flags, monitor/payload/creds/osint/ad/poc/burp commands, report generation, LLM commands, config init/show, plugins, sessions, serve, and version exist. |
+| 15. Web UI Pages | Phase 16 | Implemented | Dashboard, monitor route, power features route, session route, Cytoscape graph, Recharts severity chart, finding evidence/edit workflow, LLM, and reports pages use real API data. |
 | 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nox/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, logging settings, tool path maps, plugin directories, CVE settings, and CLI override paths exist. |
 | 17. Scope Validation | Phase 3 | Implemented | Checker, adapter boundary tests, cancellation, lifecycle status coverage, and privileged API source/LLM allowlist controls exist. |
 | 18. Error Handling & Logging | Phases 3, 4, 5 | Implemented | Tool failures persist without failing scans; structured slog configuration supports `NOX_LOG_LEVEL` and `NOX_LOG_FORMAT`, and non-fatal adapter failures are logged. |
@@ -1262,9 +1276,11 @@ greenfield assumptions:
 
 ## Future Power Feature Plans
 
-The v1 roadmap above is implemented. Future production-pentesting enhancement
-modules are specified in `docs/nox-power-features-spec.md` and broken into
-agent-ready implementation plans under `docs/power-feature-plans/`.
+The v1 roadmap above is implemented. All eight power-feature modules have an
+initial production-safe slice. Remaining work is depth: fixture-backed
+automation, external-provider/tool integration, richer reports, and stronger UI
+workflows. The complete target states remain in `docs/nox-power-features-spec.md`
+and `docs/power-feature-plans/`.
 
 ## Coverage Check Terms
 

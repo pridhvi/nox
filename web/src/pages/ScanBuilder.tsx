@@ -46,6 +46,10 @@ export function ScanBuilder() {
   const [timeout, setTimeout] = useState(60);
   const [delay, setDelay] = useState(0);
   const [rateLimit, setRateLimit] = useState("");
+  const [evasionProfile, setEvasionProfile] = useState("normal");
+  const [jitterMS, setJitterMS] = useState(0);
+  const [proxyURL, setProxyURL] = useState("");
+  const [adaptiveBackoff, setAdaptiveBackoff] = useState(false);
   const [params, setParams] = useState<Record<string, Record<string, unknown>>>({});
   const [selectedProfileID, setSelectedProfileID] = useState("");
   const [profileName, setProfileName] = useState("");
@@ -163,6 +167,10 @@ export function ScanBuilder() {
       tool_timeout_seconds: timeout,
       tool_delay_ms: delay,
       rate_limit: rateLimit,
+      evasion_profile: evasionProfile,
+      jitter_ms: jitterMS,
+      proxy_url: proxyURL,
+      adaptive_backoff: adaptiveBackoff,
       llm_base_url: llmBaseURL,
       llm_model: llmModel,
     };
@@ -181,6 +189,10 @@ export function ScanBuilder() {
     setTimeout(request.tool_timeout_seconds ?? 60);
     setDelay(request.tool_delay_ms ?? 0);
     setRateLimit(request.rate_limit ?? "");
+    setEvasionProfile(request.evasion_profile ?? "normal");
+    setJitterMS(request.jitter_ms ?? 0);
+    setProxyURL(request.proxy_url ?? "");
+    setAdaptiveBackoff(Boolean(request.adaptive_backoff));
     setLLMBaseURL(request.llm_base_url ?? "");
     setLLMModel(request.llm_model ?? "");
     if (request.target || request.targets?.length) {
@@ -298,6 +310,17 @@ export function ScanBuilder() {
             <HelpLabel label="Timeout Seconds" help={runtimeHelp.timeout}><input type="number" min={0} value={timeout} onChange={(event) => setTimeout(Number(event.target.value))} /></HelpLabel>
             <HelpLabel label="Delay MS" help={runtimeHelp.delay}><input type="number" min={0} value={delay} onChange={(event) => setDelay(Number(event.target.value))} /></HelpLabel>
             <HelpLabel label="Rate Limit" help={runtimeHelp.rateLimit}><input value={rateLimit} onChange={(event) => setRateLimit(event.target.value)} placeholder="optional label" /></HelpLabel>
+            <label>Evasion Profile
+              <select value={evasionProfile} onChange={(event) => setEvasionProfile(event.target.value)}>
+                <option value="normal">Normal</option>
+                <option value="safe">Safe</option>
+                <option value="stealth">Stealth</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label>Jitter MS<input type="number" min={0} value={jitterMS} onChange={(event) => setJitterMS(Number(event.target.value))} /></label>
+            <label>Proxy URL<input value={proxyURL} onChange={(event) => setProxyURL(event.target.value)} placeholder="http://127.0.0.1:8080" /></label>
+            <label className="checkbox-row"><input type="checkbox" checked={adaptiveBackoff} onChange={(event) => setAdaptiveBackoff(event.target.checked)} />Adaptive backoff</label>
           </div>
         </section>
         <section className="panel" id="llm">

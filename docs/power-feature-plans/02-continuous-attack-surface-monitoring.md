@@ -2,6 +2,15 @@
 
 ## Goal And Success Criteria
 
+Current repository state: the first production slice is implemented. Nox now has
+global monitor state in `<state-dir>/nox-state.db`, `nox monitor` CLI commands,
+`/api/monitor/*` endpoints, scheduler registration during `nox serve`, immediate
+monitor runs that create normal session directories, target/technology/finding
+diffing into `surface_changes`, Slack/Discord webhook dispatch, and a `/monitor`
+operator-console route. Remaining depth should focus on fixture-backed
+integration assertions, richer edit forms, source-aware diffs, and additional
+notification backends.
+
 Add scheduled monitoring that reruns saved scan configurations, compares each
 run against a baseline session, persists attack-surface changes, and optionally
 sends alerts. This turns Nox into a recurring local monitoring tool without

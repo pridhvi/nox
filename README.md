@@ -41,8 +41,10 @@ Static and combined source-aware modes use the same session database and report 
 - **Attack vector engine:** Rule-based and graph-derived chains with confidence scoring, ordered steps, labelled edges, prerequisite findings, and OWASP mapping.
 - **LLM analysis:** OpenAI-compatible local model support, constrained tool calling, persisted audit trail, post-scan analysis, and interactive chat.
 - **Reporting:** Markdown, HTML, SARIF 2.1.0, and PDF output with source findings, tool coverage, dependency CVEs, suppressed findings, and cross-confirmed evidence.
+- **Continuous monitoring:** `nox monitor` stores recurring scan configs in the global state DB, creates normal session runs, diffs each run against a baseline, and records attack-surface changes.
+- **Power-feature modules:** Operator-triggered first slices for payload generation, credential records, OSINT seeds, AD/BloodHound records, evasion runner options, safe PoC records, and Burp XML import/export.
 - **Plugin system:** Subprocess JSON contract so adapters can be written in any language.
-- **Web UI:** Dense midnight/violet operator console with bundled local fonts, command-center dashboard, responsive mobile actions, scan builder rail, triage split panes with mobile finding cards, grouped source evidence, deduplicated attack paths, CVE table, responsive tool inventory, polished stdout/stderr log drawers, LLM analyst workspace, system health, and report composer.
+- **Web UI:** Dense midnight/violet operator console with bundled local fonts, command-center dashboard, responsive mobile actions, scan builder rail, monitor workspace, triage split panes with mobile finding cards, grouped source evidence, deduplicated attack paths, CVE table, responsive tool inventory, polished stdout/stderr log drawers, LLM analyst workspace, system health, and report composer.
 
 ## Supported tools
 
@@ -86,6 +88,24 @@ tools:
 ```
 
 Sessions are stored as directories under `database.session_dir`: `<session-id>/session.db` plus optional `<session-id>/runs/*.log` sidecars. Use `./bin/nox scan --lean` to discard raw sidecar logs after normalization, or `./bin/nox sessions export <session-id> --output session.zip` to package the database and logs together.
+
+Monitoring state is global rather than per-session. Monitor configs, runs, and `surface_changes` live in `<state-dir>/nox-state.db`, where `<state-dir>` is the parent of `database.session_dir` when that directory is named `sessions`. Scheduled monitor runs execute only while `nox serve` is running; manual runs are available from both CLI and UI:
+
+```sh
+./bin/nox monitor create --target https://example.com --schedule '@daily' --name example
+./bin/nox monitor run <config-id>
+./bin/nox monitor changes <config-id>
+```
+
+Advanced modules are explicit and safe by default:
+
+```sh
+./bin/nox payloads generate <session-id> --finding <finding-id>
+./bin/nox creds test <session-id> --mode correlate
+./bin/nox osint run <session-id>
+./bin/nox poc run <session-id> --finding <finding-id> --confirm
+./bin/nox burp export scope <session-id> --output scope.xml
+```
 
 For stricter local deployments, set `NOX_SOURCE_ROOTS` to a comma-separated list of allowed repository roots for API-triggered source scans, and `NOX_LLM_ALLOWED_HOSTS` to allowed LLM probe hosts such as `127.0.0.1,localhost,ollama`.
 

@@ -1,5 +1,11 @@
 # Module 5 Implementation Plan: Active Directory And Internal Network
 
+Current repository state: an initial production-safe slice is implemented with
+AD entity/relationship/artifact persistence, internal-scope enforcement for enum
+requests, BloodHound JSON import/export, and API/CLI/UI visibility. Remaining
+depth should add parser fixtures, optional tool wrappers, graph conversion, and
+Kerberoast warning-gated execution.
+
 ## Goal And Success Criteria
 
 Add an internal-network module for authorized AD and Windows environment

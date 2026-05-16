@@ -11,9 +11,14 @@ type Phase string
 
 const (
 	PhaseRecon       Phase = "recon"
+	PhaseOSINT       Phase = "osint"
 	PhaseFingerprint Phase = "fingerprint"
 	PhaseEnumerate   Phase = "enumerate"
 	PhaseVulnScan    Phase = "vuln_scan"
+	PhaseCredential  Phase = "credential_test"
+	PhaseADDiscovery Phase = "ad_discovery"
+	PhaseADEnum      Phase = "ad_enum"
+	PhaseADPaths     Phase = "ad_attack_paths"
 )
 
 type AdapterInput struct {

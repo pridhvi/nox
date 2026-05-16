@@ -39,6 +39,20 @@ func Execute() {
 		err = runConfig(os.Args[2:])
 	case "sessions":
 		err = runSessions(os.Args[2:])
+	case "monitor":
+		err = runMonitor(os.Args[2:])
+	case "payloads":
+		err = runPayloads(os.Args[2:])
+	case "creds":
+		err = runCreds(os.Args[2:])
+	case "osint":
+		err = runOSINT(os.Args[2:])
+	case "ad":
+		err = runAD(os.Args[2:])
+	case "poc":
+		err = runPoC(os.Args[2:])
+	case "burp":
+		err = runBurp(os.Args[2:])
 	case "plugins":
 		err = runPlugins(os.Args[2:])
 	case "version":
@@ -83,6 +97,15 @@ Usage:
   nox sessions findings <id>
   nox sessions runs <id>
   nox sessions export <id> --output session.zip
+  nox monitor create --target <host-or-url> --schedule '@daily'
+  nox monitor list
+  nox monitor run <config-id>
+  nox payloads list <session-id>
+  nox creds list <session-id>
+  nox osint list <session-id>
+  nox ad bloodhound export <session-id>
+  nox poc list <session-id>
+  nox burp export scope <session-id> --output scope.xml
   nox plugins list
   nox plugins install --name custom --phase vuln_scan <path>
   nox report <session-id> --format html|pdf|md --output report.html

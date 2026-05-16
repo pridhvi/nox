@@ -359,6 +359,80 @@ func TestCrossOriginStateChangingRequestsRejected(t *testing.T) {
 	}
 }
 
+func TestMonitorConfigAPIRequiresConfiguredAPIKeyAndRedactsSecrets(t *testing.T) {
+	withoutKey := NewServer(Config{SessionDir: t.TempDir()}).Handler()
+	blocked := httptest.NewRecorder()
+	withoutKey.ServeHTTP(blocked, httptest.NewRequest(http.MethodPost, "/api/monitor/configs", bytes.NewBufferString(`{"target_input":"http://127.0.0.1:1","schedule":"@daily"}`)))
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("expected monitor writes to require configured API key, got %d body=%s", blocked.Code, blocked.Body.String())
+	}
+
+	handler := NewServer(Config{SessionDir: t.TempDir(), APIKey: "secret"}).Handler()
+	create := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"name":"fixture","target_input":"http://127.0.0.1:1","schedule":"@daily","notification_config":{"slack_webhook_url":"https://hooks.slack.test/secret"}}`)
+	handler.ServeHTTP(create, apiKeyRequest(http.MethodPost, "/api/monitor/configs", body))
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", create.Code, create.Body.String())
+	}
+	var config models.MonitorConfig
+	if err := json.NewDecoder(create.Body).Decode(&config); err != nil {
+		t.Fatal(err)
+	}
+	if config.NotificationConfig.SlackWebhookURL != "********" {
+		t.Fatalf("expected redacted webhook, got %#v", config.NotificationConfig)
+	}
+	list := httptest.NewRecorder()
+	handler.ServeHTTP(list, apiKeyRequest(http.MethodGet, "/api/monitor/configs", nil))
+	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "hooks.slack.test") {
+		t.Fatalf("expected redacted monitor list, status=%d body=%s", list.Code, list.Body.String())
+	}
+}
+
+func TestPowerFeatureEndpointsPersistAndGateActiveActions(t *testing.T) {
+	ctx := t.Context()
+	sessionDir := t.TempDir()
+	session := models.Session{
+		ID:          models.NewID(),
+		Name:        "Power",
+		Status:      models.SessionStatusCompleted,
+		Mode:        models.ScanModeActive,
+		TargetInput: "https://example.test",
+		InScope:     []string{"https://example.test"},
+		CreatedAt:   time.Now().UTC(),
+	}
+	target := models.Target{ID: models.NewID(), SessionID: session.ID, Host: "example.test", Port: 443, Protocol: "https", IsAlive: true, CreatedAt: time.Now().UTC()}
+	if _, err := db.CreateSessionDB(ctx, sessionDir, session, target); err != nil {
+		t.Fatal(err)
+	}
+	store, err := db.OpenSession(ctx, sessionDir, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := models.Finding{ID: models.NewID(), SessionID: session.ID, TargetID: target.ID, ToolID: "test", Type: models.FindingTypeVulnerability, Severity: models.SeverityHigh, Title: "Reflected XSS", URL: "https://example.test/?q=x", Tags: []string{"xss"}, CreatedAt: time.Now().UTC()}
+	if err := store.InsertFinding(ctx, finding); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(Config{SessionDir: sessionDir, APIKey: "secret"}).Handler()
+	payloads := httptest.NewRecorder()
+	handler.ServeHTTP(payloads, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/findings/"+finding.ID+"/generate-payloads", bytes.NewBufferString(`{}`)))
+	if payloads.Code != http.StatusOK || !strings.Contains(payloads.Body.String(), "confirm") {
+		t.Fatalf("payload status=%d body=%s", payloads.Code, payloads.Body.String())
+	}
+	blocked := httptest.NewRecorder()
+	handler.ServeHTTP(blocked, httptest.NewRequest(http.MethodPost, "/api/sessions/"+session.ID+"/credentials/test", bytes.NewBufferString(`{"mode":"correlate"}`)))
+	if blocked.Code != http.StatusUnauthorized {
+		t.Fatalf("expected auth on credential action, got %d body=%s", blocked.Code, blocked.Body.String())
+	}
+	creds := httptest.NewRecorder()
+	handler.ServeHTTP(creds, apiKeyRequest(http.MethodPost, "/api/sessions/"+session.ID+"/credentials/test", bytes.NewBufferString(`{"mode":"correlate","username":"admin","password":"secret"}`)))
+	if creds.Code != http.StatusOK || strings.Contains(creds.Body.String(), "secret") {
+		t.Fatalf("credential status=%d body=%s", creds.Code, creds.Body.String())
+	}
+}
+
 func TestSourceFindingsAndAttackGraphEndpoints(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "app.py"), []byte("@app.get(\"/search\")\ndef search():\n    q = request.args.get(\"q\")\n"), 0o644); err != nil {

@@ -149,8 +149,11 @@ ProjectDiscovery tools (`nuclei`, `httpx`, `subfinder`, `naabu`, `dnsx`) are sub
 
 - API routing uses stdlib `net/http` with explicit auth, CSRF/origin checks for unsafe browser requests, and WebSocket replay at `GET /api/scan/{id}/events`.
 - Persistence uses per-session SQLite directories. Flat legacy `<session-id>.db` files are not auto-migrated; operators can manually place a database at `<session-dir>/<session-id>/session.db` if needed.
+- Cross-session monitor state uses a global SQLite database at `<state-dir>/nox-state.db` for monitor configs, runs, and surface changes.
 - Full tool stdout/stderr is retained in `<session-id>/runs/` sidecars unless `nox scan --lean` is used.
 - Dynamic, static audit, and combined source-aware workloads share one session database and report pipeline.
+- Continuous monitoring creates normal scan sessions, diffs targets/technologies/findings against the monitor baseline, and schedules runs only while `nox serve` is active.
+- Power-feature slices are implemented as explicit operator actions with additive persistence for payloads, credentials, OSINT, AD entities, block events, PoC results, and Burp bridge state; active/high-risk actions require configured API-key auth.
 - Native ProjectDiscovery library integration is deferred. Subprocess adapters remain the supported v1 path because they preserve process isolation and reduce dependency risk.
 
 ---
@@ -171,6 +174,14 @@ nox/
 │
 ├── internal/
 │   ├── engine/              # sessions, scope, DAG runner, audit runner, events
+│   ├── monitor/             # scheduled monitors, immediate runs, diffs, alerts
+│   ├── payload/             # advisory payload generation and validation records
+│   ├── creds/               # credential record and cautious test orchestration
+│   ├── osint/               # OSINT records and local scope seeding
+│   ├── activedirectory/     # AD scope checks and BloodHound import helpers
+│   ├── evasion/             # request-behavior profile normalization
+│   ├── poc/                 # explicit PoC result recording
+│   ├── burp/                # Burp XML import/export and bridge helpers
 │   │
 │   ├── adapters/            # built-in, subprocess, HTTP, and static adapters
 │   │   ├── adapter.go       # Adapter interface definition
@@ -185,6 +196,7 @@ nox/
 │   │   ├── db.go            # connection init, migration runner, session helpers
 │   │   └── store.go         # handwritten typed store methods
 │   │
+│   ├── state/               # global nox-state.db store for monitor state
 │   ├── models/              # canonical sessions, targets, findings, CVEs, graph, reports
 │   ├── source/              # static source extractors
 │   ├── suppress/            # .nox-audit-ignore parsing
@@ -1325,6 +1337,35 @@ GET    /api/sessions/{id}/llm/history  Get LLM conversation history
 
 GET    /api/sessions/{id}/report    Generate and return report (query param: format=html|pdf|md)
 
+GET    /api/monitor/configs         List monitor configs
+POST   /api/monitor/configs         Create a monitor config (requires configured API key)
+GET    /api/monitor/configs/{id}    Get one monitor config
+PUT    /api/monitor/configs/{id}    Update a monitor config (requires configured API key)
+DELETE /api/monitor/configs/{id}    Delete a monitor config (requires configured API key)
+POST   /api/monitor/configs/{id}/run  Run a monitor immediately (requires configured API key)
+GET    /api/monitor/runs?config_id= List monitor runs
+GET    /api/monitor/runs/{id}/changes  List surface changes for a run
+PUT    /api/monitor/changes/{id}/alert-sent  Mark a change alerted
+
+POST   /api/sessions/{id}/findings/{finding_id}/generate-payloads
+GET    /api/sessions/{id}/findings/{finding_id}/payloads
+GET    /api/sessions/{id}/payloads
+POST   /api/sessions/{id}/payloads/{payload_id}/validate
+GET    /api/sessions/{id}/credentials
+POST   /api/sessions/{id}/credentials/test
+GET    /api/sessions/{id}/osint
+POST   /api/sessions/{id}/osint/run
+GET    /api/sessions/{id}/ad/entities
+GET    /api/sessions/{id}/ad/relationships
+POST   /api/sessions/{id}/ad/bloodhound/import
+GET    /api/sessions/{id}/block-events
+POST   /api/sessions/{id}/findings/{finding_id}/poc/run
+GET    /api/sessions/{id}/poc-results
+POST   /api/sessions/{id}/burp/import
+GET    /api/sessions/{id}/burp/export/scope
+GET    /api/sessions/{id}/burp/export/findings
+GET    /api/burp/status
+
 GET    /api/tools                   List all registered tool adapters
 GET    /api/health                  Health check (DB connected, LLM reachable, tools available)
 
@@ -1388,6 +1429,26 @@ nox sessions list                     List all sessions
 nox sessions show <id>                Show session details
 nox sessions delete <id>              Delete a session
 
+nox monitor create --target ...       Create a recurring monitor config
+nox monitor list                       List monitor configs
+nox monitor enable <config-id>         Enable scheduling for a monitor
+nox monitor disable <config-id>        Disable scheduling for a monitor
+nox monitor run <config-id>            Run a monitor immediately
+nox monitor changes <config-id>        Show stored surface changes
+nox monitor delete <config-id>         Delete a monitor config and run history
+
+nox payloads generate <session-id> --finding <id>
+nox payloads list <session-id>
+nox creds test <session-id> --mode correlate
+nox creds list <session-id>
+nox osint run <session-id>
+nox osint list <session-id>
+nox ad enum <session-id> --domain example.local
+nox ad bloodhound export <session-id>
+nox poc run <session-id> --finding <id> --confirm
+nox poc list <session-id>
+nox burp export scope <session-id> --output scope.xml
+
 nox report <session-id>               Generate report
           --format html|pdf|md|sarif  Output format (default: html)
           --output report.html        Output file (default: stdout)
@@ -1420,6 +1481,22 @@ The frontend is a React SPA embedded in the Go binary. Routes:
 - Global stats: total findings by severity across all sessions
 - Combined-mode sessions show source analysis, audit, dynamic, and correlation
   progress tracks through the same scan event stream.
+
+### 15.1a Monitor (`/monitor`)
+- Create lightweight recurring monitor configs with target, schedule, phases,
+  and alert triggers.
+- List enabled/disabled configs with next run, baseline session, and target.
+- Trigger immediate monitor runs, open generated sessions, and review run
+  history.
+- Display persisted surface changes grouped by severity and change type.
+
+### 15.1b Power Features (`/sessions/:id/power`)
+- Consolidated operator surface for payloads, credentials, OSINT, AD/internal,
+  PoC, and evasion/block-event records.
+- Advanced actions stay manual and visible; the UI does not run credential,
+  PoC, Burp REST, or AD actions implicitly.
+- Finding-scoped payload and PoC controls require an explicit finding ID or use
+  the first finding only as a convenience for local fixture checks.
 
 ### 15.2 Session Detail (`/sessions/:id`)
 - Session metadata (target, mode, duration, status)

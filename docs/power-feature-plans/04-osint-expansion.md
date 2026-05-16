@@ -1,5 +1,10 @@
 # Module 4 Implementation Plan: OSINT Expansion
 
+Current repository state: an initial production-safe slice is implemented with
+session DB OSINT records, local scope/domain seeding, API/CLI/UI visibility, and
+API-key-gated collection. Remaining depth should add provider clients,
+provider-status UX, strict seeding confirmation, and report summaries.
+
 ## Goal And Success Criteria
 
 Add an explicit OSINT phase that collects public intelligence about an

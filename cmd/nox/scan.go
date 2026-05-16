@@ -8,6 +8,7 @@ import (
 
 	"github.com/pridhvi/nox/internal/db"
 	"github.com/pridhvi/nox/internal/engine"
+	"github.com/pridhvi/nox/internal/evasion"
 	llmintel "github.com/pridhvi/nox/internal/llm"
 	"github.com/pridhvi/nox/internal/models"
 )
@@ -28,6 +29,12 @@ func runScan(args []string) error {
 	concurrency := fs.Int("concurrency", 0, "global scan concurrency")
 	rateLimit := fs.String("rate-limit", "", "rate limit label for config compatibility")
 	lean := fs.Bool("lean", false, "delete raw tool run sidecar logs after normalization")
+	evasionProfile := fs.String("evasion-profile", "", "request behavior profile: safe, normal, stealth, custom")
+	proxyURL := fs.String("proxy", "", "proxy URL for compatible requests")
+	userAgentProfile := fs.String("user-agent-profile", "", "user-agent profile")
+	headerProfile := fs.String("header-profile", "", "header profile")
+	jitterMS := fs.Int("jitter-ms", 0, "request jitter in milliseconds")
+	adaptiveBackoff := fs.Bool("adaptive-backoff", false, "enable adaptive backoff on block signals")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -49,6 +56,20 @@ func runScan(args []string) error {
 	selectedTools := splitCSV(firstNonEmpty(*tools, strings.Join(cfg.Scan.Tools, ",")))
 	selectedRateLimit := firstNonEmpty(*rateLimit, cfg.Scan.RateLimit)
 
+	runnerOptions, _, err := evasion.Normalize(models.ScanRunnerOptions{
+		Concurrency:        *concurrency,
+		PerToolConcurrency: 1,
+		RateLimit:          selectedRateLimit,
+		EvasionProfile:     *evasionProfile,
+		ProxyURL:           *proxyURL,
+		UserAgentProfile:   *userAgentProfile,
+		HeaderProfile:      *headerProfile,
+		JitterMS:           *jitterMS,
+		AdaptiveBackoff:    *adaptiveBackoff,
+	})
+	if err != nil {
+		return err
+	}
 	input := engine.NewSessionInput{
 		Target:        *target,
 		SourcePath:    *sourcePath,
@@ -57,7 +78,7 @@ func runScan(args []string) error {
 		OutOfScope:    splitCSV(*outOfScope),
 		EnabledPhases: selectedPhases,
 		EnabledTools:  selectedTools,
-		RunnerOptions: models.ScanRunnerOptions{Concurrency: *concurrency, PerToolConcurrency: 1, RateLimit: selectedRateLimit},
+		RunnerOptions: runnerOptions,
 		LLMModel:      selectedLLMModel,
 		LLMBaseURL:    selectedLLMURL,
 	}

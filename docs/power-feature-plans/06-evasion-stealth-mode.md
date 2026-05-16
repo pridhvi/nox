@@ -1,5 +1,11 @@
 # Module 6 Implementation Plan: Evasion And Stealth Mode
 
+Current repository state: an initial production-safe slice is implemented with
+runner option fields, scan/API/CLI/UI controls, profile normalization, proxy
+redaction, and block-event persistence/API visibility. Remaining depth should
+wire policy-aware transports, subprocess argument mapping, adaptive backoff, and
+report summaries.
+
 ## Goal And Success Criteria
 
 Add reusable request behavior controls: stealth profiles, adaptive backoff,

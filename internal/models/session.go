@@ -58,4 +58,11 @@ type ScanRunnerOptions struct {
 	ToolTimeoutSeconds int    `json:"tool_timeout_seconds,omitempty"`
 	ToolDelayMS        int    `json:"tool_delay_ms,omitempty"`
 	RateLimit          string `json:"rate_limit,omitempty"`
+	EvasionProfile     string `json:"evasion_profile,omitempty"`
+	JitterMS           int    `json:"jitter_ms,omitempty"`
+	ProxyURL           string `json:"proxy_url,omitempty"`
+	UserAgentProfile   string `json:"user_agent_profile,omitempty"`
+	HeaderProfile      string `json:"header_profile,omitempty"`
+	AdaptiveBackoff    bool   `json:"adaptive_backoff,omitempty"`
+	MaxBackoffSeconds  int    `json:"max_backoff_seconds,omitempty"`
 }

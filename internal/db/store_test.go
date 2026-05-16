@@ -33,6 +33,14 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 		"attack_vectors",
 		"llm_analyses",
 		"plugins",
+		"payloads",
+		"credential_findings",
+		"osint_findings",
+		"ad_entities",
+		"ad_relationships",
+		"ad_artifacts",
+		"block_events",
+		"poc_results",
 		"schema_migrations",
 	} {
 		var name string
@@ -41,7 +49,7 @@ func TestMigrationCreatesExpectedTables(t *testing.T) {
 			t.Fatalf("expected table %s: %v", table, err)
 		}
 	}
-	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode"} {
+	for _, version := range []string{"001_initial", "002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode", "006_power_features"} {
 		var got string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, version).Scan(&got); err != nil {
 			t.Fatalf("expected migration %s: %v", version, err)
@@ -425,7 +433,7 @@ func TestExistingInitialDatabaseMigratesToPhase2(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plugins'`).Scan(&pluginTable); err != nil {
 		t.Fatalf("expected plugins table after migration: %v", err)
 	}
-	for _, expected := range []string{"002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode"} {
+	for _, expected := range []string{"002_phase2_persistence", "003_operator_console", "004_tool_run_sidecars", "005_audit_source_mode", "006_power_features"} {
 		var version string
 		if err := store.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE version = ?`, expected).Scan(&version); err != nil {
 			t.Fatalf("expected %s migration record: %v", expected, err)

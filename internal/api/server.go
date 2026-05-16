@@ -20,13 +20,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pridhvi/nox/internal/activedirectory"
 	"github.com/pridhvi/nox/internal/adapters"
+	"github.com/pridhvi/nox/internal/burp"
 	appconfig "github.com/pridhvi/nox/internal/config"
+	"github.com/pridhvi/nox/internal/creds"
 	"github.com/pridhvi/nox/internal/db"
 	"github.com/pridhvi/nox/internal/engine"
+	"github.com/pridhvi/nox/internal/evasion"
 	llmintel "github.com/pridhvi/nox/internal/llm"
 	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nox/internal/monitor"
+	"github.com/pridhvi/nox/internal/osint"
+	"github.com/pridhvi/nox/internal/payload"
+	"github.com/pridhvi/nox/internal/poc"
 	"github.com/pridhvi/nox/internal/report"
+	"github.com/pridhvi/nox/internal/state"
 )
 
 type Config struct {
@@ -44,6 +53,8 @@ type Config struct {
 type Server struct {
 	cfg          Config
 	scanManager  *ScanManager
+	monitorMu    sync.Mutex
+	monitorSched *monitor.Scheduler
 	securityMu   sync.Mutex
 	authFailures map[string][]time.Time
 	authSessions map[string]time.Time
@@ -76,6 +87,24 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err := s.validateExposure(); err != nil {
 		return err
 	}
+	stateStore, err := state.Open(ctx, s.stateDBPath())
+	if err != nil {
+		return err
+	}
+	defer stateStore.Close()
+	scheduler := monitor.NewScheduler(stateStore, s.cfg.SessionDir, s.cfg.HTTPClient)
+	s.monitorMu.Lock()
+	s.monitorSched = scheduler
+	s.monitorMu.Unlock()
+	if err := scheduler.Start(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		scheduler.Stop()
+		s.monitorMu.Lock()
+		s.monitorSched = nil
+		s.monitorMu.Unlock()
+	}()
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port),
 		Handler:           s.Handler(),
@@ -133,6 +162,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/plugins/{plugin_id}", s.deleteGlobalPlugin)
 	mux.HandleFunc("POST /api/plugins/upload", s.uploadPluginBinary)
 	mux.HandleFunc("POST /api/llm/models", s.llmModels)
+	mux.HandleFunc("GET /api/monitor/configs", s.listMonitorConfigs)
+	mux.HandleFunc("POST /api/monitor/configs", s.createMonitorConfig)
+	mux.HandleFunc("GET /api/monitor/configs/{config_id}", s.getMonitorConfig)
+	mux.HandleFunc("PUT /api/monitor/configs/{config_id}", s.updateMonitorConfig)
+	mux.HandleFunc("DELETE /api/monitor/configs/{config_id}", s.deleteMonitorConfig)
+	mux.HandleFunc("POST /api/monitor/configs/{config_id}/run", s.runMonitorConfig)
+	mux.HandleFunc("GET /api/monitor/runs", s.listMonitorRuns)
+	mux.HandleFunc("GET /api/monitor/runs/{run_id}/changes", s.listMonitorRunChanges)
+	mux.HandleFunc("PUT /api/monitor/changes/{change_id}/alert-sent", s.markMonitorChangeAlerted)
 	mux.HandleFunc("GET /api/sessions", s.listSessions)
 	mux.HandleFunc("GET /api/sessions/{id}", s.getSession)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
@@ -140,6 +178,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/findings", s.listFindings)
 	mux.HandleFunc("GET /api/sessions/{id}/source-findings", s.listSourceFindings)
 	mux.HandleFunc("PATCH /api/sessions/{id}/findings/{finding_id}", s.updateFinding)
+	mux.HandleFunc("POST /api/sessions/{id}/findings/{finding_id}/generate-payloads", s.generatePayloads)
+	mux.HandleFunc("GET /api/sessions/{id}/findings/{finding_id}/payloads", s.listFindingPayloads)
+	mux.HandleFunc("POST /api/sessions/{id}/findings/{finding_id}/poc/run", s.runPoC)
+	mux.HandleFunc("GET /api/sessions/{id}/findings/{finding_id}/poc", s.listFindingPoCResults)
+	mux.HandleFunc("GET /api/sessions/{id}/payloads", s.listSessionPayloads)
+	mux.HandleFunc("POST /api/sessions/{id}/payloads/{payload_id}/validate", s.validatePayload)
+	mux.HandleFunc("GET /api/sessions/{id}/credentials", s.listCredentials)
+	mux.HandleFunc("GET /api/sessions/{id}/credentials/{credential_id}", s.getCredential)
+	mux.HandleFunc("POST /api/sessions/{id}/credentials/test", s.testCredentials)
+	mux.HandleFunc("POST /api/sessions/{id}/credentials/{credential_id}/redact", s.redactCredential)
+	mux.HandleFunc("GET /api/sessions/{id}/osint", s.listOSINTFindings)
+	mux.HandleFunc("POST /api/sessions/{id}/osint/run", s.runOSINT)
+	mux.HandleFunc("POST /api/sessions/{id}/osint/{finding_id}/seed", s.seedOSINTFinding)
+	mux.HandleFunc("GET /api/sessions/{id}/ad/entities", s.listADEntities)
+	mux.HandleFunc("GET /api/sessions/{id}/ad/relationships", s.listADRelationships)
+	mux.HandleFunc("GET /api/sessions/{id}/ad/artifacts", s.listADArtifacts)
+	mux.HandleFunc("POST /api/sessions/{id}/ad/enum", s.runADEnum)
+	mux.HandleFunc("POST /api/sessions/{id}/ad/kerberoast", s.runADKerberoast)
+	mux.HandleFunc("POST /api/sessions/{id}/ad/bloodhound/import", s.importBloodHound)
+	mux.HandleFunc("GET /api/sessions/{id}/ad/bloodhound/export", s.exportBloodHound)
+	mux.HandleFunc("GET /api/sessions/{id}/block-events", s.listBlockEvents)
+	mux.HandleFunc("GET /api/sessions/{id}/poc-results", s.listPoCResults)
+	mux.HandleFunc("GET /api/sessions/{id}/burp/export/scope", s.exportBurpScope)
+	mux.HandleFunc("GET /api/sessions/{id}/burp/export/findings", s.exportBurpFindings)
+	mux.HandleFunc("POST /api/sessions/{id}/burp/import", s.importBurpXML)
+	mux.HandleFunc("POST /api/sessions/{id}/burp/push-scope", s.burpUnavailable("push_scope"))
+	mux.HandleFunc("POST /api/sessions/{id}/burp/pull-issues", s.burpUnavailable("pull_issues"))
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs", s.listToolRuns)
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs/{run_id}/stdout", s.toolRunLog("stdout"))
 	mux.HandleFunc("GET /api/sessions/{id}/tool-runs/{run_id}/stderr", s.toolRunLog("stderr"))
@@ -161,6 +226,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/scan/{id}/stop", s.stopScan)
 	mux.HandleFunc("POST /api/scan/{id}/pause", s.pauseScan)
 	mux.HandleFunc("POST /api/scan/{id}/resume", s.resumeScan)
+	mux.HandleFunc("GET /api/burp/status", s.burpStatus)
+	mux.HandleFunc("POST /api/burp/collaborator/setup", s.setupBurpCollaborator)
+	mux.HandleFunc("GET /api/burp/collaborator/callbacks", s.listBurpCallbacks)
 	mux.Handle("/", spaHandler())
 	return s.withAuth(mux)
 }
@@ -408,11 +476,39 @@ func splitEnvList(value string) []string {
 	return out
 }
 
+func parseBoolQuery(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "valid":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) stateDir() string {
 	if filepath.Base(s.cfg.SessionDir) == "sessions" {
 		return filepath.Dir(s.cfg.SessionDir)
 	}
 	return s.cfg.SessionDir
+}
+
+func (s *Server) stateDBPath() string {
+	return state.DBPath(s.stateDir())
+}
+
+func (s *Server) openState(ctx context.Context) (*state.Store, error) {
+	return state.Open(ctx, s.stateDBPath())
+}
+
+func (s *Server) reloadMonitorScheduler(ctx context.Context) {
+	s.monitorMu.Lock()
+	scheduler := s.monitorSched
+	s.monitorMu.Unlock()
+	if scheduler != nil {
+		if err := scheduler.Reload(ctx); err != nil {
+			slog.Warn("reload monitor scheduler", "error", err)
+		}
+	}
 }
 
 func (s *Server) detectToolBinary(toolID, binary string) (string, bool) {
@@ -441,6 +537,755 @@ type scanProfileRequest struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Request     startScanRequest `json:"request"`
+}
+
+type monitorConfigRequest struct {
+	Name               string                           `json:"name"`
+	TargetInput        string                           `json:"target_input"`
+	InScope            []string                         `json:"in_scope"`
+	OutOfScope         []string                         `json:"out_of_scope"`
+	Schedule           string                           `json:"schedule"`
+	EnabledPhases      []string                         `json:"enabled_phases"`
+	EnabledTools       []string                         `json:"enabled_tools"`
+	ToolParameters     map[string]map[string]any        `json:"tool_parameters"`
+	RunnerOptions      models.ScanRunnerOptions         `json:"runner_options"`
+	AlertOn            []string                         `json:"alert_on"`
+	NotificationConfig models.MonitorNotificationConfig `json:"notification_config"`
+	BaselineSessionID  string                           `json:"baseline_session_id"`
+	Enabled            *bool                            `json:"enabled"`
+}
+
+func (s *Server) listMonitorConfigs(w http.ResponseWriter, r *http.Request) {
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	configs, err := store.ListMonitorConfigs(r.Context())
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, monitor.RedactConfigs(configs))
+}
+
+func (s *Server) getMonitorConfig(w http.ResponseWriter, r *http.Request) {
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	config, err := store.GetMonitorConfig(r.Context(), r.PathValue("config_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, config.Redacted())
+}
+
+func (s *Server) createMonitorConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "monitor configuration requires API key authentication") {
+		return
+	}
+	var req monitorConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	config, err := monitorConfigFromRequest(req, models.NewID(), time.Time{})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	config, err = monitor.NormalizeConfig(config, time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	if err := store.UpsertMonitorConfig(r.Context(), config); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	s.reloadMonitorScheduler(r.Context())
+	writeJSONStatus(w, http.StatusCreated, config.Redacted())
+}
+
+func (s *Server) updateMonitorConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "monitor configuration requires API key authentication") {
+		return
+	}
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	existing, err := store.GetMonitorConfig(r.Context(), r.PathValue("config_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	var req monitorConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	config, err := monitorConfigFromRequest(req, existing.ID, existing.CreatedAt)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if config.NotificationConfig.SlackWebhookURL == "" || config.NotificationConfig.SlackWebhookURL == "********" {
+		config.NotificationConfig.SlackWebhookURL = existing.NotificationConfig.SlackWebhookURL
+	}
+	if config.NotificationConfig.DiscordWebhookURL == "" || config.NotificationConfig.DiscordWebhookURL == "********" {
+		config.NotificationConfig.DiscordWebhookURL = existing.NotificationConfig.DiscordWebhookURL
+	}
+	if config.BaselineSessionID == "" {
+		config.BaselineSessionID = existing.BaselineSessionID
+	}
+	if config.LastRunAt == nil {
+		config.LastRunAt = existing.LastRunAt
+	}
+	if req.Enabled == nil {
+		config.Enabled = existing.Enabled
+	}
+	config, err = monitor.NormalizeConfig(config, time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := store.UpsertMonitorConfig(r.Context(), config); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	s.reloadMonitorScheduler(r.Context())
+	writeJSON(w, config.Redacted())
+}
+
+func (s *Server) deleteMonitorConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "monitor configuration requires API key authentication") {
+		return
+	}
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	if err := store.DeleteMonitorConfig(r.Context(), r.PathValue("config_id")); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	s.reloadMonitorScheduler(r.Context())
+	writeJSON(w, map[string]bool{"deleted": true})
+}
+
+func (s *Server) runMonitorConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "monitor runs require API key authentication") {
+		return
+	}
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	runner := monitor.Runner{State: store, SessionDir: s.cfg.SessionDir, HTTPClient: s.cfg.HTTPClient}
+	run, changes, err := runner.RunNow(r.Context(), r.PathValue("config_id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	config, err := store.GetMonitorConfig(r.Context(), r.PathValue("config_id"))
+	if err == nil {
+		_ = monitor.Alert(r.Context(), store, config, changes)
+	}
+	s.reloadMonitorScheduler(r.Context())
+	writeJSONStatus(w, http.StatusAccepted, map[string]any{"run": run, "changes": changes})
+}
+
+func (s *Server) listMonitorRuns(w http.ResponseWriter, r *http.Request) {
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	runs, err := store.ListMonitorRuns(r.Context(), state.MonitorRunFilter{ConfigID: strings.TrimSpace(r.URL.Query().Get("config_id"))})
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, runs)
+}
+
+func (s *Server) listMonitorRunChanges(w http.ResponseWriter, r *http.Request) {
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	run, err := store.GetMonitorRun(r.Context(), r.PathValue("run_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	changes, err := store.ListSurfaceChanges(r.Context(), run.ID)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, changes)
+}
+
+func (s *Server) markMonitorChangeAlerted(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "monitor alert state requires API key authentication") {
+		return
+	}
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	if err := store.MarkSurfaceChangeAlerted(r.Context(), r.PathValue("change_id")); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"alerted": true})
+}
+
+func monitorConfigFromRequest(req monitorConfigRequest, id string, createdAt time.Time) (models.MonitorConfig, error) {
+	if err := validateTools(req.EnabledTools); err != nil {
+		return models.MonitorConfig{}, err
+	}
+	if err := validateToolParameters(req.ToolParameters); err != nil {
+		return models.MonitorConfig{}, err
+	}
+	if err := monitor.ValidateAlertTriggers(req.AlertOn); err != nil {
+		return models.MonitorConfig{}, err
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	return models.MonitorConfig{
+		ID:                 id,
+		Name:               req.Name,
+		TargetInput:        req.TargetInput,
+		InScope:            req.InScope,
+		OutOfScope:         req.OutOfScope,
+		Schedule:           req.Schedule,
+		EnabledPhases:      req.EnabledPhases,
+		EnabledTools:       req.EnabledTools,
+		ToolParameters:     req.ToolParameters,
+		RunnerOptions:      req.RunnerOptions,
+		AlertOn:            req.AlertOn,
+		NotificationConfig: req.NotificationConfig,
+		BaselineSessionID:  req.BaselineSessionID,
+		Enabled:            enabled,
+		CreatedAt:          createdAt,
+	}, nil
+}
+
+func (s *Server) generatePayloads(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ForceRegenerate bool `json:"force_regenerate"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	payloads, err := payload.Generate(r.Context(), store, r.PathValue("id"), r.PathValue("finding_id"), payload.GenerateOptions{Force: req.ForceRegenerate})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, payloads)
+}
+
+func (s *Server) listFindingPayloads(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	payloads, err := store.ListPayloadsByFinding(r.Context(), r.PathValue("id"), r.PathValue("finding_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, payloads)
+}
+
+func (s *Server) listSessionPayloads(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	filter := db.PayloadFilter{Type: strings.TrimSpace(r.URL.Query().Get("type"))}
+	if value := strings.TrimSpace(r.URL.Query().Get("validated")); value != "" {
+		parsed := parseBoolQuery(value)
+		filter.Validated = &parsed
+	}
+	payloads, err := store.ListPayloadsBySession(r.Context(), r.PathValue("id"), filter)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, payloads)
+}
+
+func (s *Server) validatePayload(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "payload validation requires API key authentication") {
+		return
+	}
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	if err := store.UpdatePayloadValidation(r.Context(), r.PathValue("id"), r.PathValue("payload_id"), "Manual validation recorded; no request was sent by the safe default validator.", false); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"validated": false, "reason": "manual validation required"})
+}
+
+func (s *Server) listCredentials(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	filter := db.CredentialFilter{Type: r.URL.Query().Get("type"), Service: r.URL.Query().Get("service")}
+	if value := r.URL.Query().Get("valid"); strings.TrimSpace(value) != "" {
+		parsed := parseBoolQuery(value)
+		filter.Valid = &parsed
+	}
+	credentials, err := store.ListCredentialFindings(r.Context(), r.PathValue("id"), filter)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, creds.RedactAll(credentials, false))
+}
+
+func (s *Server) getCredential(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	credential, err := store.CredentialFindingByID(r.Context(), r.PathValue("id"), r.PathValue("credential_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, credential.Redacted())
+}
+
+func (s *Server) testCredentials(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "credential testing requires API key authentication") {
+		return
+	}
+	var req creds.TestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	credentials, err := creds.Run(r.Context(), store, r.PathValue("id"), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, creds.RedactAll(credentials, false))
+}
+
+func (s *Server) redactCredential(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "credential redaction requires API key authentication") {
+		return
+	}
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	credential, err := store.CredentialFindingByID(r.Context(), r.PathValue("id"), r.PathValue("credential_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	credential.Password = ""
+	if err := store.UpdateCredentialFinding(r.Context(), credential); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, credential)
+}
+
+func (s *Server) listOSINTFindings(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	findings, err := store.ListOSINTFindings(r.Context(), r.PathValue("id"), db.OSINTFilter{Kind: r.URL.Query().Get("kind"), Source: r.URL.Query().Get("source")})
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, findings)
+}
+
+func (s *Server) runOSINT(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "OSINT collection requires API key authentication") {
+		return
+	}
+	var req osint.RunRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	store, session, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	findings, err := osint.Run(r.Context(), store, session, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, findings)
+}
+
+func (s *Server) seedOSINTFinding(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "OSINT seeding requires API key authentication") {
+		return
+	}
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	finding, err := store.OSINTFindingByID(r.Context(), r.PathValue("id"), r.PathValue("finding_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"seeded": false, "finding": finding, "reason": "operator confirmation required before adding scan targets"})
+}
+
+func (s *Server) listADEntities(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	entities, err := store.ListADEntities(r.Context(), r.PathValue("id"), r.URL.Query().Get("type"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, entities)
+}
+
+func (s *Server) listADRelationships(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	relationships, err := store.ListADRelationships(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, relationships)
+}
+
+func (s *Server) listADArtifacts(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	artifacts, err := store.ListADArtifacts(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, artifacts)
+}
+
+func (s *Server) runADEnum(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "AD enumeration requires API key authentication") {
+		return
+	}
+	var req struct {
+		Domain      string `json:"domain"`
+		AllowPublic bool   `json:"allow_public"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	store, session, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	entities, err := activedirectory.RecordEnumRequest(r.Context(), store, session, req.Domain, req.AllowPublic)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, entities)
+}
+
+func (s *Server) runADKerberoast(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "Kerberoast requests require API key authentication") {
+		return
+	}
+	var req struct {
+		Confirm bool `json:"confirm"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if !req.Confirm {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("kerberoast requires confirm=true"))
+		return
+	}
+	writeJSON(w, map[string]any{"started": false, "reason": "external Kerberoast execution is intentionally not automatic in this safe slice"})
+}
+
+func (s *Server) importBloodHound(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "BloodHound import requires API key authentication") {
+		return
+	}
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := activedirectory.ImportBloodHound(r.Context(), store, r.PathValue("id"), raw); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"imported": true})
+}
+
+func (s *Server) exportBloodHound(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	entities, _ := store.ListADEntities(r.Context(), r.PathValue("id"), "")
+	relationships, _ := store.ListADRelationships(r.Context(), r.PathValue("id"))
+	writeJSON(w, map[string]any{"entities": entities, "relationships": relationships})
+}
+
+func (s *Server) listBlockEvents(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	events, err := store.ListBlockEvents(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, events)
+}
+
+func (s *Server) runPoC(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "PoC execution requires API key authentication") {
+		return
+	}
+	var req poc.RunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	result, err := poc.Run(r.Context(), store, r.PathValue("id"), r.PathValue("finding_id"), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, result)
+}
+
+func (s *Server) listFindingPoCResults(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	results, err := store.ListPoCResults(r.Context(), r.PathValue("id"), r.PathValue("finding_id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, results)
+}
+
+func (s *Server) listPoCResults(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	results, err := store.ListPoCResults(r.Context(), r.PathValue("id"), "")
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	writeJSON(w, results)
+}
+
+func (s *Server) importBurpXML(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "Burp import requires API key authentication") {
+		return
+	}
+	store, session, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	result, err := burp.ImportXML(r.Context(), store, session, raw)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, result)
+}
+
+func (s *Server) exportBurpScope(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	raw, err := burp.ExportScope(r.Context(), store, r.PathValue("id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	_, _ = w.Write(raw)
+}
+
+func (s *Server) exportBurpFindings(w http.ResponseWriter, r *http.Request) {
+	store, _, ok := s.openSession(w, r)
+	if !ok {
+		return
+	}
+	defer store.Close()
+	raw, err := burp.ExportFindings(r.Context(), store, r.PathValue("id"))
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	_, _ = w.Write(raw)
+}
+
+func (s *Server) burpUnavailable(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.requireConfiguredAPIKey(w, "Burp REST actions require API key authentication") {
+			return
+		}
+		writeJSON(w, map[string]any{"available": false, "action": action, "reason": "Burp REST client is not configured"})
+	}
+}
+
+func (s *Server) burpStatus(w http.ResponseWriter, r *http.Request) {
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	config, err := store.GetBurpConfig(r.Context())
+	if err != nil {
+		writeJSON(w, map[string]any{"configured": false, "available": false})
+		return
+	}
+	writeJSON(w, map[string]any{"configured": true, "available": false, "config": config.Redacted(), "reason": "REST status probing is disabled until a local Burp API URL is configured and explicitly tested"})
+}
+
+func (s *Server) setupBurpCollaborator(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfiguredAPIKey(w, "Burp collaborator setup requires API key authentication") {
+		return
+	}
+	var config models.BurpConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	now := time.Now().UTC()
+	if config.ID == "" {
+		config.ID = models.NewID()
+	}
+	if config.CreatedAt.IsZero() {
+		config.CreatedAt = now
+	}
+	config.UpdatedAt = now
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	if err := store.UpsertBurpConfig(r.Context(), config); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, config.Redacted())
+}
+
+func (s *Server) listBurpCallbacks(w http.ResponseWriter, r *http.Request) {
+	store, err := s.openState(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer store.Close()
+	callbacks, err := store.ListBurpCallbacks(r.Context(), r.URL.Query().Get("session_id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, callbacks)
 }
 
 func (s *Server) listScanProfiles(w http.ResponseWriter, r *http.Request) {
@@ -1465,6 +2310,13 @@ type startScanRequest struct {
 	ToolTimeoutSeconds int                       `json:"tool_timeout_seconds"`
 	ToolDelayMS        int                       `json:"tool_delay_ms"`
 	RateLimit          string                    `json:"rate_limit"`
+	EvasionProfile     string                    `json:"evasion_profile"`
+	JitterMS           int                       `json:"jitter_ms"`
+	ProxyURL           string                    `json:"proxy_url"`
+	UserAgentProfile   string                    `json:"user_agent_profile"`
+	HeaderProfile      string                    `json:"header_profile"`
+	AdaptiveBackoff    bool                      `json:"adaptive_backoff"`
+	MaxBackoffSeconds  int                       `json:"max_backoff_seconds"`
 	LLMModel           string                    `json:"llm_model"`
 	LLMBaseURL         string                    `json:"llm_base_url"`
 }
@@ -1499,6 +2351,24 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	runnerOptions, _, err := evasion.Normalize(models.ScanRunnerOptions{
+		Concurrency:        req.Concurrency,
+		PerToolConcurrency: req.PerToolConcurrency,
+		ToolTimeoutSeconds: req.ToolTimeoutSeconds,
+		ToolDelayMS:        req.ToolDelayMS,
+		RateLimit:          req.RateLimit,
+		EvasionProfile:     req.EvasionProfile,
+		JitterMS:           req.JitterMS,
+		ProxyURL:           req.ProxyURL,
+		UserAgentProfile:   req.UserAgentProfile,
+		HeaderProfile:      req.HeaderProfile,
+		AdaptiveBackoff:    req.AdaptiveBackoff,
+		MaxBackoffSeconds:  req.MaxBackoffSeconds,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	input := engine.NewSessionInput{
 		Target:         req.Target,
 		SourcePath:     req.SourcePath,
@@ -1508,29 +2378,23 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		EnabledPhases:  req.EnabledPhases,
 		EnabledTools:   req.Tools,
 		ToolParameters: req.ToolParameters,
-		RunnerOptions: models.ScanRunnerOptions{
-			Concurrency:        req.Concurrency,
-			PerToolConcurrency: req.PerToolConcurrency,
-			ToolTimeoutSeconds: req.ToolTimeoutSeconds,
-			ToolDelayMS:        req.ToolDelayMS,
-			RateLimit:          req.RateLimit,
-		},
-		LLMModel:   req.LLMModel,
-		LLMBaseURL: req.LLMBaseURL,
+		RunnerOptions:  runnerOptions,
+		LLMModel:       req.LLMModel,
+		LLMBaseURL:     req.LLMBaseURL,
 	}
 	var session models.Session
 	var targets []models.Target
-	var err error
+	var sessionErr error
 	if req.Target == "" && req.SourcePath != "" {
-		session, err = engine.NewPendingSourceSession(input)
+		session, sessionErr = engine.NewPendingSourceSession(input)
 	} else {
 		if req.SourcePath != "" {
 			input.WorkloadMode = models.WorkloadModeCombined
 		}
-		session, targets, err = engine.NewPendingSessionWithTargets(input)
+		session, targets, sessionErr = engine.NewPendingSessionWithTargets(input)
 	}
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if sessionErr != nil {
+		writeError(w, http.StatusBadRequest, sessionErr)
 		return
 	}
 	record, err := db.CreateSessionDBWithTargets(r.Context(), s.cfg.SessionDir, session, targets)

@@ -1,5 +1,10 @@
 # Module 3 Implementation Plan: Credential Testing
 
+Current repository state: an initial production-safe slice is implemented with
+session DB credential records, API/CLI/UI visibility, redaction by default, and
+API-key-gated test recording. Remaining depth should add fixture-safe login
+adapters, lockout-aware spraying, curated defaults, and report summaries.
+
 ## Goal And Success Criteria
 
 Add explicit credential testing for discovered web services and login endpoints:
