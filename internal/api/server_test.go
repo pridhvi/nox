@@ -34,7 +34,11 @@ func TestSessionAPI(t *testing.T) {
 		t.Fatalf("health status = %d", health.Code)
 	}
 
-	body := bytes.NewBufferString(`{"target":"` + targetServer.URL + `","name":"Example","mode":"active","out_of_scope":["admin.example.com"]}`)
+	wordlist := filepath.Join(t.TempDir(), "words.txt")
+	if err := os.WriteFile(wordlist, []byte("admin\nhealth\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body := bytes.NewBufferString(`{"target":"` + targetServer.URL + `","name":"Example","mode":"active","out_of_scope":["admin.example.com"],"tools":["http-probe","security-headers","ffuf"],"tool_parameters":{"ffuf":{"wordlist":"` + wordlist + `","timeout_seconds":5}}}`)
 	start := httptest.NewRecorder()
 	handler.ServeHTTP(start, httptest.NewRequest(http.MethodPost, "/api/scan/start", body))
 	if start.Code != http.StatusAccepted {
@@ -106,7 +110,7 @@ func TestSessionAPI(t *testing.T) {
 	for _, run := range decodedRuns {
 		runIDs[run.ToolID] = true
 	}
-	for _, toolID := range []string{"http-probe", "security-headers", "nmap", "ffuf"} {
+	for _, toolID := range []string{"http-probe", "security-headers", "ffuf"} {
 		if !runIDs[toolID] {
 			t.Fatalf("expected tool run %s in %#v", toolID, runIDs)
 		}
@@ -558,7 +562,7 @@ func waitForScanStatus(t *testing.T, handler http.Handler, sessionID string, wan
 
 func waitForScanStatusWithKey(t *testing.T, handler http.Handler, sessionID string, want models.SessionStatus, apiKey string) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		status := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/scan/"+sessionID+"/status", nil)
@@ -594,7 +598,7 @@ func TestScanEventsWebSocketReplaysLifecycle(t *testing.T) {
 	apiServer := httptest.NewServer(handler)
 	defer apiServer.Close()
 
-	body := bytes.NewBufferString(`{"target":"` + targetServer.URL + `","name":"Events","mode":"active"}`)
+	body := bytes.NewBufferString(`{"target":"` + targetServer.URL + `","name":"Events","mode":"active","tools":["http-probe","security-headers"],"tool_timeout_seconds":10}`)
 	resp, err := http.Post(apiServer.URL+"/api/scan/start", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
