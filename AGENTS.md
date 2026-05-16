@@ -17,9 +17,9 @@ This repo has a buildable backend with module path `github.com/pridhvi/nox`, abs
 
 ## Suggested Next Tasks
 
-The phase roadmap in `docs/implementation-plan.md` is complete from the repository perspective. Linux VM validation is prepared through `scripts/install-linux-tools.sh`, `scripts/tool-version-smoke.sh linux-full`, and `NOX_RUN_LINUX_FULL=1 make linux-full-smoke`. Next tasks should be hardening and depth rather than new roadmap phases:
+The phase roadmap in `docs/implementation-plan.md` is complete from the repository perspective. Future enhancement modules are tracked in `docs/nox-power-features-spec.md`, with agent-ready implementation plans in `docs/power-feature-plans/`. Next tasks should be hardening and depth rather than new roadmap phases:
 
-1. Run the Linux VM full-tool acceptance checklist and turn adapter failures into parser/timeout/install fixes.
+1. Turn Linux full-tool acceptance findings into parser/timeout/install fixes.
 2. Add optional code-splitting for any remaining large frontend graph/chart bundle paths.
 3. Add more vulnerable fixture scenarios as new deterministic adapters are introduced.
-4. Revisit native ProjectDiscovery adapters only after a focused `httpx` spike proves the maintenance and resource tradeoff is worthwhile.
+4. Implement selected power-feature modules from `docs/power-feature-plans/`.
