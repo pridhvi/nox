@@ -314,14 +314,26 @@ export type ScanEvent = {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(payload.error ?? response.statusText);
   }
   return response.json() as Promise<T>;
+}
+
+export function login(apiKey: string) {
+  return api<{ authenticated: boolean; auth_enabled: boolean; expires_at?: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+}
+
+export function logout() {
+  return api<{ authenticated: boolean }>("/api/auth/logout", { method: "POST", body: "{}" });
 }
 
 export function listSessions() {
@@ -364,7 +376,7 @@ export function listToolRuns(sessionID: string) {
 }
 
 export async function getToolRunLog(sessionID: string, runID: string, stream: "stdout" | "stderr") {
-  const response = await fetch(`/api/sessions/${sessionID}/tool-runs/${runID}/${stream}`);
+  const response = await fetch(`/api/sessions/${sessionID}/tool-runs/${runID}/${stream}`, { credentials: "same-origin" });
   if (response.status === 404) {
     return null;
   }
@@ -414,7 +426,7 @@ export function deletePlugin(pluginID: string) {
 export async function uploadPluginBinary(file: File) {
   const body = new FormData();
   body.set("binary", file);
-  const response = await fetch("/api/plugins/upload", { method: "POST", body });
+  const response = await fetch("/api/plugins/upload", { method: "POST", body, credentials: "same-origin" });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(payload.error ?? response.statusText);
@@ -454,7 +466,9 @@ export function listLLMModels(baseURL: string) {
 }
 
 export async function getReport(sessionID: string, format: string, mode: string) {
-  const response = await fetch(`/api/sessions/${sessionID}/report?format=${encodeURIComponent(format)}&mode=${encodeURIComponent(mode)}`);
+  const response = await fetch(`/api/sessions/${sessionID}/report?format=${encodeURIComponent(format)}&mode=${encodeURIComponent(mode)}`, {
+    credentials: "same-origin",
+  });
   if (!response.ok) {
     throw new Error(await response.text());
   }

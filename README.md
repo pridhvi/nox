@@ -12,7 +12,7 @@ At a high level, nox creates a scoped session, runs a dependency-aware tool pipe
 
 It runs entirely locally by default. There is no telemetry, no required cloud service, and no required hosted LLM. Ollama, LM Studio, llama.cpp, and OpenAI-compatible endpoints can be used when LLM analysis is enabled.
 
-When serving beyond loopback, Nox requires `NOX_API_KEY` or `server.api_key`. Host-privileged API operations, including plugin management, API source scans, and LLM endpoint probing, require API-key authentication even in local mode.
+When serving beyond loopback, Nox requires `NOX_API_KEY` or `server.api_key`. Host-privileged API operations, including plugin management, API source scans, and LLM endpoint probing, require API-key authentication even in local mode. The browser console uses an HttpOnly session cookie after API-key login; API keys are accepted in `X-Nox-API-Key` or `Authorization: Bearer` headers, not in query strings.
 
 ## Quick start
 
@@ -82,6 +82,8 @@ tools:
 ```
 
 Sessions are stored as directories under `database.session_dir`: `<session-id>/session.db` plus optional `<session-id>/runs/*.log` sidecars. Use `./bin/nox scan --lean` to discard raw sidecar logs after normalization, or `./bin/nox sessions export <session-id> --output session.zip` to package the database and logs together.
+
+For stricter local deployments, set `NOX_SOURCE_ROOTS` to a comma-separated list of allowed repository roots for API-triggered source scans, and `NOX_LLM_ALLOWED_HOSTS` to allowed LLM probe hosts such as `127.0.0.1,localhost,ollama`.
 
 See [docs/](docs/) for the project spec and implementation roadmap.
 

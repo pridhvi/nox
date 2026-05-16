@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { Bot, FileCode2, FileText, Moon, Network, PackageSearch, Search, Settings as SettingsIcon, Shield, Sun, TerminalSquare, Wrench } from "lucide-react";
+import { login as loginAPI } from "./api/client";
 import { scopedSessionPath } from "./sessionRoutes";
 import { SessionProvider, useSessionContext } from "./session";
 import "./styles.css";
@@ -23,13 +24,90 @@ const Settings = lazy(() => import("./pages/Settings").then((module) => ({ defau
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <SessionProvider>
-          <OperatorShell />
-        </SessionProvider>
-      </BrowserRouter>
+      <AuthGate>
+        <BrowserRouter>
+          <SessionProvider>
+            <OperatorShell />
+          </SessionProvider>
+        </BrowserRouter>
+      </AuthGate>
     </QueryClientProvider>
   );
+}
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<"checking" | "ready" | "required">("checking");
+  const [apiKey, setAPIKey] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/health", { credentials: "same-origin" })
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        if (response.status === 401) {
+          setState("required");
+          return;
+        }
+        if (response.ok) {
+          setState("ready");
+          return;
+        }
+        setError(response.statusText);
+        setState("required");
+      })
+      .catch((err) => {
+        if (!active) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Unable to reach API");
+        setState("required");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    try {
+      await loginAPI(apiKey);
+      queryClient.clear();
+      setAPIKey("");
+      setState("ready");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    }
+  }
+
+  if (state === "checking") {
+    return <section className="auth-screen"><div className="auth-panel">Checking API access</div></section>;
+  }
+  if (state === "required") {
+    return (
+      <section className="auth-screen">
+        <form className="auth-panel" onSubmit={submit}>
+          <div className="brand auth-brand"><img src="/nox-logo.svg" alt="" />NOX</div>
+          <label>API Key
+            <input
+              autoFocus
+              type="password"
+              value={apiKey}
+              onChange={(event) => setAPIKey(event.target.value)}
+              placeholder="Enter API key"
+              autoComplete="current-password"
+            />
+          </label>
+          {error ? <p className="form-error">{error}</p> : null}
+          <button className="primary" type="submit" disabled={!apiKey.trim()}>Unlock Console</button>
+        </form>
+      </section>
+    );
+  }
+  return children;
 }
 
 function OperatorShell() {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -78,6 +79,10 @@ var scanEventUpgrader = websocket.Upgrader{
 }
 
 func (s *Server) scanEvents(w http.ResponseWriter, r *http.Request) {
+	if websocketCrossOrigin(r) {
+		writeError(w, http.StatusForbidden, errors.New("cross-origin websocket requests are not allowed"))
+		return
+	}
 	sessionID := r.PathValue("id")
 	if _, err := dbSessionExists(r, s.cfg.SessionDir, sessionID); err != nil {
 		writeDBError(w, err)

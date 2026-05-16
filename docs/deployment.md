@@ -11,6 +11,8 @@ docker run --rm -p 127.0.0.1:8080:8080 -e NOX_API_KEY="$NOX_API_KEY" -v nox-data
 curl -H "X-Nox-API-Key: $NOX_API_KEY" http://127.0.0.1:8080/api/health
 ```
 
+The web console prompts for the same API key when auth is enabled and stores only an opaque HttpOnly session cookie. Do not put API keys in URLs; query-string API keys are rejected.
+
 Run the packaged smoke check:
 
 ```sh
@@ -52,6 +54,13 @@ llm:
   provider: openai-compatible
   base_url: http://ollama:11434/v1
   model: llama3:8b
+```
+
+For tighter host deployments, constrain source scans and LLM model probing:
+
+```sh
+export NOX_SOURCE_ROOTS=/srv/audits,/work/repos
+export NOX_LLM_ALLOWED_HOSTS=127.0.0.1,localhost,ollama
 ```
 
 Single-binary local mode remains supported. Optional external tools degrade

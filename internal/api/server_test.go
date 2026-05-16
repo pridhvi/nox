@@ -195,6 +195,50 @@ func TestAPIKeyAuth(t *testing.T) {
 	if allowed.Code != http.StatusOK {
 		t.Fatalf("expected authorized health, got %d", allowed.Code)
 	}
+	queryToken := httptest.NewRecorder()
+	handler.ServeHTTP(queryToken, httptest.NewRequest(http.MethodGet, "/api/health?api_key=secret", nil))
+	if queryToken.Code != http.StatusUnauthorized {
+		t.Fatalf("expected query-string api key rejection, got %d", queryToken.Code)
+	}
+	login := httptest.NewRecorder()
+	handler.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"api_key":"secret"}`)))
+	if login.Code != http.StatusOK {
+		t.Fatalf("expected login success, got %d body=%s", login.Code, login.Body.String())
+	}
+	cookies := login.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != authSessionCookieName || cookies[0].Value == "" || !cookies[0].HttpOnly {
+		t.Fatalf("expected opaque HttpOnly auth cookie, got %#v", cookies)
+	}
+	cookieAllowed := httptest.NewRecorder()
+	cookieReq := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	cookieReq.AddCookie(cookies[0])
+	handler.ServeHTTP(cookieAllowed, cookieReq)
+	if cookieAllowed.Code != http.StatusOK {
+		t.Fatalf("expected cookie-authenticated health, got %d", cookieAllowed.Code)
+	}
+	logout := httptest.NewRecorder()
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logoutReq.AddCookie(cookies[0])
+	handler.ServeHTTP(logout, logoutReq)
+	if logout.Code != http.StatusOK {
+		t.Fatalf("expected logout success, got %d", logout.Code)
+	}
+	afterLogout := httptest.NewRecorder()
+	afterLogoutReq := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	afterLogoutReq.AddCookie(cookies[0])
+	handler.ServeHTTP(afterLogout, afterLogoutReq)
+	if afterLogout.Code != http.StatusUnauthorized {
+		t.Fatalf("expected logged-out cookie rejection, got %d", afterLogout.Code)
+	}
+	for i := 0; i < authFailureLimit; i++ {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/health", nil))
+	}
+	limited := httptest.NewRecorder()
+	handler.ServeHTTP(limited, httptest.NewRequest(http.MethodGet, "/api/health", nil))
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected auth failure rate limit, got %d", limited.Code)
+	}
 }
 
 func TestPrivilegedOperationsRequireConfiguredAPIKey(t *testing.T) {
@@ -256,6 +300,25 @@ func TestLLMModelsDoesNotReflectUpstreamErrorBody(t *testing.T) {
 	}
 }
 
+func TestLLMModelsHonorsHostAllowlist(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"llama"}]}`))
+	}))
+	defer targetServer.Close()
+	handler := NewServer(Config{
+		SessionDir:      t.TempDir(),
+		APIKey:          "secret",
+		HTTPClient:      targetServer.Client(),
+		LLMAllowedHosts: []string{"llm.internal.example"},
+	}).Handler()
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, apiKeyRequest(http.MethodPost, "/api/llm/models", bytes.NewBufferString(`{"base_url":"`+targetServer.URL+`"}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected allowlist rejection, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestServerRejectsUnauthenticatedNetworkBind(t *testing.T) {
 	server := NewServer(Config{Host: "0.0.0.0", Port: 0, SessionDir: t.TempDir()})
 	if err := server.validateExposure(); err == nil {
@@ -264,6 +327,20 @@ func TestServerRejectsUnauthenticatedNetworkBind(t *testing.T) {
 	server.cfg.APIKey = "secret"
 	if err := server.validateExposure(); err != nil {
 		t.Fatalf("expected API-key-protected network bind to be allowed: %v", err)
+	}
+}
+
+func TestSourcePathHonorsAllowlist(t *testing.T) {
+	repo := t.TempDir()
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "app.py"), []byte("@app.get(\"/\")\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(Config{SessionDir: t.TempDir(), APIKey: "secret", SourceRoots: []string{other}}).Handler()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, apiKeyRequest(http.MethodPost, "/api/scan/start", bytes.NewBufferString(`{"source_path":"`+repo+`"}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected source allowlist rejection, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -533,6 +610,15 @@ func TestScanEventsWebSocketReplaysLifecycle(t *testing.T) {
 	waitForScanStatus(t, handler, created.Session.ID, models.SessionStatusCompleted)
 
 	wsURL := "ws" + strings.TrimPrefix(apiServer.URL, "http") + "/ws/scan/" + created.Session.ID
+	crossOriginHeader := http.Header{"Origin": []string{"https://attacker.example"}}
+	blockedConn, blockedResp, err := websocket.DefaultDialer.Dial(wsURL, crossOriginHeader)
+	if err == nil {
+		_ = blockedConn.Close()
+		t.Fatal("expected cross-origin websocket dial to fail")
+	}
+	if blockedResp == nil || blockedResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected websocket 403, got resp=%v err=%v", blockedResp, err)
+	}
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatal(err)

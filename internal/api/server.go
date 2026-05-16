@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pridhvi/nox/internal/adapters"
@@ -28,18 +29,23 @@ import (
 )
 
 type Config struct {
-	Host       string
-	Port       int
-	SessionDir string
-	APIKey     string
-	HTTPClient adapters.HTTPDoer
-	ToolPaths  map[string]string
-	AppConfig  appconfig.Config
+	Host            string
+	Port            int
+	SessionDir      string
+	APIKey          string
+	HTTPClient      adapters.HTTPDoer
+	ToolPaths       map[string]string
+	AppConfig       appconfig.Config
+	SourceRoots     []string
+	LLMAllowedHosts []string
 }
 
 type Server struct {
-	cfg         Config
-	scanManager *ScanManager
+	cfg          Config
+	scanManager  *ScanManager
+	securityMu   sync.Mutex
+	authFailures map[string][]time.Time
+	authSessions map[string]time.Time
 }
 
 func NewServer(cfg Config) *Server {
@@ -50,7 +56,14 @@ func NewServer(cfg Config) *Server {
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("NOX_API_KEY")
 	}
-	server := &Server{cfg: cfg, scanManager: NewScanManager(cfg.SessionDir, cfg.HTTPClient)}
+	cfg.SourceRoots = append(cfg.SourceRoots, splitEnvList(os.Getenv("NOX_SOURCE_ROOTS"))...)
+	cfg.LLMAllowedHosts = append(cfg.LLMAllowedHosts, splitEnvList(os.Getenv("NOX_LLM_ALLOWED_HOSTS"))...)
+	server := &Server{
+		cfg:          cfg,
+		scanManager:  NewScanManager(cfg.SessionDir, cfg.HTTPClient),
+		authFailures: make(map[string][]time.Time),
+		authSessions: make(map[string]time.Time),
+	}
 	server.scanManager.SetPluginProvider(func() []models.PluginRecord {
 		plugins, _ := server.readGlobalPlugins()
 		return plugins
@@ -105,6 +118,8 @@ func (s *Server) validateExposure() error {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/auth/login", s.authLogin)
+	mux.HandleFunc("POST /api/auth/logout", s.authLogout)
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/tools", s.tools)
 	mux.HandleFunc("GET /api/config/effective", s.effectiveConfig)
@@ -230,6 +245,44 @@ func (s *Server) effectiveConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type authLoginRequest struct {
+	APIKey string `json:"api_key"`
+}
+
+func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(s.cfg.APIKey) == "" {
+		writeJSON(w, map[string]any{"authenticated": true, "auth_enabled": false})
+		return
+	}
+	client := clientKey(r)
+	if s.authLimited(client) {
+		writeError(w, http.StatusTooManyRequests, fmt.Errorf("too many failed authentication attempts"))
+		return
+	}
+	var req authLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.recordAuthFailure(client)
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid login request"))
+		return
+	}
+	if req.APIKey != s.cfg.APIKey {
+		s.recordAuthFailure(client)
+		writeError(w, http.StatusUnauthorized, fmt.Errorf("invalid API key"))
+		return
+	}
+	token, expires := s.createAuthSession()
+	http.SetCookie(w, authSessionCookie(token, expires, r.TLS != nil))
+	writeJSON(w, map[string]any{"authenticated": true, "auth_enabled": true, "expires_at": expires.UTC().Format(time.RFC3339)})
+}
+
+func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(authSessionCookieName); err == nil {
+		s.deleteAuthSession(cookie.Value)
+	}
+	http.SetCookie(w, expiredAuthSessionCookie(r.TLS != nil))
+	writeJSON(w, map[string]any{"authenticated": false})
+}
+
 type toolParameter struct {
 	Name        string   `json:"name"`
 	Label       string   `json:"label"`
@@ -341,6 +394,17 @@ func absolutePath(value string) string {
 		return filepath.Clean(value)
 	}
 	return abs
+}
+
+func splitEnvList(value string) []string {
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func (s *Server) stateDir() string {
@@ -1224,7 +1288,7 @@ func (s *Server) llmModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("base_url is required"))
 		return
 	}
-	if err := validateLLMProbeURL(baseURL); err != nil {
+	if err := s.validateLLMProbeURL(baseURL); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -1312,7 +1376,7 @@ func llmModelsURL(baseURL string) string {
 	return base + "/v1/models"
 }
 
-func validateLLMProbeURL(baseURL string) error {
+func (s *Server) validateLLMProbeURL(baseURL string) error {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || parsed.Scheme == "" || parsed.Hostname() == "" {
 		return fmt.Errorf("base_url must be an absolute http or https URL")
@@ -1323,6 +1387,9 @@ func validateLLMProbeURL(baseURL string) error {
 	host := strings.ToLower(parsed.Hostname())
 	if host == "metadata.google.internal" {
 		return fmt.Errorf("metadata service endpoints are not allowed")
+	}
+	if len(s.cfg.LLMAllowedHosts) > 0 && !hostAllowed(host, s.cfg.LLMAllowedHosts) {
+		return fmt.Errorf("base_url host is not in the configured allowlist")
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() {
@@ -1416,7 +1483,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.SourcePath != "" {
-		sourcePath, err := canonicalSourcePath(req.SourcePath)
+		sourcePath, err := s.canonicalSourcePath(req.SourcePath)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
@@ -1486,7 +1553,7 @@ func requiresPrivilegedScan(req startScanRequest, enabledGlobalPlugins bool) boo
 	return enabledGlobalPlugins && len(req.Tools) == 0
 }
 
-func canonicalSourcePath(value string) (string, error) {
+func (s *Server) canonicalSourcePath(value string) (string, error) {
 	path := strings.TrimSpace(value)
 	if path == "" {
 		return "", nil
@@ -1502,7 +1569,11 @@ func canonicalSourcePath(value string) (string, error) {
 	if !info.IsDir() {
 		return "", fmt.Errorf("source_path must be a directory")
 	}
-	return filepath.Clean(resolved), nil
+	resolved = filepath.Clean(resolved)
+	if len(s.cfg.SourceRoots) > 0 && !sourcePathAllowed(resolved, s.cfg.SourceRoots) {
+		return "", fmt.Errorf("source_path is outside the configured allowlist")
+	}
+	return resolved, nil
 }
 
 func (s *Server) openSession(w http.ResponseWriter, r *http.Request) (*db.Store, models.Session, bool) {
@@ -1534,14 +1605,31 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/api/auth/login" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		client := clientKey(r)
+		if s.authLimited(client) {
+			writeError(w, http.StatusTooManyRequests, fmt.Errorf("too many failed authentication attempts"))
+			return
+		}
 		token := r.Header.Get("X-Nox-API-Key")
 		if token == "" {
 			token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
+		if token == s.cfg.APIKey {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if token == "" {
-			token = r.URL.Query().Get("api_key")
+			if cookie, err := r.Cookie(authSessionCookieName); err == nil && s.validAuthSession(cookie.Value) {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 		if token != s.cfg.APIKey {
+			s.recordAuthFailure(client)
 			writeError(w, http.StatusUnauthorized, fmt.Errorf("invalid or missing API key"))
 			return
 		}
@@ -1549,11 +1637,126 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 	})
 }
 
+const (
+	authFailureWindow     = time.Minute
+	authFailureLimit      = 8
+	authSessionTTL        = 12 * time.Hour
+	authSessionCookieName = "nox_session"
+)
+
+func (s *Server) createAuthSession() (string, time.Time) {
+	token := models.NewID() + models.NewID()
+	expires := time.Now().Add(authSessionTTL)
+	s.securityMu.Lock()
+	s.authSessions[token] = expires
+	s.securityMu.Unlock()
+	return token, expires
+}
+
+func (s *Server) validAuthSession(token string) bool {
+	if token == "" {
+		return false
+	}
+	now := time.Now()
+	s.securityMu.Lock()
+	defer s.securityMu.Unlock()
+	expires, ok := s.authSessions[token]
+	if !ok {
+		return false
+	}
+	if !expires.After(now) {
+		delete(s.authSessions, token)
+		return false
+	}
+	return true
+}
+
+func (s *Server) deleteAuthSession(token string) {
+	s.securityMu.Lock()
+	delete(s.authSessions, token)
+	s.securityMu.Unlock()
+}
+
+func authSessionCookie(token string, expires time.Time, secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     authSessionCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   int(time.Until(expires).Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+	}
+}
+
+func expiredAuthSessionCookie(secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     authSessionCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+	}
+}
+
+func (s *Server) authLimited(client string) bool {
+	now := time.Now()
+	s.securityMu.Lock()
+	defer s.securityMu.Unlock()
+	failures := recentFailures(s.authFailures[client], now)
+	s.authFailures[client] = failures
+	return len(failures) >= authFailureLimit
+}
+
+func (s *Server) recordAuthFailure(client string) {
+	now := time.Now()
+	s.securityMu.Lock()
+	defer s.securityMu.Unlock()
+	failures := recentFailures(s.authFailures[client], now)
+	failures = append(failures, now)
+	s.authFailures[client] = failures
+}
+
+func recentFailures(values []time.Time, now time.Time) []time.Time {
+	cutoff := now.Add(-authFailureWindow)
+	next := values[:0]
+	for _, value := range values {
+		if value.After(cutoff) {
+			next = append(next, value)
+		}
+	}
+	return next
+}
+
+func clientKey(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
+}
+
 func crossOriginUnsafeRequest(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return false
 	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return false
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return true
+	}
+	return !sameHost(parsed.Host, r.Host)
+}
+
+func websocketCrossOrigin(r *http.Request) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
 		return false
@@ -1580,6 +1783,57 @@ func splitHostPort(value string) (string, string) {
 		return strings.Trim(host, "[]"), port
 	}
 	return strings.Trim(value, "[]"), ""
+}
+
+func hostAllowed(host string, allowed []string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	for _, entry := range allowed {
+		entry = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(entry)), ".")
+		if entry == "" {
+			continue
+		}
+		if strings.HasPrefix(entry, "*.") {
+			suffix := strings.TrimPrefix(entry, "*")
+			if strings.HasSuffix(host, suffix) {
+				return true
+			}
+			continue
+		}
+		if host == entry {
+			return true
+		}
+	}
+	return false
+}
+
+func sourcePathAllowed(path string, roots []string) bool {
+	for _, root := range roots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		if pathInsideOrEqual(filepath.Clean(resolved), path) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathInsideOrEqual(root, candidate string) bool {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	candidate, err = filepath.Abs(candidate)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, candidate)
+	return err == nil && (rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."))
 }
 
 func readiness(ok bool) string {

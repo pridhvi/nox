@@ -1334,9 +1334,11 @@ var DefaultRules = []Rule{
 
 ## 13. REST API Surface
 
-The chi router exposes these endpoints. All responses are JSON. Authentication is a local API key stored in the Nox config file. Nox refuses non-loopback serving without an API key, and host-privileged API operations such as plugin management, API source scans, and LLM endpoint probing require API-key authentication.
+The chi router exposes these endpoints. All responses are JSON. Authentication is a local API key stored in the Nox config file. Nox refuses non-loopback serving without an API key, and host-privileged API operations such as plugin management, API source scans, and LLM endpoint probing require API-key authentication. Header authentication uses `X-Nox-API-Key` or `Authorization: Bearer`; query-string API keys are rejected. The browser console obtains an opaque HttpOnly same-origin session cookie through the login endpoint.
 
 ```
+POST   /api/auth/login              Exchange API key for HttpOnly browser session cookie
+POST   /api/auth/logout             Clear browser session cookie
 POST   /api/scan/start              Start a new scan session
 POST   /api/scan/{id}/stop          Cancel a running scan
 GET    /api/scan/{id}/status        Live scan status (polling fallback)
@@ -1544,7 +1546,7 @@ database:
 server:
   host: 127.0.0.1
   port: 8080
-  api_key: ""               # Empty = no auth for loopback-only local use. Required for network access and privileged API operations.
+  api_key: ""               # Empty = no auth for loopback-only local use. Required for network access and privileged API operations. Never accepted from query strings.
 
 # Default scan settings
 scan:

@@ -832,7 +832,10 @@ work and must be carried forward:
   - CVE/exploit filters where supported
 - Added local API-key auth for API and WebSocket routes when configured, with
   API-key requirements for non-loopback binds, plugin management, API source
-  scans, and LLM endpoint probing.
+  scans, and LLM endpoint probing. Query-string API keys are rejected, failed
+  auth is rate-limited, the browser console uses opaque HttpOnly session
+  cookies, cross-origin unsafe requests and WebSockets are blocked, and optional
+  source-root/LLM-host allowlists can constrain privileged API inputs.
 - Expanded health output:
   - DB readiness
   - LLM configuration status
@@ -1151,7 +1154,8 @@ work and must be carried forward:
   output, Dalfox text fallback output, ignored 404 FFUF rows, service-less Nmap
   ports, and normalized raw evidence retention.
 - API tests cover core REST endpoints, expanded vector/CVE/report/LLM endpoints,
-  auth behavior, scan stop, and WebSocket lifecycle replay.
+  auth behavior including cookie login and rate limiting, scan stop, and
+  WebSocket lifecycle replay.
 - Frontend build verification is part of CI.
 - Lint target runs Go lint when `golangci-lint` is installed and always runs
   the frontend build/typecheck.
