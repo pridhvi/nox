@@ -1257,6 +1257,10 @@ html[data-theme="light"] .chart-panel {
   padding: 12px;
 }
 
+.tool-phase-grid article {
+  align-content: start;
+}
+
 .disabled-tool-phase {
   opacity: 0.56;
 }
