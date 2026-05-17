@@ -12,7 +12,7 @@ artifact_root="${NOX_BENCHMARK_ARTIFACT_DIR:-artifacts/benchmarks/$timestamp}"
 sessions_root="$artifact_root/sessions"
 mkdir -p "$artifact_root" "$sessions_root"
 
-tools_default="http-probe,security-headers,whatweb,graphql-introspection,openapi-discovery,arjun,linkfinder,js-secret-scan,cors-check,nmap,ffuf,nuclei-tech,nuclei-vuln,nikto,sqlmap,dalfox"
+tools_default="http-probe,security-headers,whatweb,graphql-introspection,openapi-discovery,arjun,linkfinder,js-secret-scan,cors-check,nmap,ffuf,nuclei-tech,nuclei-vuln,nikto,sqlmap,dalfox,reflected-xss-check,sqli-check,open-redirect-check,upload-check,xxe-fuzz"
 tools="${NOX_BENCHMARK_TOOLS:-$tools_default}"
 scan_timeout="${NOX_BENCHMARK_SCAN_TIMEOUT:-20m}"
 go_cmd="${NOX_GO_CMD:-go run .}"
@@ -87,6 +87,23 @@ copy_profile_artifacts() {
   cp "benchmarks/$name/routes.txt" "$artifact_root/$name/routes.txt"
 }
 
+auth_profile_for() {
+  name="$1"
+  output="$artifact_root/$name/auth-profile.json"
+  python3 - "$name" "$output" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+name = sys.argv[1]
+output = Path(sys.argv[2])
+profile = json.loads(Path(f"benchmarks/{name}/profile.json").read_text(encoding="utf-8"))
+auth = profile.get("auth") or {}
+output.write_text(json.dumps(auth, indent=2) + "\n", encoding="utf-8")
+PY
+  printf '%s' "$output"
+}
+
 target_url_for() {
   name="$1"
   case "$name" in
@@ -112,6 +129,7 @@ run_one() {
   summary_md="$artifact_root/$name/summary.md"
 
   copy_profile_artifacts "$name"
+  auth_profile="$(auth_profile_for "$name")"
   echo "Running $name benchmark against $target_url"
   if command -v timeout >/dev/null 2>&1; then
     scan_prefix="timeout $scan_timeout"
@@ -121,6 +139,8 @@ run_one() {
   if ! $scan_prefix env NOX_SESSION_DIR="$sessions_root" $go_cmd scan \
     --target "$target_url" \
     --tools "$tools" \
+    --route-seed-file "benchmarks/$name/routes.txt" \
+    --auth-profile "$auth_profile" \
     --no-llm \
     --config /dev/null >"$log" 2>&1; then
     sed -n '1,220p' "$log" >&2 || true

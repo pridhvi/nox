@@ -33,7 +33,7 @@ export const builtinProfiles: ScanProfile[] = [
     request: {
       mode: "active",
       enabled_phases: ["fingerprint", "enumerate", "vuln_scan"],
-      tools: ["http-probe", "security-headers", "ffuf", "arjun", "cors-check", "nuclei-vuln", "dalfox", "sqlmap"],
+      tools: ["http-probe", "security-headers", "ffuf", "arjun", "cors-check", "reflected-xss-check", "sqli-check", "open-redirect-check", "upload-check", "xxe-fuzz", "nuclei-vuln", "dalfox", "sqlmap"],
       concurrency: 4,
       per_tool_concurrency: 1,
       tool_timeout_seconds: 90,
@@ -53,7 +53,7 @@ export const builtinProfiles: ScanProfile[] = [
     request: {
       mode: "active",
       enabled_phases: ["recon", "fingerprint", "enumerate", "vuln_scan"],
-      tools: ["http-probe", "security-headers", "subfinder", "dnsx", "httpx", "whatweb", "nuclei-tech", "ffuf", "arjun", "linkfinder", "js-secret-scan", "nuclei-vuln", "dalfox", "sqlmap", "nikto"],
+      tools: ["http-probe", "security-headers", "subfinder", "dnsx", "httpx", "whatweb", "nuclei-tech", "ffuf", "arjun", "linkfinder", "js-secret-scan", "cors-check", "reflected-xss-check", "sqli-check", "open-redirect-check", "upload-check", "xxe-fuzz", "nuclei-vuln", "dalfox", "sqlmap", "nikto"],
       concurrency: 3,
       per_tool_concurrency: 1,
       tool_timeout_seconds: 180,

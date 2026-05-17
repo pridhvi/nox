@@ -635,15 +635,20 @@ work and must be carried forward:
 - Built-in SQL injection validator mutates seeded/query/hidden parameters with
   bounded boolean predicates and a quote canary; boolean differentials are
   confirmed, while SQL error indicators are suspected findings.
+- Built-in upload validator submits a harmless text marker file to seeded upload
+  routes and confirms only response echo or scoped retrieval of the marker.
 - Built-in SSTI check sends a bounded arithmetic template probe against query or
   hidden-parameter targets.
-- Built-in XXE fuzz check sends a bounded XML payload and only reports direct
-  response indicators.
+- Built-in XXE fuzz check now uses a non-exfiltrating internal XML entity marker
+  and only reports direct marker resolution.
+- Built-in CORS check records both simple and preflight response headers and
+  flags reflected arbitrary origins even without credentials at lower severity.
 - Optional `nikto` subprocess adapter parses JSON or text web-server findings.
 - Existing `sqlmap` and `dalfox` wrappers now use Phase 8 hidden-parameter
   discoveries when the initial target URL has no query string.
 - Parser and adapter tests cover nuclei vulnerability output, SSRFmap, JWT,
-  OAuth, reflected XSS, open redirect, SQL injection validation, SSTI, XXE, Nikto, and
+  OAuth, reflected XSS, open redirect, SQL injection validation, upload
+  validation, CORS reflected-origin handling, SSTI, XXE, Nikto, and
   hidden-parameter target handoff.
 
 ### Remaining Work

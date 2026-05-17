@@ -32,6 +32,7 @@ func init() {
 	Register(NewReflectedXSSCheck())
 	Register(NewOpenRedirectCheck())
 	Register(NewSQLICheck())
+	Register(NewUploadCheck())
 	Register(NewSSTICheck())
 	Register(NewXXEFuzz())
 	Register(NewNikto())

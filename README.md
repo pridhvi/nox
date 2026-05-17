@@ -211,9 +211,10 @@ ground-truth targets for generic scanner improvements. App-specific credentials,
 route seeds, and expected coverage mappings live under `benchmarks/`; scanner
 adapters must remain target-agnostic. Active-mode scans now include bounded,
 auth-aware built-in validators for reflected XSS markers, SQL injection
-boolean/error canaries, and open redirects on seeded query routes; they do not
-follow external redirects and only report confirmed validation when the marker
-or predicate behavior is observed.
+boolean/error canaries, harmless file uploads, non-exfiltrating XML entity
+markers, and open redirects on seeded query routes; they do not follow external
+redirects and only report confirmed validation when the marker or predicate
+behavior is observed.
 
 ```sh
 make benchmark-targets-up

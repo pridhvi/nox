@@ -137,11 +137,32 @@ func (a CORSCheck) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	if err != nil {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, err.Error(), 1)}, nil
 	}
-	defer resp.Body.Close()
 	headers := map[string]string{
 		"access-control-allow-origin":      resp.Header.Get("Access-Control-Allow-Origin"),
 		"access-control-allow-credentials": resp.Header.Get("Access-Control-Allow-Credentials"),
 		"vary":                             resp.Header.Get("Vary"),
+		"simple-status":                    fmt.Sprintf("%d", resp.StatusCode),
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	resp.Body.Close()
+	preflight, err := newHTTPRequestWithAuth(ctx, input, http.MethodOptions, rawURL, nil, "nox/0.1 cors-check")
+	if err == nil {
+		preflight.Header.Set("Origin", origin)
+		preflight.Header.Set("Access-Control-Request-Method", "POST")
+		preflight.Header.Set("Access-Control-Request-Headers", "content-type, authorization")
+		if preflightResp, err := client.Do(preflight); err == nil {
+			headers["preflight-status"] = fmt.Sprintf("%d", preflightResp.StatusCode)
+			headers["access-control-allow-methods"] = preflightResp.Header.Get("Access-Control-Allow-Methods")
+			headers["access-control-allow-headers"] = preflightResp.Header.Get("Access-Control-Allow-Headers")
+			if headers["access-control-allow-origin"] == "" {
+				headers["access-control-allow-origin"] = preflightResp.Header.Get("Access-Control-Allow-Origin")
+			}
+			if headers["access-control-allow-credentials"] == "" {
+				headers["access-control-allow-credentials"] = preflightResp.Header.Get("Access-Control-Allow-Credentials")
+			}
+			_, _ = io.Copy(io.Discard, io.LimitReader(preflightResp.Body, 4096))
+			preflightResp.Body.Close()
+		}
 	}
 	normalized, _ := json.Marshal(headers)
 	findings := parseCORSFindings(input, rawURL, origin, headers, string(normalized))
@@ -422,8 +443,15 @@ func parseCORSFindings(input AdapterInput, rawURL, origin string, headers map[st
 		severity = models.SeverityMedium
 		title = "CORS reflects arbitrary origin with credentials"
 		tags = []string{"cors", "cors-reflected-origin", "cors-credentials"}
+	case strings.EqualFold(allowOrigin, origin):
+		severity = models.SeverityLow
+		title = "CORS reflects arbitrary origin"
+		tags = []string{"cors", "cors-reflected-origin"}
 	default:
 		return nil
+	}
+	if !strings.Contains(strings.ToLower(headers["vary"]), "origin") && strings.EqualFold(allowOrigin, origin) {
+		tags = append(tags, "cors-missing-vary-origin")
 	}
 	finding := externalFinding(input, "cors-check", models.FindingTypeMisconfiguration, severity, title, "The application returned permissive CORS headers for an untrusted Origin.", "Restrict Access-Control-Allow-Origin to trusted origins and avoid credentials unless required.", raw, map[string]any{"url": rawURL, "request_origin": origin, "headers": headers}, tags)
 	finding.URL = rawURL

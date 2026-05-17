@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -384,6 +385,22 @@ func TestParseCORSFindings(t *testing.T) {
 	}
 }
 
+func TestParseCORSFindingsReflectedOriginWithoutCredentials(t *testing.T) {
+	headers := map[string]string{
+		"access-control-allow-origin": "https://nox.invalid",
+	}
+	findings := parseCORSFindings(testExternalInput(), "https://example.com/", "https://nox.invalid", headers, `{"access-control-allow-origin":"https://nox.invalid"}`)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ToolID != "cors-check" || findings[0].Severity != models.SeverityLow {
+		t.Fatalf("unexpected finding: %#v", findings[0])
+	}
+	if !testHasTag(findings[0].Tags, "cors-missing-vary-origin") {
+		t.Fatalf("expected missing vary tag, got %#v", findings[0].Tags)
+	}
+}
+
 func TestParseCloudBucketFindings(t *testing.T) {
 	raw := `<ListBucketResult><Name>example</Name><Contents><Key>public.txt</Key></Contents></ListBucketResult>`
 	findings := parseCloudBucketFindings(testExternalInput(), "https://example.s3.amazonaws.com/", 200, raw)
@@ -604,6 +621,42 @@ func TestSQLICheckDoesNotReportStableLiteralHandling(t *testing.T) {
 	}
 }
 
+func TestUploadCheckConfirmsMarkerUpload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`<form method="post" enctype="multipart/form-data"><input type="file" name="avatar"></form>`))
+			return
+		}
+		_ = r.ParseMultipartForm(1 << 20)
+		file, _, err := r.FormFile("avatar")
+		if err != nil {
+			t.Errorf("expected avatar upload: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		body, _ := io.ReadAll(file)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+	input := testHTTPAdapterInput(t, server.URL, "/upload")
+	adapter := NewUploadCheck()
+	if !adapter.ShouldRun(input) {
+		t.Fatal("expected upload check to run with upload seed")
+	}
+	out, err := adapter.Run(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d; stdout=%s", len(out.Findings), out.ToolRun.RawStdout)
+	}
+	finding := out.Findings[0]
+	if finding.ToolID != "upload-check" || finding.Parameter != "avatar" || finding.Status != "confirmed" || finding.Severity != models.SeverityHigh {
+		t.Fatalf("unexpected finding: %#v", finding)
+	}
+}
+
 func TestParseSSTIFindings(t *testing.T) {
 	findings := parseSSTIFindings(testExternalInput(), "https://example.com/?q={{7*7}}", "result: 49")
 	if len(findings) != 1 {
@@ -648,11 +701,11 @@ func testHTTPAdapterInput(t *testing.T, baseURL string, seeds ...string) Adapter
 }
 
 func TestParseXXEFindings(t *testing.T) {
-	findings := parseXXEFindings(testExternalInput(), "https://example.com/", "root:x:0:0:root:/root:/bin/bash")
+	findings := parseXXEFindings(testExternalInput(), "https://example.com/", "nox-xxe-marker", "resolved nox-xxe-marker")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(findings))
 	}
-	if findings[0].ToolID != "xxe-fuzz" || findings[0].Severity != models.SeverityCritical {
+	if findings[0].ToolID != "xxe-fuzz" || findings[0].Severity != models.SeverityHigh || findings[0].Status != "confirmed" {
 		t.Fatalf("unexpected finding: %#v", findings[0])
 	}
 }

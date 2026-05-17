@@ -10,8 +10,14 @@
       "automation_suitable": true,
       "confirmation_strategy": "lockout-aware credential validation with strict limits",
       "match": {
-        "url": ["/vulnerabilities/brute/"],
-        "title": ["brute force", "default credential", "valid credential"]
+        "url": [
+          "/vulnerabilities/brute/"
+        ],
+        "title": [
+          "brute force",
+          "default credential",
+          "valid credential"
+        ]
       }
     },
     {
@@ -22,8 +28,13 @@
       "automation_suitable": true,
       "confirmation_strategy": "non-destructive marker command validation on intentionally vulnerable benchmark targets",
       "match": {
-        "url": ["/vulnerabilities/exec/"],
-        "title": ["command injection", "os command"]
+        "url": [
+          "/vulnerabilities/exec/"
+        ],
+        "title": [
+          "command injection",
+          "os command"
+        ]
       }
     },
     {
@@ -34,8 +45,13 @@
       "automation_suitable": true,
       "confirmation_strategy": "missing-token or token-reuse validation without changing sensitive state",
       "match": {
-        "url": ["/vulnerabilities/csrf/"],
-        "title": ["csrf", "cross-site request forgery"]
+        "url": [
+          "/vulnerabilities/csrf/"
+        ],
+        "title": [
+          "csrf",
+          "cross-site request forgery"
+        ]
       }
     },
     {
@@ -46,8 +62,14 @@
       "automation_suitable": true,
       "confirmation_strategy": "safe local path marker validation",
       "match": {
-        "url": ["/vulnerabilities/fi/"],
-        "title": ["file inclusion", "local file inclusion", "lfi"]
+        "url": [
+          "/vulnerabilities/fi/"
+        ],
+        "title": [
+          "file inclusion",
+          "local file inclusion",
+          "lfi"
+        ]
       }
     },
     {
@@ -58,8 +80,18 @@
       "automation_suitable": true,
       "confirmation_strategy": "harmless marker file upload and retrieval",
       "match": {
-        "url": ["/vulnerabilities/upload/"],
-        "title": ["file upload", "unrestricted upload"]
+        "url": [
+          "/vulnerabilities/upload/"
+        ],
+        "title": [
+          "file upload",
+          "file upload endpoint",
+          "unrestricted file upload",
+          "unrestricted upload"
+        ],
+        "tool": [
+          "upload-check"
+        ]
       }
     },
     {
@@ -70,8 +102,12 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist workflow review",
       "match": {
-        "url": ["/vulnerabilities/captcha/"],
-        "title": ["captcha"]
+        "url": [
+          "/vulnerabilities/captcha/"
+        ],
+        "title": [
+          "captcha"
+        ]
       }
     },
     {
@@ -82,8 +118,13 @@
       "automation_suitable": true,
       "confirmation_strategy": "bounded session ID sampling and entropy checks",
       "match": {
-        "url": ["/vulnerabilities/weak_id/"],
-        "title": ["weak session", "predictable session"]
+        "url": [
+          "/vulnerabilities/weak_id/"
+        ],
+        "title": [
+          "weak session",
+          "predictable session"
+        ]
       }
     },
     {
@@ -94,8 +135,13 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist client-side logic review",
       "match": {
-        "url": ["/vulnerabilities/javascript/"],
-        "title": ["javascript", "client-side"]
+        "url": [
+          "/vulnerabilities/javascript/"
+        ],
+        "title": [
+          "javascript",
+          "client-side"
+        ]
       }
     },
     {
@@ -106,9 +152,19 @@
       "automation_suitable": true,
       "confirmation_strategy": "safe boolean/error/time SQL injection validation with tight limits",
       "match": {
-        "url": ["/vulnerabilities/sqli/"],
-        "tool": ["sqlmap"],
-        "title": ["sql injection", "sqli"]
+        "url": [
+          "/vulnerabilities/sqli/"
+        ],
+        "tool": [
+          "sqlmap",
+          "sqli-check"
+        ],
+        "title": [
+          "boolean sql injection",
+          "sql error indicator",
+          "sql injection",
+          "sqli"
+        ]
       }
     },
     {
@@ -119,9 +175,19 @@
       "automation_suitable": true,
       "confirmation_strategy": "safe boolean/time SQL injection validation with tight limits",
       "match": {
-        "url": ["/vulnerabilities/sqli_blind/"],
-        "tool": ["sqlmap"],
-        "title": ["blind sql", "time-based sql"]
+        "url": [
+          "/vulnerabilities/sqli_blind/"
+        ],
+        "tool": [
+          "sqlmap",
+          "sqli-check"
+        ],
+        "title": [
+          "blind sql",
+          "boolean sql injection",
+          "sql error indicator",
+          "time-based sql"
+        ]
       }
     },
     {
@@ -132,9 +198,18 @@
       "automation_suitable": true,
       "confirmation_strategy": "unique marker reflection and context validation",
       "match": {
-        "url": ["/vulnerabilities/xss_r/"],
-        "tool": ["dalfox"],
-        "title": ["reflected xss", "cross-site scripting"]
+        "url": [
+          "/vulnerabilities/xss_r/"
+        ],
+        "tool": [
+          "dalfox",
+          "reflected-xss-check"
+        ],
+        "title": [
+          "cross-site scripting",
+          "reflected xss",
+          "reflected xss marker"
+        ]
       }
     },
     {
@@ -145,9 +220,16 @@
       "automation_suitable": true,
       "confirmation_strategy": "unique marker submission and read-back validation",
       "match": {
-        "url": ["/vulnerabilities/xss_s/"],
-        "tool": ["dalfox"],
-        "title": ["stored xss", "persistent xss"]
+        "url": [
+          "/vulnerabilities/xss_s/"
+        ],
+        "tool": [
+          "dalfox"
+        ],
+        "title": [
+          "stored xss",
+          "persistent xss"
+        ]
       }
     },
     {
@@ -158,9 +240,15 @@
       "automation_suitable": true,
       "confirmation_strategy": "browser-assisted marker validation",
       "match": {
-        "url": ["/vulnerabilities/xss_d/"],
-        "tool": ["dalfox"],
-        "title": ["dom xss"]
+        "url": [
+          "/vulnerabilities/xss_d/"
+        ],
+        "tool": [
+          "dalfox"
+        ],
+        "title": [
+          "dom xss"
+        ]
       }
     },
     {
@@ -171,8 +259,13 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist CSP policy and bypass review",
       "match": {
-        "url": ["/vulnerabilities/csp/"],
-        "title": ["csp bypass", "content-security-policy bypass"]
+        "url": [
+          "/vulnerabilities/csp/"
+        ],
+        "title": [
+          "csp bypass",
+          "content-security-policy bypass"
+        ]
       }
     }
   ]

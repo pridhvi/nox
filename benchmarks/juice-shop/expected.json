@@ -9,8 +9,17 @@
       "automation_suitable": true,
       "confirmation_strategy": "two-identity differential authorization checks",
       "match": {
-        "title": ["access control", "idor", "forced browsing", "unauthorized"],
-        "url": ["/administration", "/rest/basket", "/api/BasketItems"]
+        "title": [
+          "access control",
+          "idor",
+          "forced browsing",
+          "unauthorized"
+        ],
+        "url": [
+          "/administration",
+          "/rest/basket",
+          "/api/BasketItems"
+        ]
       }
     },
     {
@@ -20,7 +29,11 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist rate limit and workflow review",
       "match": {
-        "title": ["rate limit", "anti automation", "captcha"]
+        "title": [
+          "rate limit",
+          "anti automation",
+          "captcha"
+        ]
       }
     },
     {
@@ -30,7 +43,13 @@
       "automation_suitable": true,
       "confirmation_strategy": "credential, password-reset, and token validation with strict limits",
       "match": {
-        "title": ["authentication", "login", "jwt", "weak password", "default credential"]
+        "title": [
+          "authentication",
+          "login",
+          "jwt",
+          "weak password",
+          "default credential"
+        ]
       }
     },
     {
@@ -40,7 +59,12 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist review of exposed crypto material and weak algorithms",
       "match": {
-        "title": ["crypto", "cryptographic", "weak algorithm", "hash"]
+        "title": [
+          "crypto",
+          "cryptographic",
+          "weak algorithm",
+          "hash"
+        ]
       }
     },
     {
@@ -50,7 +74,12 @@
       "automation_suitable": true,
       "confirmation_strategy": "safe parameter mutation and response-difference checks",
       "match": {
-        "title": ["input validation", "parameter", "tamper", "validation"]
+        "title": [
+          "input validation",
+          "parameter",
+          "tamper",
+          "validation"
+        ]
       }
     },
     {
@@ -60,8 +89,19 @@
       "automation_suitable": true,
       "confirmation_strategy": "safe SQL/NoSQL/command/SSTI marker validation with strict limits",
       "match": {
-        "tool": ["sqlmap"],
-        "title": ["injection", "sql", "nosql", "ssti", "command injection"]
+        "tool": [
+          "sqlmap",
+          "sqli-check"
+        ],
+        "title": [
+          "boolean sql injection",
+          "command injection",
+          "injection",
+          "nosql",
+          "sql",
+          "sql error indicator",
+          "ssti"
+        ]
       }
     },
     {
@@ -71,7 +111,12 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist route and payload-shape review",
       "match": {
-        "title": ["deserialization", "serialize", "yaml", "pickle"]
+        "title": [
+          "deserialization",
+          "serialize",
+          "yaml",
+          "pickle"
+        ]
       }
     },
     {
@@ -81,7 +126,12 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist logging and monitoring review",
       "match": {
-        "title": ["logging", "monitoring", "audit log", "observability"]
+        "title": [
+          "logging",
+          "monitoring",
+          "audit log",
+          "observability"
+        ]
       }
     },
     {
@@ -91,8 +141,16 @@
       "automation_suitable": true,
       "confirmation_strategy": "header, CORS, exposed docs, and server configuration checks",
       "match": {
-        "type": ["misconfiguration"],
-        "title": ["cors", "missing content-security-policy", "openapi", "swagger", "security header"]
+        "type": [
+          "misconfiguration"
+        ],
+        "title": [
+          "cors",
+          "missing content-security-policy",
+          "openapi",
+          "swagger",
+          "security header"
+        ]
       }
     },
     {
@@ -102,7 +160,11 @@
       "automation_suitable": false,
       "confirmation_strategy": "human-assist hidden route and source-map review",
       "match": {
-        "title": ["hidden", "obscurity", "source map"]
+        "title": [
+          "hidden",
+          "obscurity",
+          "source map"
+        ]
       }
     },
     {
@@ -112,8 +174,17 @@
       "automation_suitable": true,
       "confirmation_strategy": "exposed API, file, secret, and metadata checks",
       "match": {
-        "type": ["exposure"],
-        "title": ["sensitive", "secret", "exposed", "openapi", "swagger", "directory listing"]
+        "type": [
+          "exposure"
+        ],
+        "title": [
+          "sensitive",
+          "secret",
+          "exposed",
+          "openapi",
+          "swagger",
+          "directory listing"
+        ]
       }
     },
     {
@@ -123,8 +194,17 @@
       "automation_suitable": true,
       "confirmation_strategy": "controlled marker redirect validation",
       "match": {
-        "url": ["/redirect"],
-        "title": ["open redirect", "unvalidated redirect"]
+        "url": [
+          "/redirect"
+        ],
+        "title": [
+          "open redirect",
+          "open redirect confirmed",
+          "unvalidated redirect"
+        ],
+        "tool": [
+          "open-redirect-check"
+        ]
       }
     },
     {
@@ -134,8 +214,15 @@
       "automation_suitable": true,
       "confirmation_strategy": "dependency and technology CVE correlation",
       "match": {
-        "title": ["vulnerable component", "cve", "known vulnerability"],
-        "tool": ["nuclei-vuln", "nikto"]
+        "title": [
+          "vulnerable component",
+          "cve",
+          "known vulnerability"
+        ],
+        "tool": [
+          "nuclei-vuln",
+          "nikto"
+        ]
       }
     },
     {
@@ -145,8 +232,15 @@
       "automation_suitable": true,
       "confirmation_strategy": "reflected/stored/DOM marker validation",
       "match": {
-        "tool": ["dalfox"],
-        "title": ["xss", "cross-site scripting"]
+        "tool": [
+          "dalfox",
+          "reflected-xss-check"
+        ],
+        "title": [
+          "cross-site scripting",
+          "reflected xss marker",
+          "xss"
+        ]
       }
     },
     {
@@ -156,7 +250,14 @@
       "automation_suitable": true,
       "confirmation_strategy": "non-exfiltrating XXE marker validation",
       "match": {
-        "title": ["xxe", "xml external entity"]
+        "title": [
+          "xml entity expansion",
+          "xml external entity",
+          "xxe"
+        ],
+        "tool": [
+          "xxe-fuzz"
+        ]
       }
     }
   ]

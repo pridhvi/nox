@@ -897,8 +897,9 @@ Any process that speaks this JSON contract over stdin/stdout is a valid Nox plug
 | Reflected XSS check | Go stdlib HTTP | Marker reflection in seeded query parameters |
 | SQL injection check | Go stdlib HTTP | Bounded boolean/error canaries in seeded query parameters |
 | Open redirect check | Go stdlib HTTP | Controlled external redirects in seeded redirect-like parameters |
+| Upload check | Go stdlib HTTP | Harmless marker-file upload validation on seeded upload routes |
 | SSTI detection | Go stdlib HTTP | Server-side template injection |
-| XXE fuzzing | Go stdlib HTTP | XML external entity injection |
+| XXE fuzzing | Go stdlib HTTP | Non-exfiltrating XML internal entity marker validation |
 | `nikto` | subprocess | Generic web server vulnerability scanner |
 
 **DependsOn:** all Phase 3 adapters (needs parameters, endpoints, and tech info)

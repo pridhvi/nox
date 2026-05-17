@@ -3,12 +3,12 @@
 /api/BasketItems/
 /api/Feedbacks/
 /api/Users/
-/rest/products/search
+/rest/products/search?q=apple
 /rest/user/login
 /rest/basket
 /rest/admin/application-version
 /ftp/
-/redirect
+/redirect?to=/score-board
 /profile
 /administration
 /score-board

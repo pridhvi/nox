@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strings"
 )
 
 var api_key = "AKIAIOSFODNN7EXAMPLE"
@@ -26,6 +28,17 @@ func main() {
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		q := r.URL.Query().Get("q")
 		_, _ = db.Query("SELECT * FROM users WHERE name = '" + q + "'")
+		switch {
+		case strings.Contains(q, "'1'='1") || strings.Contains(q, "1=1"):
+			fmt.Fprintln(w, `{"result":"fixture-user"}`)
+			return
+		case strings.Contains(q, "'1'='2") || strings.Contains(q, "1=2"):
+			fmt.Fprintln(w, `{"result":"no rows"}`)
+			return
+		case strings.Contains(q, "'"):
+			fmt.Fprintln(w, `You have an error in your SQL syntax near "'"`)
+			return
+		}
 		fmt.Fprintf(w, `{"query":%q,"warning":"unsanitized reflected parameter"}`, q)
 	})
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +52,18 @@ func main() {
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseMultipartForm(1 << 20)
 		if r.MultipartForm != nil {
+			for _, headers := range r.MultipartForm.File {
+				for _, header := range headers {
+					file, err := header.Open()
+					if err != nil {
+						continue
+					}
+					body, _ := io.ReadAll(io.LimitReader(file, 4096))
+					_ = file.Close()
+					fmt.Fprintf(w, "uploaded %s\n%s", header.Filename, string(body))
+					return
+				}
+			}
 			fmt.Fprintf(w, "received %d files", len(r.MultipartForm.File))
 			return
 		}
@@ -80,6 +105,17 @@ func main() {
 		fmt.Fprintf(w, "template preview: %s", value)
 	})
 	mux.HandleFunc("/xxe", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+		text := string(body)
+		if strings.Contains(text, `<!ENTITY nox "`) {
+			start := strings.Index(text, `<!ENTITY nox "`) + len(`<!ENTITY nox "`)
+			rest := text[start:]
+			end := strings.Index(rest, `"`)
+			if end > 0 {
+				_, _ = fmt.Fprintln(w, "resolved "+rest[:end])
+				return
+			}
+		}
 		_, _ = fmt.Fprintln(w, "xml parser accepted fixture-safe marker")
 	})
 	mux.HandleFunc("/static/app.js", func(w http.ResponseWriter, r *http.Request) {

@@ -241,10 +241,12 @@ Add generic, bounded validators for common classes:
   redirect-like query parameters without following external redirects)
 - command injection marker checks only when the configured profile marks the
   target as intentionally vulnerable and non-production
-- harmless file upload and retrieval validation
+- harmless file upload and retrieval validation (implemented for seeded upload
+  routes; accepted-but-not-retrieved uploads remain suspected)
 - file inclusion path marker checks with safe local-only payloads
 - CORS validation
-- XXE non-exfiltrating marker validation
+- XXE non-exfiltrating marker validation (implemented with internal XML entity
+  markers; no file or network entity exfiltration)
 - weak session ID sampling
 - CSRF missing-token or token-reuse checks
 
@@ -252,9 +254,10 @@ Acceptance criteria:
 
 - Validators only run in active mode and honor scope/auth context.
 - External redirect markers are never followed by the built-in validator.
-- Confirmed findings are emitted only when a raw XSS canary tag is reflected or
-  a unique marker is returned in a redirect `Location`, or when SQL true/false
-  predicates produce a repeatable differential response.
+- Confirmed findings are emitted only when a raw XSS canary tag is reflected, a
+  unique marker is returned in a redirect `Location`, SQL true/false predicates
+  produce a repeatable differential response, an upload marker is echoed or
+  retrieved, or an XML internal entity marker is resolved.
 - SQL error indicators are recorded as suspected findings, not confirmed
   exploitation.
 - Tool-run sidecar logs record tested candidates without persisting secrets.
@@ -389,7 +392,7 @@ Strong target:
 5. Generic route/parameter seeding into dynamic adapters.
 6. Safe reflected XSS, SQL injection, and open redirect validators.
 7. Juice Shop profile and authenticated API route seeding.
-8. Upload, CORS, XXE, and weak-session validators.
+8. CORS and weak-session validators.
 9. Differential authorization and IDOR framework.
 10. Benchmark coverage reports.
 11. Manual/nightly benchmark CI.

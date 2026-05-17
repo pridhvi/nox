@@ -130,9 +130,10 @@ assert_sidecars_absent_or_empty() {
   fi
 }
 
-dynamic_tools="security-headers,graphql-introspection,openapi-discovery,js-secret-scan,cors-check"
+dynamic_tools="security-headers,graphql-introspection,openapi-discovery,js-secret-scan,cors-check,reflected-xss-check,sqli-check,open-redirect-check,upload-check,xxe-fuzz"
 audit_tools="audit/authmiddleware,audit/idor,audit/depconfusion"
 combined_tools="$audit_tools,$dynamic_tools"
+fixture_routes="/api/search?q=test,/redirect?url=/,/upload,/xxe"
 
 target="${NOX_INTEGRATION_TARGET:-}"
 if [ -z "$target" ]; then
@@ -152,7 +153,7 @@ fi
 
 dynamic_dir="$root_dir/dynamic"
 mkdir -p "$dynamic_dir"
-NOX_SESSION_DIR="$dynamic_dir" go run . scan --target "$target" --tools "$dynamic_tools" --no-llm --config /dev/null >"$dynamic_log" 2>&1
+NOX_SESSION_DIR="$dynamic_dir" go run . scan --target "$target" --tools "$dynamic_tools" --route-seeds "$fixture_routes" --no-llm --config /dev/null >"$dynamic_log" 2>&1
 dynamic_session="$(session_id_for "$dynamic_dir")"
 dynamic_db="$(session_db_for "$dynamic_dir" "$dynamic_session")"
 assert_completed_session "$dynamic_db"
@@ -161,8 +162,13 @@ assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id
 assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'openapi-discovery';" 1 "OpenAPI finding"
 assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'js-secret-scan';" 1 "JavaScript secret finding"
 assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'cors-check';" 1 "CORS finding"
-assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM tool_runs;" 6 "dynamic tool runs"
-assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM tool_runs WHERE stdout_path != '';" 6 "persisted stdout paths"
+assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'reflected-xss-check' AND status = 'confirmed';" 1 "reflected XSS validator finding"
+assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'sqli-check';" 1 "SQLi validator finding"
+assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'open-redirect-check' AND status = 'confirmed';" 1 "open redirect validator finding"
+assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'upload-check';" 1 "upload validator finding"
+assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id = 'xxe-fuzz' AND status = 'confirmed';" 1 "XXE validator finding"
+assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM tool_runs;" 11 "dynamic tool runs"
+assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM tool_runs WHERE stdout_path != '';" 11 "persisted stdout paths"
 assert_sidecars_present "$dynamic_dir/$dynamic_session"
 NOX_SESSION_DIR="$dynamic_dir" go run . report "$dynamic_session" --format md --mode technical --config /dev/null --output "$dynamic_report" >>"$dynamic_log" 2>&1
 assert_file_contains "$dynamic_report" "Executive Summary" "dynamic report"
@@ -171,12 +177,12 @@ assert_file_contains "$dynamic_report" "GraphQL introspection is exposed|OpenAPI
 
 lean_dir="$root_dir/lean"
 mkdir -p "$lean_dir"
-NOX_SESSION_DIR="$lean_dir" go run . scan --target "$target" --tools "$dynamic_tools" --lean --no-llm --config /dev/null >"$lean_log" 2>&1
+NOX_SESSION_DIR="$lean_dir" go run . scan --target "$target" --tools "$dynamic_tools" --route-seeds "$fixture_routes" --lean --no-llm --config /dev/null >"$lean_log" 2>&1
 lean_session="$(session_id_for "$lean_dir")"
 lean_db="$(session_db_for "$lean_dir" "$lean_session")"
 assert_completed_session "$lean_db"
 assert_count_at_least "$lean_db" "SELECT COUNT(*) FROM findings;" 1 "lean findings"
-assert_count_at_least "$lean_db" "SELECT COUNT(*) FROM tool_runs;" 6 "lean tool runs"
+assert_count_at_least "$lean_db" "SELECT COUNT(*) FROM tool_runs;" 11 "lean tool runs"
 assert_count_equals "$lean_db" "SELECT COUNT(*) FROM tool_runs WHERE stdout_path != '' OR stderr_path != '';" 0 "lean persisted log paths"
 assert_sidecars_absent_or_empty "$lean_dir/$lean_session"
 
@@ -195,7 +201,7 @@ assert_file_contains "$audit_sarif" 'audit/' "audit SARIF rules"
 
 combined_dir="$root_dir/combined"
 mkdir -p "$combined_dir"
-NOX_SESSION_DIR="$combined_dir" go run . scan --target "$target" --source ./scripts/vulnerable-fixture --tools "$combined_tools" --no-llm --config /dev/null >"$combined_log" 2>&1
+NOX_SESSION_DIR="$combined_dir" go run . scan --target "$target" --source ./scripts/vulnerable-fixture --tools "$combined_tools" --route-seeds "$fixture_routes" --no-llm --config /dev/null >"$combined_log" 2>&1
 combined_session="$(session_id_for "$combined_dir")"
 combined_db="$(session_db_for "$combined_dir" "$combined_session")"
 assert_completed_session "$combined_db"
