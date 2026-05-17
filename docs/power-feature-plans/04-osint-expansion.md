@@ -108,9 +108,9 @@ Run/seed endpoints require configured API-key auth.
 
 CLI:
 
-- `nox osint run <session-id> [--providers github,shodan]`
-- `nox osint list <session-id> [--kind email] [--format json]`
-- `nox osint export <session-id> --output osint.json`
+- `nyx osint run <session-id> [--providers github,shodan]`
+- `nyx osint list <session-id> [--kind email] [--format json]`
+- `nyx osint export <session-id> --output osint.json`
 
 ## Frontend
 

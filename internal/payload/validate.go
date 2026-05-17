@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type ValidationOptions struct {
@@ -62,7 +62,7 @@ func Validate(ctx context.Context, store *db.Store, session models.Session, payl
 	if err != nil {
 		return ValidationResult{}, err
 	}
-	req.Header.Set("User-Agent", "nox/0.1 safe-payload-validator")
+	req.Header.Set("User-Agent", "nyx/0.1 safe-payload-validator")
 	resp, err := client.Do(req)
 	if err != nil {
 		return ValidationResult{}, err
@@ -113,7 +113,7 @@ func validationEvidence(payload models.Payload, status int, body string) (bool, 
 	lower := strings.ToLower(body)
 	switch payload.PayloadType {
 	case "xss":
-		if strings.Contains(lower, "confirm") || strings.Contains(lower, "nox") {
+		if strings.Contains(lower, "confirm") || strings.Contains(lower, "nyx") {
 			return true, fmt.Sprintf("HTTP %d reflected the XSS marker", status)
 		}
 	case "ssti":
@@ -121,14 +121,14 @@ func validationEvidence(payload models.Payload, status int, body string) (bool, 
 			return true, fmt.Sprintf("HTTP %d reflected evaluated SSTI marker 49", status)
 		}
 	case "xxe":
-		if strings.Contains(lower, "nox") {
+		if strings.Contains(lower, "nyx") {
 			return true, fmt.Sprintf("HTTP %d reflected non-exfiltrating XXE marker", status)
 		}
 	case "open_redirect":
 		if status >= 300 && status < 400 {
 			return true, fmt.Sprintf("HTTP %d returned a redirect response", status)
 		}
-		if strings.Contains(lower, "example.com/nox-redirect-marker") {
+		if strings.Contains(lower, "example.com/nyx-redirect-marker") {
 			return true, fmt.Sprintf("HTTP %d reflected redirect marker", status)
 		}
 	}

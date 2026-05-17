@@ -9,14 +9,14 @@ Collaborator/Interactsh polling, and session tool-run import summaries.
 ## Goal And Success Criteria
 
 Add two-way Burp Suite integration through file import/export and optional Burp
-REST API sync. Nox should import Burp issues/evidence, export Nox scope/findings
+REST API sync. Nyx should import Burp issues/evidence, export Nyx scope/findings
 to Burp formats, and optionally use Burp Collaborator or Interactsh as a
 callback provider for later validation modules.
 
 Done means:
 
 - Operators can import Burp XML into an existing session.
-- Operators can export Nox targets/findings as Burp-compatible XML.
+- Operators can export Nyx targets/findings as Burp-compatible XML.
 - Optional Burp REST status/push/pull works against a local fake server in
   tests and degrades when Burp is absent.
 - Collaborator/interactsh config is stored globally and redacted in API output.
@@ -24,7 +24,7 @@ Done means:
 Out of scope:
 
 - Requiring Burp Pro for file import/export.
-- Running Burp active scans automatically from normal Nox scans.
+- Running Burp active scans automatically from normal Nyx scans.
 - Storing Burp API keys unredacted in UI/API output.
 
 ## Safety Constraints
@@ -82,7 +82,7 @@ Import behavior:
 Export behavior:
 
 - Scope XML includes session targets only.
-- Findings XML includes normalized findings with Nox metadata.
+- Findings XML includes normalized findings with Nyx metadata.
 - Export endpoints return download content with correct filename/content type.
 
 REST behavior:
@@ -107,12 +107,12 @@ API:
 
 CLI:
 
-- `nox burp import <burp-export.xml> --session <session-id>`
-- `nox burp export scope <session-id> --output scope.xml`
-- `nox burp export findings <session-id> --output findings.xml`
-- `nox burp push-scope <session-id>`
-- `nox burp pull-issues <session-id>`
-- `nox burp collaborator set --provider interactsh --url ...`
+- `nyx burp import <burp-export.xml> --session <session-id>`
+- `nyx burp export scope <session-id> --output scope.xml`
+- `nyx burp export findings <session-id> --output findings.xml`
+- `nyx burp push-scope <session-id>`
+- `nyx burp pull-issues <session-id>`
+- `nyx burp collaborator set --provider interactsh --url ...`
 
 ## Frontend
 
@@ -163,7 +163,7 @@ Targeted tests:
 
 Acceptance scenario:
 
-1. Import a Burp XML fixture into a Nox session.
+1. Import a Burp XML fixture into a Nyx session.
 2. Confirm findings and evidence are visible.
 3. Export scope XML and validate structure.
 4. Use fake Burp server to test push/pull.

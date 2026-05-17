@@ -49,14 +49,14 @@ func TestTildeSessionDirResolvesToHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("database:\n  session_dir: ~/.nox/sessions\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("database:\n  session_dir: ~/.nyx/sessions\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(home, ".nox", "sessions")
+	want := filepath.Join(home, ".nyx", "sessions")
 	if cfg.Database.SessionDir != want {
 		t.Fatalf("expected %q, got %q", want, cfg.Database.SessionDir)
 	}
@@ -65,7 +65,7 @@ func TestTildeSessionDirResolvesToHome(t *testing.T) {
 func TestLoadNestedConfigListsAndToolPaths(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	data := []byte(`
-plugins = ["/opt/nox/plugins"]
+plugins = ["/opt/nyx/plugins"]
 
 [llm]
 enabled = true
@@ -102,19 +102,19 @@ sqlmap = "/opt/sqlmap/sqlmap.py"
 	if cfg.CVE.ExploitDBPath == "" || len(cfg.CVE.Sources) != 4 {
 		t.Fatalf("unexpected CVE config: %#v", cfg.CVE)
 	}
-	if cfg.Tools["nuclei"] == "" || cfg.Plugins[0] != "/opt/nox/plugins" {
+	if cfg.Tools["nuclei"] == "" || cfg.Plugins[0] != "/opt/nyx/plugins" {
 		t.Fatalf("unexpected tool/plugin config: tools=%#v plugins=%#v", cfg.Tools, cfg.Plugins)
 	}
 }
 
 func TestEnvOverridesConfig(t *testing.T) {
-	t.Setenv("NOX_LLM_BASE_URL", "http://localhost:11434/v1")
-	t.Setenv("NOX_SESSION_DIR", "/tmp/nox-sessions")
-	t.Setenv("NOX_LOG_LEVEL", "debug")
-	t.Setenv("NOX_LOG_FORMAT", "json")
-	t.Setenv("NOX_POWER_PROVIDERS_GITHUB_TOKEN", "ghp_secret")
-	t.Setenv("NOX_POWER_BURP_API_KEY", "burp_secret")
-	t.Setenv("NOX_POWER_ACTIVE_VALIDATION_ENABLED", "true")
+	t.Setenv("NYX_LLM_BASE_URL", "http://localhost:11434/v1")
+	t.Setenv("NYX_SESSION_DIR", "/tmp/nyx-sessions")
+	t.Setenv("NYX_LOG_LEVEL", "debug")
+	t.Setenv("NYX_LOG_FORMAT", "json")
+	t.Setenv("NYX_POWER_PROVIDERS_GITHUB_TOKEN", "ghp_secret")
+	t.Setenv("NYX_POWER_BURP_API_KEY", "burp_secret")
+	t.Setenv("NYX_POWER_ACTIVE_VALIDATION_ENABLED", "true")
 	cfg, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestEnvOverridesConfig(t *testing.T) {
 	if cfg.LLM.BaseURL != "http://localhost:11434/v1" {
 		t.Fatalf("expected env LLM URL override, got %q", cfg.LLM.BaseURL)
 	}
-	if cfg.Database.SessionDir != "/tmp/nox-sessions" {
+	if cfg.Database.SessionDir != "/tmp/nyx-sessions" {
 		t.Fatalf("expected env session dir override, got %q", cfg.Database.SessionDir)
 	}
 	if cfg.Logging.Level != "debug" || cfg.Logging.Format != "json" {

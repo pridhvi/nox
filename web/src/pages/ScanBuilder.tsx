@@ -19,7 +19,7 @@ const modeDescriptions: Record<string, string> = {
 };
 
 const runtimeHelp: Record<string, string> = {
-  concurrency: "Maximum number of adapter tasks Nox may run at once.",
+  concurrency: "Maximum number of adapter tasks Nyx may run at once.",
   perToolConcurrency: "Maximum concurrent runs of the same tool across targets.",
   timeout: "Per-tool timeout passed to adapters that support runtime overrides.",
   delay: "Delay before each tool execution, useful for pacing active scans.",

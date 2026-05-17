@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type FindingNode struct {
@@ -67,7 +67,7 @@ func VectorsFromGraph(sessionID string, graph AttackGraph) []models.AttackVector
 			SessionID:        sessionID,
 			Title:            "Graph-derived attack path",
 			Description:      "A weighted relationship graph linked source, audit, and dynamic evidence.",
-			Narrative:        "Nox correlated static or dynamic evidence into a higher-confidence attack path.",
+			Narrative:        "Nyx correlated static or dynamic evidence into a higher-confidence attack path.",
 			OWASPCategory:    "Composite Risk",
 			Severity:         models.SeverityHigh,
 			Confidence:       clamp(edge.Confidence + 0.1),

@@ -1,6 +1,6 @@
 package source
 
-import "github.com/pridhvi/nox/internal/models"
+import "github.com/pridhvi/nyx/internal/models"
 
 type PHPExtractor struct{ genericExtractor }
 

@@ -243,7 +243,7 @@ func TestCVEMatchAttackVectorAndReportSerializationAndValidation(t *testing.T) {
 		FindingIDs:      []string{"finding-1"},
 		CVEMatchIDs:     []string{"cve-match-1"},
 		AttackVectorIDs: []string{"vector-1"},
-		GeneratedBy:     "nox",
+		GeneratedBy:     "nyx",
 		LLMGenerated:    false,
 		CreatedAt:       now,
 		Sections: []ReportSection{{

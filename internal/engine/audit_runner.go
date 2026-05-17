@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pridhvi/nox/internal/adapters"
-	"github.com/pridhvi/nox/internal/db"
-	llmintel "github.com/pridhvi/nox/internal/llm"
-	"github.com/pridhvi/nox/internal/models"
-	"github.com/pridhvi/nox/internal/source"
-	"github.com/pridhvi/nox/internal/suppress"
+	"github.com/pridhvi/nyx/internal/adapters"
+	"github.com/pridhvi/nyx/internal/db"
+	llmintel "github.com/pridhvi/nyx/internal/llm"
+	"github.com/pridhvi/nyx/internal/models"
+	"github.com/pridhvi/nyx/internal/source"
+	"github.com/pridhvi/nyx/internal/suppress"
 )
 
 type AuditOptions struct {

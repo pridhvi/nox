@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestHTTPAdaptersRejectOutOfScopeBeforeNetwork(t *testing.T) {

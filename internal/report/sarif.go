@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type sarifReport struct {
@@ -77,7 +77,7 @@ func renderSARIF(report models.Report) []byte {
 	for _, rule := range rules {
 		ruleList = append(ruleList, rule)
 	}
-	body, _ := json.MarshalIndent(sarifReport{Version: "2.1.0", Schema: "https://json.schemastore.org/sarif-2.1.0.json", Runs: []sarifRun{{Tool: sarifTool{Driver: sarifDriver{Name: "Nox", Rules: ruleList}}, Results: results}}}, "", "  ")
+	body, _ := json.MarshalIndent(sarifReport{Version: "2.1.0", Schema: "https://json.schemastore.org/sarif-2.1.0.json", Runs: []sarifRun{{Tool: sarifTool{Driver: sarifDriver{Name: "Nyx", Rules: ruleList}}, Results: results}}}, "", "  ")
 	return body
 }
 

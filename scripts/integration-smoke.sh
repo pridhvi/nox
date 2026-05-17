@@ -1,27 +1,27 @@
 #!/usr/bin/env sh
 set -eu
 
-if [ "${NOX_RUN_INTEGRATION:-}" != "1" ]; then
-  echo "Integration smoke is opt-in. Set NOX_RUN_INTEGRATION=1 to run it."
+if [ "${NYX_RUN_INTEGRATION:-}" != "1" ]; then
+  echo "Integration smoke is opt-in. Set NYX_RUN_INTEGRATION=1 to run it."
   exit 0
 fi
 
 root_dir="$(mktemp -d)"
-fixture_log="/tmp/nox-integration-fixture.log"
-dynamic_log="/tmp/nox-integration-dynamic-scan.log"
-lean_log="/tmp/nox-integration-lean-scan.log"
-audit_log="/tmp/nox-integration-audit.log"
-combined_log="/tmp/nox-integration-combined-scan.log"
-dynamic_report="/tmp/nox-integration-dynamic-report.md"
-audit_sarif="/tmp/nox-integration-audit.sarif"
-combined_report="/tmp/nox-integration-combined-report.md"
+fixture_log="/tmp/nyx-integration-fixture.log"
+dynamic_log="/tmp/nyx-integration-dynamic-scan.log"
+lean_log="/tmp/nyx-integration-lean-scan.log"
+audit_log="/tmp/nyx-integration-audit.log"
+combined_log="/tmp/nyx-integration-combined-scan.log"
+dynamic_report="/tmp/nyx-integration-dynamic-report.md"
+audit_sarif="/tmp/nyx-integration-audit.sarif"
+combined_report="/tmp/nyx-integration-combined-report.md"
 fixture_pid=""
 
 cleanup() {
   if [ -n "$fixture_pid" ]; then
     kill "$fixture_pid" >/dev/null 2>&1 || true
   fi
-  if [ "${NOX_KEEP_INTEGRATION_ARTIFACTS:-}" != "1" ]; then
+  if [ "${NYX_KEEP_INTEGRATION_ARTIFACTS:-}" != "1" ]; then
     rm -rf "$root_dir"
   else
     echo "Keeping integration sessions under $root_dir"
@@ -135,12 +135,12 @@ audit_tools="audit/authmiddleware,audit/idor,audit/depconfusion"
 combined_tools="$audit_tools,$dynamic_tools"
 fixture_routes="/api/search?q=test,/api/basket?id=1,/coupon,/redirect?url=/,/upload,/csrf,/weak-session,/xxe"
 
-target="${NOX_INTEGRATION_TARGET:-}"
+target="${NYX_INTEGRATION_TARGET:-}"
 if [ -z "$target" ]; then
   : >"$fixture_log"
-  NOX_FIXTURE_ADDR="${NOX_FIXTURE_ADDR:-127.0.0.1:18081}" go run ./scripts/vulnerable-fixture >"$fixture_log" 2>&1 &
+  NYX_FIXTURE_ADDR="${NYX_FIXTURE_ADDR:-127.0.0.1:18081}" go run ./scripts/vulnerable-fixture >"$fixture_log" 2>&1 &
   fixture_pid="$!"
-  target="http://${NOX_FIXTURE_ADDR:-127.0.0.1:18081}"
+  target="http://${NYX_FIXTURE_ADDR:-127.0.0.1:18081}"
   i=0
   until curl -fsS "$target" >/dev/null 2>&1; do
     i=$((i + 1))
@@ -153,7 +153,7 @@ fi
 
 dynamic_dir="$root_dir/dynamic"
 mkdir -p "$dynamic_dir"
-NOX_SESSION_DIR="$dynamic_dir" go run . scan --target "$target" --tools "$dynamic_tools" --route-seeds "$fixture_routes" --no-llm --config /dev/null >"$dynamic_log" 2>&1
+NYX_SESSION_DIR="$dynamic_dir" go run . scan --target "$target" --tools "$dynamic_tools" --route-seeds "$fixture_routes" --no-llm --config /dev/null >"$dynamic_log" 2>&1
 dynamic_session="$(session_id_for "$dynamic_dir")"
 dynamic_db="$(session_db_for "$dynamic_dir" "$dynamic_session")"
 assert_completed_session "$dynamic_db"
@@ -174,14 +174,14 @@ assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM findings WHERE tool_id
 assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM tool_runs;" 15 "dynamic tool runs"
 assert_count_at_least "$dynamic_db" "SELECT COUNT(*) FROM tool_runs WHERE stdout_path != '';" 15 "persisted stdout paths"
 assert_sidecars_present "$dynamic_dir/$dynamic_session"
-NOX_SESSION_DIR="$dynamic_dir" go run . report "$dynamic_session" --format md --mode technical --config /dev/null --output "$dynamic_report" >>"$dynamic_log" 2>&1
+NYX_SESSION_DIR="$dynamic_dir" go run . report "$dynamic_session" --format md --mode technical --config /dev/null --output "$dynamic_report" >>"$dynamic_log" 2>&1
 assert_file_contains "$dynamic_report" "Executive Summary" "dynamic report"
 assert_file_contains "$dynamic_report" "Tool Coverage" "dynamic report tool coverage"
 assert_file_contains "$dynamic_report" "GraphQL introspection is exposed|OpenAPI or Swagger document exposed|Potential secret exposed" "dynamic report findings"
 
 lean_dir="$root_dir/lean"
 mkdir -p "$lean_dir"
-NOX_SESSION_DIR="$lean_dir" go run . scan --target "$target" --tools "$dynamic_tools" --route-seeds "$fixture_routes" --lean --no-llm --config /dev/null >"$lean_log" 2>&1
+NYX_SESSION_DIR="$lean_dir" go run . scan --target "$target" --tools "$dynamic_tools" --route-seeds "$fixture_routes" --lean --no-llm --config /dev/null >"$lean_log" 2>&1
 lean_session="$(session_id_for "$lean_dir")"
 lean_db="$(session_db_for "$lean_dir" "$lean_session")"
 assert_completed_session "$lean_db"
@@ -192,7 +192,7 @@ assert_sidecars_absent_or_empty "$lean_dir/$lean_session"
 
 audit_dir="$root_dir/audit"
 mkdir -p "$audit_dir"
-NOX_SESSION_DIR="$audit_dir" go run . audit ./scripts/vulnerable-fixture --tools "$audit_tools" --no-llm --format sarif --output "$audit_sarif" --config /dev/null >"$audit_log" 2>&1
+NYX_SESSION_DIR="$audit_dir" go run . audit ./scripts/vulnerable-fixture --tools "$audit_tools" --no-llm --format sarif --output "$audit_sarif" --config /dev/null >"$audit_log" 2>&1
 audit_session="$(session_id_for "$audit_dir")"
 audit_db="$(session_db_for "$audit_dir" "$audit_session")"
 assert_completed_session "$audit_db"
@@ -205,7 +205,7 @@ assert_file_contains "$audit_sarif" 'audit/' "audit SARIF rules"
 
 combined_dir="$root_dir/combined"
 mkdir -p "$combined_dir"
-NOX_SESSION_DIR="$combined_dir" go run . scan --target "$target" --source ./scripts/vulnerable-fixture --tools "$combined_tools" --route-seeds "$fixture_routes" --no-llm --config /dev/null >"$combined_log" 2>&1
+NYX_SESSION_DIR="$combined_dir" go run . scan --target "$target" --source ./scripts/vulnerable-fixture --tools "$combined_tools" --route-seeds "$fixture_routes" --no-llm --config /dev/null >"$combined_log" 2>&1
 combined_session="$(session_id_for "$combined_dir")"
 combined_db="$(session_db_for "$combined_dir" "$combined_session")"
 assert_completed_session "$combined_db"
@@ -215,14 +215,14 @@ assert_count_at_least "$combined_db" "SELECT COUNT(*) FROM findings WHERE tool_i
 assert_count_at_least "$combined_db" "SELECT COUNT(*) FROM attack_graph_edges WHERE relation = 'confirms';" 1 "combined confirmation edges"
 assert_count_at_least "$combined_db" "SELECT COUNT(*) FROM source_findings WHERE confirmed_by_dynamic = 1;" 1 "confirmed source findings"
 assert_sidecars_present "$combined_dir/$combined_session"
-NOX_SESSION_DIR="$combined_dir" go run . report "$combined_session" --format md --mode technical --config /dev/null --output "$combined_report" >>"$combined_log" 2>&1
+NYX_SESSION_DIR="$combined_dir" go run . report "$combined_session" --format md --mode technical --config /dev/null --output "$combined_report" >>"$combined_log" 2>&1
 assert_file_contains "$combined_report" "Static Source Findings" "combined report source section"
 assert_file_contains "$combined_report" "Cross-Confirmed Findings" "combined report confirmation section"
 assert_file_contains "$combined_report" "Tool Coverage" "combined report tool coverage"
 
 minimal_combined_dir="$root_dir/combined-minimal"
 mkdir -p "$minimal_combined_dir"
-NOX_SESSION_DIR="$minimal_combined_dir" go run . scan --target "$target" --source ./scripts/vulnerable-fixture --phases recon --tools http-probe --no-llm --config /dev/null >>"$combined_log" 2>&1
+NYX_SESSION_DIR="$minimal_combined_dir" go run . scan --target "$target" --source ./scripts/vulnerable-fixture --phases recon --tools http-probe --no-llm --config /dev/null >>"$combined_log" 2>&1
 minimal_combined_session="$(session_id_for "$minimal_combined_dir")"
 minimal_combined_db="$(session_db_for "$minimal_combined_dir" "$minimal_combined_session")"
 assert_completed_session "$minimal_combined_db"

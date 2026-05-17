@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	llmintel "github.com/pridhvi/nox/internal/llm"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	llmintel "github.com/pridhvi/nyx/internal/llm"
+	"github.com/pridhvi/nyx/internal/models"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -159,8 +159,8 @@ func deterministicPayloads(finding models.Finding) []models.Payload {
 	switch {
 	case strings.Contains(text, "xss") || strings.Contains(text, "script") || strings.Contains(text, "reflected"):
 		return []models.Payload{
-			{PayloadType: "xss", Payload: `"><script>confirm("nox")</script>`, Context: "Reflected marker payload; generation is advisory and not sent automatically.", BypassTechnique: "quote-breakout", Confidence: 0.62},
-			{PayloadType: "xss", Payload: `<img src=x onerror=confirm("nox")>`, Context: "Event-handler marker payload for manual validation.", BypassTechnique: "event-handler", Confidence: 0.56},
+			{PayloadType: "xss", Payload: `"><script>confirm("nyx")</script>`, Context: "Reflected marker payload; generation is advisory and not sent automatically.", BypassTechnique: "quote-breakout", Confidence: 0.62},
+			{PayloadType: "xss", Payload: `<img src=x onerror=confirm("nyx")>`, Context: "Event-handler marker payload for manual validation.", BypassTechnique: "event-handler", Confidence: 0.56},
 		}
 	case strings.Contains(text, "sql") || strings.Contains(text, "sqli"):
 		return []models.Payload{
@@ -168,15 +168,15 @@ func deterministicPayloads(finding models.Finding) []models.Payload {
 			{PayloadType: "sqli", Payload: `' AND 1=2 UNION SELECT NULL --`, Context: "Union-shape probe for manual testing.", BypassTechnique: "union-probe", Confidence: 0.42},
 		}
 	case strings.Contains(text, "ssrf"):
-		return []models.Payload{{PayloadType: "ssrf", Payload: `http://127.0.0.1:9/nox-canary`, Context: "Local-only canary URL placeholder; external callback support is separate.", BypassTechnique: "loopback-canary", Confidence: 0.35}}
+		return []models.Payload{{PayloadType: "ssrf", Payload: `http://127.0.0.1:9/nyx-canary`, Context: "Local-only canary URL placeholder; external callback support is separate.", BypassTechnique: "loopback-canary", Confidence: 0.35}}
 	case strings.Contains(text, "ssti") || strings.Contains(text, "template"):
 		return []models.Payload{{PayloadType: "ssti", Payload: `{{7*7}}`, Context: "Harmless arithmetic marker for manual SSTI validation.", BypassTechnique: "arithmetic-marker", Confidence: 0.54}}
 	case strings.Contains(text, "xxe"):
-		return []models.Payload{{PayloadType: "xxe", Payload: `<!DOCTYPE x [<!ENTITY nox "nox">]>`, Context: "Non-exfiltrating entity marker.", BypassTechnique: "entity-marker", Confidence: 0.31}}
+		return []models.Payload{{PayloadType: "xxe", Payload: `<!DOCTYPE x [<!ENTITY nyx "nyx">]>`, Context: "Non-exfiltrating entity marker.", BypassTechnique: "entity-marker", Confidence: 0.31}}
 	case strings.Contains(text, "redirect"):
-		return []models.Payload{{PayloadType: "open_redirect", Payload: `https://example.com/nox-redirect-marker`, Context: "Benign external redirect marker.", BypassTechnique: "absolute-url", Confidence: 0.5}}
+		return []models.Payload{{PayloadType: "open_redirect", Payload: `https://example.com/nyx-redirect-marker`, Context: "Benign external redirect marker.", BypassTechnique: "absolute-url", Confidence: 0.5}}
 	case strings.Contains(text, "command") || strings.Contains(text, "rce"):
-		return []models.Payload{{PayloadType: "cmd_injection", Payload: `; echo nox-marker`, Context: "Harmless echo marker; not automatically verifiable.", BypassTechnique: "shell-separator", Confidence: 0.28}}
+		return []models.Payload{{PayloadType: "cmd_injection", Payload: `; echo nyx-marker`, Context: "Harmless echo marker; not automatically verifiable.", BypassTechnique: "shell-separator", Confidence: 0.28}}
 	default:
 		return nil
 	}

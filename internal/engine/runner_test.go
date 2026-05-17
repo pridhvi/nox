@@ -16,21 +16,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/adapters"
-	"github.com/pridhvi/nox/internal/db"
-	noxlog "github.com/pridhvi/nox/internal/logging"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/adapters"
+	"github.com/pridhvi/nyx/internal/db"
+	nyxlog "github.com/pridhvi/nyx/internal/logging"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestRunnerTreatsAdapterErrorAsNonFatal(t *testing.T) {
 	ctx := context.Background()
 	session, store := testRunnerStore(t, ctx)
 	var logs bytes.Buffer
-	if err := noxlog.Configure(noxlog.Options{Level: "warn", Format: "json", Output: &logs}); err != nil {
+	if err := nyxlog.Configure(nyxlog.Options{Level: "warn", Format: "json", Output: &logs}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = noxlog.Configure(noxlog.Options{})
+		_ = nyxlog.Configure(nyxlog.Options{})
 	})
 	runner := NewRunnerWithAdapters(store, []adapters.Adapter{
 		fakeRunnerAdapter{

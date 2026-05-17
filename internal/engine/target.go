@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func NewInitialTarget(sessionID, targetInput string) models.Target {

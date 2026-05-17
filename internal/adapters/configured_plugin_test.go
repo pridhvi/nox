@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestConfiguredPluginNormalizesResponse(t *testing.T) {
-	binary := writePluginFixture(t, `{"version":"nox.plugin.v1","findings":[{"type":"info","severity":"info","confidence":0.7,"title":"Plugin finding","description":"from fixture","url":"https://example.com"}],"technologies":[{"name":"fixture-tech","version":"1.0","category":"test","confidence":0.9}],"new_targets":[]}`)
+	binary := writePluginFixture(t, `{"version":"nyx.plugin.v1","findings":[{"type":"info","severity":"info","confidence":0.7,"title":"Plugin finding","description":"from fixture","url":"https://example.com"}],"technologies":[{"name":"fixture-tech","version":"1.0","category":"test","confidence":0.9}],"new_targets":[]}`)
 	session := models.Session{ID: "session-1", Mode: models.ScanModeActive, CreatedAt: time.Now().UTC()}
 	target := models.Target{ID: "target-1", SessionID: session.ID, Host: "example.com", Protocol: "https", Port: 443}
 	plugin := NewConfiguredPlugin(models.PluginRecord{

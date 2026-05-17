@@ -7,7 +7,7 @@ canary callback handling, report sections, and optional LLM impact narratives.
 
 ## Goal And Success Criteria
 
-Add manual, safe proof-of-concept execution for selected findings. Nox should
+Add manual, safe proof-of-concept execution for selected findings. Nyx should
 generate bounded PoC attempts, capture evidence, correlate canary callbacks
 where available, and produce an impact narrative without turning normal scans
 into exploitation.
@@ -97,9 +97,9 @@ Run endpoint body includes:
 
 CLI:
 
-- `nox poc run <session-id> --finding <finding-id> [--payload <id>]`
-- `nox poc list <session-id> [--finding <id>]`
-- `nox poc report <session-id> --output poc.md`
+- `nyx poc run <session-id> --finding <finding-id> [--payload <id>]`
+- `nyx poc list <session-id> [--finding <id>]`
+- `nyx poc report <session-id> --output poc.md`
 
 ## Frontend
 

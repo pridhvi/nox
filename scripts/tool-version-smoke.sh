@@ -2,7 +2,7 @@
 set -eu
 
 mode="${1:-host}"
-strict="${NOX_TOOL_SMOKE_STRICT:-0}"
+strict="${NYX_TOOL_SMOKE_STRICT:-0}"
 missing_recommended=0
 
 version_output() {

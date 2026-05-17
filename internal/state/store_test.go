@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestMonitorConfigCRUDAndRedaction(t *testing.T) {
 	ctx := context.Background()
-	store, err := Open(ctx, filepath.Join(t.TempDir(), "nox-state.db"))
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "nyx-state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestMonitorConfigCRUDAndRedaction(t *testing.T) {
 
 func TestMonitorRunsAndSurfaceChanges(t *testing.T) {
 	ctx := context.Background()
-	store, err := Open(ctx, filepath.Join(t.TempDir(), "nox-state.db"))
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "nyx-state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

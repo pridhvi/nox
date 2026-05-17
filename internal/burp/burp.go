@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type RESTResult struct {
@@ -248,7 +248,7 @@ func restRequest(ctx context.Context, config models.BurpConfig, method, endpoint
 		req.Header.Set("Authorization", "Bearer "+config.APIKey)
 		req.Header.Set("X-API-Key", config.APIKey)
 	}
-	req.Header.Set("User-Agent", "nox/0.1 burp-bridge")
+	req.Header.Set("User-Agent", "nyx/0.1 burp-bridge")
 	return req, nil
 }
 

@@ -55,7 +55,7 @@ export function Settings() {
         </section>
         <section className="panel">
           <h2>Frontend</h2>
-          <dl><dt>Theme</dt><dd>{localStorage.getItem("nox-theme") ?? "dark"}</dd><dt>Assets</dt><dd>embedded in Go binary when built</dd><dt>Platform</dt><dd>{cfg?.runtime.goos}/{cfg?.runtime.goarch}</dd></dl>
+          <dl><dt>Theme</dt><dd>{localStorage.getItem("nyx-theme") ?? "dark"}</dd><dt>Assets</dt><dd>embedded in Go binary when built</dd><dt>Platform</dt><dd>{cfg?.runtime.goos}/{cfg?.runtime.goarch}</dd></dl>
         </section>
         <section className="panel">
           <h2>CVE</h2>

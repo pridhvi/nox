@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
-	"github.com/pridhvi/nox/internal/source"
+	"github.com/pridhvi/nyx/internal/models"
+	"github.com/pridhvi/nyx/internal/source"
 )
 
 func init() {

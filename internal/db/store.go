@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 	_ "modernc.org/sqlite"
 )
 
@@ -57,9 +57,9 @@ type SourceFindingFilter struct {
 func DefaultSessionsDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(".nox", "sessions")
+		return filepath.Join(".nyx", "sessions")
 	}
-	return filepath.Join(home, ".nox", "sessions")
+	return filepath.Join(home, ".nyx", "sessions")
 }
 
 func EnsureSessionsDir(dir string) error {

@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type scanContext struct {

@@ -8,7 +8,7 @@
 /vulnerabilities/javascript/
 /vulnerabilities/sqli/?id=1&Submit=Submit
 /vulnerabilities/sqli_blind/?id=1&Submit=Submit
-/vulnerabilities/xss_r/?name=nox
+/vulnerabilities/xss_r/?name=nyx
 /vulnerabilities/xss_s/
 /vulnerabilities/xss_d/
 /vulnerabilities/csp/

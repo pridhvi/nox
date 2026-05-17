@@ -1,4 +1,4 @@
-module github.com/pridhvi/nox
+module github.com/pridhvi/nyx
 
 go 1.26
 

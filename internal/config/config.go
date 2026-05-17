@@ -116,15 +116,15 @@ func (c PowerConfig) Redacted() PowerConfig {
 func DefaultPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(".nox", "config.yaml")
+		return filepath.Join(".nyx", "config.yaml")
 	}
-	return filepath.Join(home, ".nox", "config.yaml")
+	return filepath.Join(home, ".nyx", "config.yaml")
 }
 
 func Default() Config {
-	sessionDir := filepath.Join(".nox", "sessions")
+	sessionDir := filepath.Join(".nyx", "sessions")
 	if home, err := os.UserHomeDir(); err == nil {
-		sessionDir = filepath.Join(home, ".nox", "sessions")
+		sessionDir = filepath.Join(home, ".nyx", "sessions")
 	}
 	return Config{
 		LLM: LLMConfig{
@@ -162,7 +162,7 @@ func Load(path string) (Config, error) {
 	if filepath.Ext(path) == "" {
 		v.SetConfigType("yaml")
 	}
-	v.SetEnvPrefix("NOX")
+	v.SetEnvPrefix("NYX")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 	bindEnv(v)
@@ -221,49 +221,49 @@ func WriteDefault(path string) error {
 }
 
 func ApplyEnv(cfg Config) Config {
-	cfg.LLM.Provider = first(os.Getenv("NOX_LLM_PROVIDER"), cfg.LLM.Provider)
-	cfg.LLM.BaseURL = first(os.Getenv("NOX_LLM_BASE_URL"), cfg.LLM.BaseURL)
-	cfg.LLM.APIKey = first(os.Getenv("NOX_LLM_API_KEY"), cfg.LLM.APIKey)
-	cfg.LLM.Model = first(os.Getenv("NOX_LLM_MODEL"), cfg.LLM.Model)
-	cfg.Database.SessionDir = absolutePath(first(os.Getenv("NOX_SESSION_DIR"), cfg.Database.SessionDir))
-	cfg.Server.APIKey = first(os.Getenv("NOX_API_KEY"), cfg.Server.APIKey)
-	cfg.Logging.Level = first(os.Getenv("NOX_LOG_LEVEL"), cfg.Logging.Level)
-	cfg.Logging.Format = first(os.Getenv("NOX_LOG_FORMAT"), cfg.Logging.Format)
-	cfg.CVE.OfflinePath = first(os.Getenv("NOX_CVE_OFFLINE_PATH"), cfg.CVE.OfflinePath)
-	cfg.CVE.ExploitDBPath = first(os.Getenv("NOX_CVE_EXPLOITDB_PATH"), cfg.CVE.ExploitDBPath)
-	cfg.CVE.CacheTTL = first(os.Getenv("NOX_CVE_CACHE_TTL"), cfg.CVE.CacheTTL)
-	cfg.Power.Providers.GitHubToken = first(os.Getenv("NOX_POWER_PROVIDERS_GITHUB_TOKEN"), cfg.Power.Providers.GitHubToken)
-	cfg.Power.Providers.ShodanAPIKey = first(os.Getenv("NOX_POWER_PROVIDERS_SHODAN_API_KEY"), cfg.Power.Providers.ShodanAPIKey)
-	cfg.Power.Providers.SecurityTrailsAPIKey = first(os.Getenv("NOX_POWER_PROVIDERS_SECURITYTRAILS_API_KEY"), cfg.Power.Providers.SecurityTrailsAPIKey)
-	cfg.Power.Burp.BaseURL = first(os.Getenv("NOX_POWER_BURP_BASE_URL"), cfg.Power.Burp.BaseURL)
-	cfg.Power.Burp.APIKey = first(os.Getenv("NOX_POWER_BURP_API_KEY"), cfg.Power.Burp.APIKey)
-	cfg.Power.Callbacks.Provider = first(os.Getenv("NOX_POWER_CALLBACKS_PROVIDER"), cfg.Power.Callbacks.Provider)
-	cfg.Power.Callbacks.InteractshURL = first(os.Getenv("NOX_POWER_CALLBACKS_INTERACTSH_URL"), cfg.Power.Callbacks.InteractshURL)
-	if value := os.Getenv("NOX_CVE_ENABLE_REMOTE"); strings.TrimSpace(value) != "" {
+	cfg.LLM.Provider = first(os.Getenv("NYX_LLM_PROVIDER"), cfg.LLM.Provider)
+	cfg.LLM.BaseURL = first(os.Getenv("NYX_LLM_BASE_URL"), cfg.LLM.BaseURL)
+	cfg.LLM.APIKey = first(os.Getenv("NYX_LLM_API_KEY"), cfg.LLM.APIKey)
+	cfg.LLM.Model = first(os.Getenv("NYX_LLM_MODEL"), cfg.LLM.Model)
+	cfg.Database.SessionDir = absolutePath(first(os.Getenv("NYX_SESSION_DIR"), cfg.Database.SessionDir))
+	cfg.Server.APIKey = first(os.Getenv("NYX_API_KEY"), cfg.Server.APIKey)
+	cfg.Logging.Level = first(os.Getenv("NYX_LOG_LEVEL"), cfg.Logging.Level)
+	cfg.Logging.Format = first(os.Getenv("NYX_LOG_FORMAT"), cfg.Logging.Format)
+	cfg.CVE.OfflinePath = first(os.Getenv("NYX_CVE_OFFLINE_PATH"), cfg.CVE.OfflinePath)
+	cfg.CVE.ExploitDBPath = first(os.Getenv("NYX_CVE_EXPLOITDB_PATH"), cfg.CVE.ExploitDBPath)
+	cfg.CVE.CacheTTL = first(os.Getenv("NYX_CVE_CACHE_TTL"), cfg.CVE.CacheTTL)
+	cfg.Power.Providers.GitHubToken = first(os.Getenv("NYX_POWER_PROVIDERS_GITHUB_TOKEN"), cfg.Power.Providers.GitHubToken)
+	cfg.Power.Providers.ShodanAPIKey = first(os.Getenv("NYX_POWER_PROVIDERS_SHODAN_API_KEY"), cfg.Power.Providers.ShodanAPIKey)
+	cfg.Power.Providers.SecurityTrailsAPIKey = first(os.Getenv("NYX_POWER_PROVIDERS_SECURITYTRAILS_API_KEY"), cfg.Power.Providers.SecurityTrailsAPIKey)
+	cfg.Power.Burp.BaseURL = first(os.Getenv("NYX_POWER_BURP_BASE_URL"), cfg.Power.Burp.BaseURL)
+	cfg.Power.Burp.APIKey = first(os.Getenv("NYX_POWER_BURP_API_KEY"), cfg.Power.Burp.APIKey)
+	cfg.Power.Callbacks.Provider = first(os.Getenv("NYX_POWER_CALLBACKS_PROVIDER"), cfg.Power.Callbacks.Provider)
+	cfg.Power.Callbacks.InteractshURL = first(os.Getenv("NYX_POWER_CALLBACKS_INTERACTSH_URL"), cfg.Power.Callbacks.InteractshURL)
+	if value := os.Getenv("NYX_CVE_ENABLE_REMOTE"); strings.TrimSpace(value) != "" {
 		cfg.CVE.EnableRemote = parseBool(value)
 	}
-	if value := os.Getenv("NOX_POWER_CREDENTIALS_MAX_ATTEMPTS_PER_USER"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("NYX_POWER_CREDENTIALS_MAX_ATTEMPTS_PER_USER"); strings.TrimSpace(value) != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
 			cfg.Power.Credentials.MaxAttemptsPerUser = parsed
 		}
 	}
-	if value := os.Getenv("NOX_POWER_CREDENTIALS_DELAY_SECONDS"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("NYX_POWER_CREDENTIALS_DELAY_SECONDS"); strings.TrimSpace(value) != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
 			cfg.Power.Credentials.DelaySeconds = parsed
 		}
 	}
-	if value := os.Getenv("NOX_POWER_CREDENTIALS_STORE_PLAINTEXT"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("NYX_POWER_CREDENTIALS_STORE_PLAINTEXT"); strings.TrimSpace(value) != "" {
 		cfg.Power.Credentials.StorePlaintext = parseBool(value)
 	}
-	if value := os.Getenv("NOX_POWER_ACTIVE_VALIDATION_ENABLED"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("NYX_POWER_ACTIVE_VALIDATION_ENABLED"); strings.TrimSpace(value) != "" {
 		cfg.Power.ActiveValidation.Enabled = parseBool(value)
 	}
-	if value := os.Getenv("NOX_LLM_MAX_TOKENS"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("NYX_LLM_MAX_TOKENS"); strings.TrimSpace(value) != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
 			cfg.LLM.MaxTokens = parsed
 		}
 	}
-	if value := os.Getenv("NOX_LLM_TEMPERATURE"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("NYX_LLM_TEMPERATURE"); strings.TrimSpace(value) != "" {
 		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
 			cfg.LLM.Temperature = parsed
 		}
@@ -311,7 +311,7 @@ func expandHome(value string) string {
 }
 
 func (c Config) YAML() string {
-	return fmt.Sprintf(`# Nox configuration
+	return fmt.Sprintf(`# Nyx configuration
 llm:
   enabled: %t
   provider: %s

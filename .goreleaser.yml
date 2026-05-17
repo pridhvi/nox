@@ -1,15 +1,15 @@
 version: 2
 
-project_name: nox
+project_name: nyx
 
 before:
   hooks:
     - sh -c "cd web && npm ci && npm run build"
 
 builds:
-  - id: nox
+  - id: nyx
     main: .
-    binary: nox
+    binary: nyx
     env:
       - CGO_ENABLED=0
     goos:
@@ -23,14 +23,14 @@ builds:
       - -s -w
 
 archives:
-  - id: nox
+  - id: nyx
     ids:
-      - nox
+      - nyx
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
       - docs/deployment.md
-      - docs/nox-project-spec.md
+      - docs/nyx-project-spec.md
       - docs/implementation-plan.md
 
 checksum:

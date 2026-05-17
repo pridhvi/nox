@@ -1,5 +1,5 @@
 .git
-.nox
+.nyx
 bin
 coverage
 node_modules

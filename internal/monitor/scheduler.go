@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/pridhvi/nox/internal/adapters"
-	"github.com/pridhvi/nox/internal/models"
-	"github.com/pridhvi/nox/internal/state"
+	"github.com/pridhvi/nyx/internal/adapters"
+	"github.com/pridhvi/nyx/internal/models"
+	"github.com/pridhvi/nyx/internal/state"
 	"github.com/robfig/cron/v3"
 )
 

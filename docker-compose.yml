@@ -1,18 +1,18 @@
 services:
-  nox:
+  nyx:
     build: .
     ports:
       - "127.0.0.1:6767:6767"
     volumes:
-      - nox-data:/home/nox/.nox
+      - nyx-data:/home/nyx/.nyx
     environment:
-      - NOX_LLM_BASE_URL=http://ollama:11434/v1
-      - NOX_LLM_MODEL=llama3:8b
-      - NOX_API_KEY=${NOX_API_KEY:?set NOX_API_KEY before running docker compose}
+      - NYX_LLM_BASE_URL=http://ollama:11434/v1
+      - NYX_LLM_MODEL=llama3:8b
+      - NYX_API_KEY=${NYX_API_KEY:?set NYX_API_KEY before running docker compose}
     depends_on:
       - ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -H \"X-Nox-API-Key: $$NOX_API_KEY\" http://127.0.0.1:6767/api/health"]
+      test: ["CMD-SHELL", "curl -fsS -H \"X-Nyx-API-Key: $$NYX_API_KEY\" http://127.0.0.1:6767/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -26,5 +26,5 @@ services:
       - ollama-data:/root/.ollama
 
 volumes:
-  nox-data:
+  nyx-data:
   ollama-data:

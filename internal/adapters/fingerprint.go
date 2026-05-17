@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type WhatWeb struct{}
@@ -103,7 +103,7 @@ func (a GraphQLIntrospection) Run(ctx context.Context, input AdapterInput) (Adap
 		client = http.DefaultClient
 	}
 	body := `{"query":"query IntrospectionQuery { __schema { queryType { name } mutationType { name } types { name } } }"}`
-	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodPost, endpoint, strings.NewReader(body), "nox/0.1 graphql-introspection")
+	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodPost, endpoint, strings.NewReader(body), "nyx/0.1 graphql-introspection")
 	if err != nil {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, err.Error(), 1)}, nil
 	}
@@ -147,7 +147,7 @@ func (a OpenAPIDiscovery) Run(ctx context.Context, input AdapterInput) (AdapterO
 	var findings []models.Finding
 	for _, candidate := range paths {
 		endpoint := joinTargetPath(input.Target, candidate)
-		req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, endpoint, nil, "nox/0.1 openapi-discovery")
+		req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, endpoint, nil, "nyx/0.1 openapi-discovery")
 		if err != nil {
 			raw = append(raw, fmt.Sprintf("%s error: %s", endpoint, err))
 			continue

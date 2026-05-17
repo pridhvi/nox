@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type SecurityHeaders struct{}
@@ -50,7 +50,7 @@ func (a SecurityHeaders) Run(ctx context.Context, input AdapterInput) (AdapterOu
 	if client == nil {
 		client = http.DefaultClient
 	}
-	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, url, nil, "nox/0.1 security-headers")
+	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, url, nil, "nyx/0.1 security-headers")
 	if err != nil {
 		run.ExitCode = 1
 		run.RawStderr = err.Error()

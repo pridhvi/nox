@@ -16,8 +16,8 @@ type Options struct {
 
 func ConfigureFromEnv() error {
 	return Configure(Options{
-		Level:  os.Getenv("NOX_LOG_LEVEL"),
-		Format: os.Getenv("NOX_LOG_FORMAT"),
+		Level:  os.Getenv("NYX_LOG_LEVEL"),
+		Format: os.Getenv("NYX_LOG_FORMAT"),
 	})
 }
 

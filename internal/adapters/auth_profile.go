@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type AuthResolution struct {
@@ -201,7 +201,7 @@ func resolveJSONLoginAuth(ctx context.Context, client *http.Client, target model
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "nox/0.1 auth-profile")
+	req.Header.Set("User-Agent", "nyx/0.1 auth-profile")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -312,7 +312,7 @@ func getTextWithHeaders(ctx context.Context, client *http.Client, rawURL string,
 	if err != nil {
 		return 0, "", err
 	}
-	req.Header.Set("User-Agent", "nox/0.1 auth-profile")
+	req.Header.Set("User-Agent", "nyx/0.1 auth-profile")
 	for name, value := range headers {
 		if strings.TrimSpace(name) != "" && value != "" {
 			req.Header.Set(name, value)
@@ -337,7 +337,7 @@ func postForm(ctx context.Context, client *http.Client, rawURL string, fields ma
 		return 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "nox/0.1 auth-profile")
+	req.Header.Set("User-Agent", "nyx/0.1 auth-profile")
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, "", err

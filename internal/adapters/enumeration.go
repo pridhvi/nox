@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type Arjun struct{}
@@ -127,8 +127,8 @@ func (a CORSCheck) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	if client == nil {
 		client = http.DefaultClient
 	}
-	origin := "https://nox.invalid"
-	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, rawURL, nil, "nox/0.1 cors-check")
+	origin := "https://nyx.invalid"
+	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, rawURL, nil, "nyx/0.1 cors-check")
 	if err != nil {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, err.Error(), 1)}, nil
 	}
@@ -145,7 +145,7 @@ func (a CORSCheck) Run(ctx context.Context, input AdapterInput) (AdapterOutput, 
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	resp.Body.Close()
-	preflight, err := newHTTPRequestWithAuth(ctx, input, http.MethodOptions, rawURL, nil, "nox/0.1 cors-check")
+	preflight, err := newHTTPRequestWithAuth(ctx, input, http.MethodOptions, rawURL, nil, "nyx/0.1 cors-check")
 	if err == nil {
 		preflight.Header.Set("Origin", origin)
 		preflight.Header.Set("Access-Control-Request-Method", "POST")
@@ -201,7 +201,7 @@ func (a CloudBucketCheck) Run(ctx context.Context, input AdapterInput) (AdapterO
 	if err != nil {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, err.Error(), 1)}, nil
 	}
-	req.Header.Set("User-Agent", "nox/0.1 cloud-bucket-check")
+	req.Header.Set("User-Agent", "nyx/0.1 cloud-bucket-check")
 	resp, err := client.Do(req)
 	if err != nil {
 		return AdapterOutput{ToolRun: failedToolRun(input, a.ID(), args, err.Error(), 1)}, nil
@@ -378,7 +378,7 @@ func fetchAndScanScripts(ctx context.Context, input AdapterInput, client HTTPDoe
 }
 
 func fetchText(ctx context.Context, input AdapterInput, client HTTPDoer, rawURL string) (string, error) {
-	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, rawURL, nil, "nox/0.1 js-secret-scan")
+	req, err := newHTTPRequestWithAuth(ctx, input, http.MethodGet, rawURL, nil, "nyx/0.1 js-secret-scan")
 	if err != nil {
 		return "", err
 	}

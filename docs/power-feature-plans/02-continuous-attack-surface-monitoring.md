@@ -2,9 +2,9 @@
 
 ## Goal And Success Criteria
 
-Current repository state: the first production slice is implemented. Nox now has
-global monitor state in `<state-dir>/nox-state.db`, `nox monitor` CLI commands,
-`/api/monitor/*` endpoints, scheduler registration during `nox serve`, immediate
+Current repository state: the first production slice is implemented. Nyx now has
+global monitor state in `<state-dir>/nyx-state.db`, `nyx monitor` CLI commands,
+`/api/monitor/*` endpoints, scheduler registration during `nyx serve`, immediate
 monitor runs that create normal session directories, target/technology/finding
 diffing into `surface_changes`, Slack/Discord webhook dispatch, and a `/monitor`
 operator-console route. Remaining depth should focus on fixture-backed
@@ -13,16 +13,16 @@ notification backends.
 
 Add scheduled monitoring that reruns saved scan configurations, compares each
 run against a baseline session, persists attack-surface changes, and optionally
-sends alerts. This turns Nox into a recurring local monitoring tool without
+sends alerts. This turns Nyx into a recurring local monitoring tool without
 changing normal point-in-time scan behavior.
 
 Done means:
 
 - Operators can create, list, update, run, enable, disable, and delete monitor
   configs.
-- Immediate monitor runs create normal Nox sessions.
+- Immediate monitor runs create normal Nyx sessions.
 - Diff results are stored as `surface_changes`.
-- Scheduled runs execute only when `nox serve` is running.
+- Scheduled runs execute only when `nyx serve` is running.
 - Alerts are optional and disabled unless configured.
 
 Out of scope:
@@ -45,7 +45,7 @@ Out of scope:
 
 Monitoring is cross-session state. Do not store monitor config in a session DB.
 Create a global SQLite DB under `stateDir()`, for example
-`<state-dir>/nox-state.db`, with its own migration runner.
+`<state-dir>/nyx-state.db`, with its own migration runner.
 
 Tables:
 
@@ -82,7 +82,7 @@ Add dependency:
 
 Scheduler behavior:
 
-- `nox serve` initializes global state DB and monitor scheduler.
+- `nyx serve` initializes global state DB and monitor scheduler.
 - Scheduler loads enabled configs.
 - Updating a config refreshes the scheduled job.
 - Disabled configs are not scheduled.
@@ -125,13 +125,13 @@ All mutating endpoints require configured API-key auth.
 
 CLI:
 
-- `nox monitor create --target ... --schedule ... --name ...`
-- `nox monitor list`
-- `nox monitor enable <config-id>`
-- `nox monitor disable <config-id>`
-- `nox monitor run <config-id>`
-- `nox monitor changes <config-id>`
-- `nox monitor delete <config-id>`
+- `nyx monitor create --target ... --schedule ... --name ...`
+- `nyx monitor list`
+- `nyx monitor enable <config-id>`
+- `nyx monitor disable <config-id>`
+- `nyx monitor run <config-id>`
+- `nyx monitor changes <config-id>`
+- `nyx monitor delete <config-id>`
 
 CLI should read the same config and global state path as `serve`.
 

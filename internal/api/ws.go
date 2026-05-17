@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/engine"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/engine"
 )
 
 const scanEventHistoryLimit = 100

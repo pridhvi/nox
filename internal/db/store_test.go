@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 	_ "modernc.org/sqlite"
 )
 
@@ -64,8 +64,8 @@ func TestDefaultSessionsDirIsAbsoluteStatePath(t *testing.T) {
 	if !filepath.IsAbs(dir) {
 		t.Fatalf("expected absolute default sessions dir, got %q", dir)
 	}
-	if filepath.Base(dir) != "sessions" || filepath.Base(filepath.Dir(dir)) != ".nox" {
-		t.Fatalf("expected $HOME/.nox/sessions style path, got %q", dir)
+	if filepath.Base(dir) != "sessions" || filepath.Base(filepath.Dir(dir)) != ".nyx" {
+		t.Fatalf("expected $HOME/.nyx/sessions style path, got %q", dir)
 	}
 }
 
@@ -361,7 +361,7 @@ func TestAttackVectorLLMAndPluginPersistenceRoundTrips(t *testing.T) {
 	plugin := models.PluginRecord{
 		ID:        models.NewID(),
 		Name:      "custom-scanner",
-		Binary:    "/opt/nox/custom-scanner",
+		Binary:    "/opt/nyx/custom-scanner",
 		Enabled:   true,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
@@ -369,7 +369,7 @@ func TestAttackVectorLLMAndPluginPersistenceRoundTrips(t *testing.T) {
 	if err := store.UpsertPlugin(ctx, plugin); err != nil {
 		t.Fatal(err)
 	}
-	plugin.Binary = "/opt/nox/custom-scanner-v2"
+	plugin.Binary = "/opt/nyx/custom-scanner-v2"
 	plugin.UpdatedAt = plugin.UpdatedAt.Add(time.Minute)
 	if err := store.UpsertPlugin(ctx, plugin); err != nil {
 		t.Fatal(err)
@@ -378,7 +378,7 @@ func TestAttackVectorLLMAndPluginPersistenceRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plugins) != 1 || plugins[0].Binary != "/opt/nox/custom-scanner-v2" {
+	if len(plugins) != 1 || plugins[0].Binary != "/opt/nyx/custom-scanner-v2" {
 		t.Fatalf("unexpected plugins: %#v", plugins)
 	}
 	if err := store.DeletePlugin(ctx, plugin.Name); err != nil {

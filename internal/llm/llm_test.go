@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 	openai "github.com/sashabaranov/go-openai"
 )
 
 func TestConfigFromSessionRequiresBaseURL(t *testing.T) {
-	t.Setenv("NOX_LLM_BASE_URL", "")
-	t.Setenv("NOX_LLM_MODEL", "")
+	t.Setenv("NYX_LLM_BASE_URL", "")
+	t.Setenv("NYX_LLM_MODEL", "")
 	session := models.Session{}
 
 	if got := ConfigFromSession(session); got.Configured() {

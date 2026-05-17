@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type Rule struct {
@@ -172,7 +172,7 @@ func vectorFromCVE(sessionID string, cve models.CVEMatch) models.AttackVector {
 		Steps: []models.AttackStep{
 			{Order: 1, Description: "Confirm the affected component and version for " + cve.CVEID + ".", FindingID: cve.FindingID},
 			{Order: 2, Description: "Validate exploitability within the authorized scope.", ToolSuggested: "nuclei -id " + strings.ToLower(cve.CVEID)},
-			{Order: 3, Description: "Document remediation and patch availability.", ToolSuggested: "nox sessions findings <session-id>"},
+			{Order: 3, Description: "Document remediation and patch availability.", ToolSuggested: "nyx sessions findings <session-id>"},
 		},
 		CreatedAt: time.Now().UTC(),
 	}
@@ -274,7 +274,7 @@ var DefaultRules = []Rule{
 		},
 		ChainTemplate: []StepTemplate{
 			{Description: "Use the reflected XSS parameter {parameter}.", ToolSuggested: "dalfox url {url}"},
-			{Description: "Confirm CSP is missing and does not constrain script execution.", ToolSuggested: "nox sessions findings <session-id>"},
+			{Description: "Confirm CSP is missing and does not constrain script execution.", ToolSuggested: "nyx sessions findings <session-id>"},
 			{Description: "Demonstrate impact with a scoped proof of concept payload."},
 		},
 	},

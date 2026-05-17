@@ -92,7 +92,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <section className="auth-screen">
         <form className="auth-panel" onSubmit={submit}>
-          <div className="brand auth-brand"><img src="/nox-logo.svg" alt="" />NOX</div>
+          <div className="brand auth-brand"><img src="/nyx-logo.svg" alt="" />NYX</div>
           <label>API Key
             <input
               autoFocus
@@ -114,7 +114,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function OperatorShell() {
   const { sessions, selectedSessionID, selected, setSelectedSessionID, refreshSessions } = useSessionContext();
-  const [theme, setTheme] = useState(() => localStorage.getItem("nox-theme") ?? "dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("nyx-theme") ?? "dark");
   const [navOpen, setNavOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const location = useLocation();
@@ -123,7 +123,7 @@ function OperatorShell() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("nox-theme", theme);
+    localStorage.setItem("nyx-theme", theme);
   }, [theme]);
 
   useEffect(() => {
@@ -145,7 +145,7 @@ function OperatorShell() {
   return (
     <div className="shell">
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
-        <div className="brand"><img src="/nox-logo.svg" alt="" /><span>NOX</span></div>
+        <div className="brand"><img src="/nyx-logo.svg" alt="" /><span>NYX</span></div>
         <nav aria-label="Primary">
           {navGroups.map((group) => (
             <div className="nav-section" key={group.label}>

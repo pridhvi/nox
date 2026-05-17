@@ -1,6 +1,6 @@
-# Nox Power Feature Implementation Plans
+# Nyx Power Feature Implementation Plans
 
-These plans expand `docs/nox-power-features-spec.md` into implementation-ready
+These plans expand `docs/nyx-power-features-spec.md` into implementation-ready
 work packages. Each file is intended to be handed to Codex or another engineer
 as the starting point for one module. Do not implement a module directly from
 the source spec when a detailed plan exists here.
@@ -44,7 +44,7 @@ through the API.
 
 - Session evidence belongs in each `<session-id>/session.db`.
 - Cross-session configuration and history belongs in a global state database
-  under the existing Nox state directory, not in a single session database.
+  under the existing Nyx state directory, not in a single session database.
 - Active, exploit-like, credential, AD, Burp sync, and validation actions are
   disabled unless explicitly requested by the operator.
 - Host-privileged API endpoints require a configured API key.
@@ -68,5 +68,5 @@ considering new hardening work complete. The current cross-module fixture check
 is:
 
 ```sh
-NOX_RUN_POWER_INTEGRATION=1 make power-integration
+NYX_RUN_POWER_INTEGRATION=1 make power-integration
 ```

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestGenerateReusesExistingPayloadsUnlessForced(t *testing.T) {

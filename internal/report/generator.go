@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/jung-kurt/gofpdf"
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type Options struct {
@@ -109,7 +109,7 @@ func Generate(ctx context.Context, store Store, options Options) (Artifact, erro
 	report := models.Report{
 		ID:              models.NewID(),
 		SessionID:       session.ID,
-		Title:           fmt.Sprintf("Nox report for %s", session.TargetInput),
+		Title:           fmt.Sprintf("Nyx report for %s", session.TargetInput),
 		Format:          options.Format,
 		Mode:            options.Mode,
 		Summary:         summary,
@@ -117,7 +117,7 @@ func Generate(ctx context.Context, store Store, options Options) (Artifact, erro
 		FindingIDs:      findingIDs(findings),
 		CVEMatchIDs:     cveIDs(cves),
 		AttackVectorIDs: vectorIDs(vectors),
-		GeneratedBy:     "nox",
+		GeneratedBy:     "nyx",
 		LLMGenerated:    len(analyses) > 0,
 		CreatedAt:       time.Now().UTC(),
 	}
@@ -210,7 +210,7 @@ func executiveSummary(session models.Session, findings []models.Finding, vectors
 			}
 		}
 	}
-	return fmt.Sprintf("The %s scan of %s produced %d findings across %d targets. Severity counts: critical=%d, high=%d, medium=%d, low=%d, info=%d. Nox generated %d deterministic attack vectors from persisted evidence.",
+	return fmt.Sprintf("The %s scan of %s produced %d findings across %d targets. Severity counts: critical=%d, high=%d, medium=%d, low=%d, info=%d. Nyx generated %d deterministic attack vectors from persisted evidence.",
 		session.Mode, session.TargetInput, stats.FindingCount, stats.TargetCount,
 		stats.SeverityCounts[string(models.SeverityCritical)], stats.SeverityCounts[string(models.SeverityHigh)], stats.SeverityCounts[string(models.SeverityMedium)], stats.SeverityCounts[string(models.SeverityLow)], stats.SeverityCounts[string(models.SeverityInfo)], len(vectors))
 }
@@ -521,8 +521,8 @@ func renderHTML(report models.Report) string {
 
 func renderPDF(text string) []byte {
 	pdf := gofpdf.New("P", "mm", "Letter", "")
-	pdf.SetTitle("Nox Security Report", false)
-	pdf.SetAuthor("nox", false)
+	pdf.SetTitle("Nyx Security Report", false)
+	pdf.SetAuthor("nyx", false)
 	pdf.SetMargins(18, 16, 18)
 	pdf.SetAutoPageBreak(true, 18)
 	pdf.AddPage()
@@ -612,7 +612,7 @@ func vectorIDs(vectors []models.AttackVector) []string {
 }
 
 func safeFilename(sessionID string, format models.ReportFormat) string {
-	return fmt.Sprintf("nox-%s.%s", sessionID, format)
+	return fmt.Sprintf("nyx-%s.%s", sessionID, format)
 }
 
 func firstNonEmpty(values ...string) string {

@@ -3,7 +3,7 @@ package vectors
 import (
 	"testing"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestDefaultRulesGenerateExpectedVectors(t *testing.T) {

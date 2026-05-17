@@ -16,7 +16,7 @@ running against public internet targets by accident.
 Done means:
 
 - AD phases run only for internal/private scopes or explicit override.
-- LDAP/SMB/NetExec/BloodHound outputs normalize into Nox models.
+- LDAP/SMB/NetExec/BloodHound outputs normalize into Nyx models.
 - AD-specific entities and attack graph edges are visible in API/UI.
 - Kerberoast and relay-risk checks are explicit, scoped, and logged.
 
@@ -101,10 +101,10 @@ Mutating/active endpoints require configured API-key auth.
 
 CLI:
 
-- `nox ad enum <session-id> --domain ...`
-- `nox ad kerberoast <session-id> --spn ...`
-- `nox ad bloodhound import <session-id> --input data.json`
-- `nox ad bloodhound export <session-id> --output data.json`
+- `nyx ad enum <session-id> --domain ...`
+- `nyx ad kerberoast <session-id> --spn ...`
+- `nyx ad bloodhound import <session-id> --input data.json`
+- `nyx ad bloodhound export <session-id> --output data.json`
 
 ## Frontend
 

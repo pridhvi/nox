@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate benchmark coverage summaries from a Nox session database."""
+"""Generate benchmark coverage summaries from a Nyx session database."""
 
 from __future__ import annotations
 

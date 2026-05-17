@@ -1,14 +1,14 @@
 # Benchmark-Driven Scanner Depth Plan
 
 This plan uses DVWA and OWASP Juice Shop as repeatable ground-truth benchmark
-targets to deepen Nox's generic scanner capabilities. The benchmark suites may
+targets to deepen Nyx's generic scanner capabilities. The benchmark suites may
 contain target-specific setup, seed routes, credentials, and expected-result
-mappings, but core Nox adapters and validators must not hardcode DVWA or Juice
+mappings, but core Nyx adapters and validators must not hardcode DVWA or Juice
 Shop behavior.
 
 ## Goal
 
-Move Nox from unauthenticated surface discovery toward authenticated,
+Move Nyx from unauthenticated surface discovery toward authenticated,
 evidence-backed, human-assist penetration-test workflows while keeping active
 behavior explicit, scoped, conservative, and non-destructive.
 
@@ -24,7 +24,7 @@ is more valuable than several generic informational findings.
   invocation.
 - Active validation must be opt-in, paced, non-destructive, and bounded by
   per-target limits.
-- Findings should be marked `confirmed` only when Nox has direct evidence.
+- Findings should be marked `confirmed` only when Nyx has direct evidence.
   Otherwise use lower-confidence findings or benchmark-only partial coverage
   markers.
 - Benchmark profiles may provide login flows, CSRF extraction hints, seed
@@ -94,7 +94,7 @@ Artifacts should be written under `artifacts/benchmarks/<timestamp>/` and
 include:
 
 - target container logs
-- Nox session directories
+- Nyx session directories
 - generated Markdown reports
 - generated SARIF reports
 - benchmark summary JSON
@@ -198,7 +198,7 @@ Acceptance criteria:
 - Auth validation and refresh events are visible over the scan lifecycle stream.
 - Secrets are redacted from logs, effective config, reports, and API responses.
 
-Current state: Nox accepts route seeds, static auth headers/cookies, and generic
+Current state: Nyx accepts route seeds, static auth headers/cookies, and generic
 auth profile JSON through the CLI and API/UI scan builder. Built-in HTTP checks
 apply those values to requests, and `ffuf`, `sqlmap`, and `dalfox` receive
 compatible subprocess flags with persisted arguments redacted. Form login
@@ -219,7 +219,7 @@ Improve crawler and adapter reach without target-specific scanner code:
 - frontend route extraction from JavaScript bundles
 - HTML form extraction
 - query/body/header parameter candidate extraction
-- source-aware route and sink hints from `nox scan --source`
+- source-aware route and sink hints from `nyx scan --source`
 - route deduplication and scope filtering
 
 Seeded routes should flow into:
@@ -327,7 +327,7 @@ Acceptance criteria:
 
 ## Phase 8: Benchmark Reports
 
-Add benchmark-specific output alongside normal Nox reports:
+Add benchmark-specific output alongside normal Nyx reports:
 
 ```text
 DVWA Benchmark
@@ -347,7 +347,7 @@ Command Injection: skipped (active validator disabled)
 The JSON summary should include:
 
 - target name and version
-- Nox commit/version
+- Nyx commit/version
 - scan profile
 - expected item count
 - detected count
@@ -369,7 +369,7 @@ Acceptance criteria:
 
 Add scheduled/manual benchmark CI only after the harness is stable:
 
-- `NOX_RUN_BENCHMARKS=1 make benchmark-all`
+- `NYX_RUN_BENCHMARKS=1 make benchmark-all`
 - nightly/manual GitHub Actions workflow
 - upload benchmark artifacts on failure
 - compare coverage against a checked-in baseline

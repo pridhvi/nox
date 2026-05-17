@@ -12,7 +12,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend /src/internal/api/web/dist ./internal/api/web/dist
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/nox .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/nyx .
 
 FROM kalilinux/kali-rolling
 ENV DEBIAN_FRONTEND=noninteractive
@@ -31,15 +31,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --create-home --shell /usr/sbin/nologin nox \
-  && mkdir -p /home/nox/.nox \
-  && chown -R nox:nox /home/nox/.nox
-USER nox
-WORKDIR /home/nox
-COPY --from=backend /out/nox /usr/local/bin/nox
-COPY scripts/tool-version-smoke.sh /usr/local/bin/nox-tool-version-smoke
+RUN useradd --create-home --shell /usr/sbin/nologin nyx \
+  && mkdir -p /home/nyx/.nyx \
+  && chown -R nyx:nyx /home/nyx/.nyx
+USER nyx
+WORKDIR /home/nyx
+COPY --from=backend /out/nyx /usr/local/bin/nyx
+COPY scripts/tool-version-smoke.sh /usr/local/bin/nyx-tool-version-smoke
 EXPOSE 6767
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD sh -c 'curl -fsS ${NOX_API_KEY:+-H "X-Nox-API-Key: $NOX_API_KEY"} http://127.0.0.1:6767/api/health >/dev/null || exit 1'
-ENTRYPOINT ["nox"]
+  CMD sh -c 'curl -fsS ${NYX_API_KEY:+-H "X-Nyx-API-Key: $NYX_API_KEY"} http://127.0.0.1:6767/api/health >/dev/null || exit 1'
+ENTRYPOINT ["nyx"]
 CMD ["serve", "--host", "0.0.0.0", "--port", "6767"]

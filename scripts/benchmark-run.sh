@@ -1,21 +1,21 @@
 #!/usr/bin/env sh
 set -eu
 
-if [ "${NOX_RUN_BENCHMARKS:-}" != "1" ]; then
-  echo "Benchmark scans are opt-in. Set NOX_RUN_BENCHMARKS=1 to run them."
+if [ "${NYX_RUN_BENCHMARKS:-}" != "1" ]; then
+  echo "Benchmark scans are opt-in. Set NYX_RUN_BENCHMARKS=1 to run them."
   exit 0
 fi
 
 benchmark="${1:-all}"
 timestamp="$(date +%Y%m%d-%H%M%S)"
-artifact_root="${NOX_BENCHMARK_ARTIFACT_DIR:-artifacts/benchmarks/$timestamp}"
+artifact_root="${NYX_BENCHMARK_ARTIFACT_DIR:-artifacts/benchmarks/$timestamp}"
 sessions_root="$artifact_root/sessions"
 mkdir -p "$artifact_root" "$sessions_root"
 
 tools_default="http-probe,security-headers,whatweb,graphql-introspection,openapi-discovery,arjun,linkfinder,js-secret-scan,cors-check,nmap,ffuf,nuclei-tech,nuclei-vuln,nikto,sqlmap,dalfox,reflected-xss-check,sqli-check,open-redirect-check,upload-check,idor-check,workflow-assist,csrf-check,weak-session-check,xxe-fuzz"
-tools="${NOX_BENCHMARK_TOOLS:-$tools_default}"
-scan_timeout="${NOX_BENCHMARK_SCAN_TIMEOUT:-20m}"
-go_cmd="${NOX_GO_CMD:-go run .}"
+tools="${NYX_BENCHMARK_TOOLS:-$tools_default}"
+scan_timeout="${NYX_BENCHMARK_SCAN_TIMEOUT:-20m}"
+go_cmd="${NYX_GO_CMD:-go run .}"
 
 fail() {
   echo "Benchmark failed: $*" >&2
@@ -24,7 +24,7 @@ fail() {
 }
 
 ensure_targets() {
-  if [ "${NOX_BENCHMARK_NO_TARGET_UP:-}" = "1" ]; then
+  if [ "${NYX_BENCHMARK_NO_TARGET_UP:-}" = "1" ]; then
     return
   fi
   ./scripts/benchmark-targets.sh up >"$artifact_root/targets-up.log" 2>&1 || {
@@ -226,8 +226,8 @@ def setup_dvwa() -> None:
 
 def setup_juice_shop() -> None:
     log(f"preparing Juice Shop benchmark at {target_url}")
-    email = "nox-benchmark@example.test"
-    password = "NoxBenchmark!12345"
+    email = "nyx-benchmark@example.test"
+    password = "NyxBenchmark!12345"
     registration = {
         "email": email,
         "password": password,
@@ -235,7 +235,7 @@ def setup_juice_shop() -> None:
         "securityQuestion": {
             "id": 1,
             "question": "Your eldest siblings middle name?",
-            "answer": "nox",
+            "answer": "nyx",
         },
     }
     status, body = request("POST", "/api/Users/", json_body=registration)
@@ -273,10 +273,10 @@ target_url_for() {
   name="$1"
   case "$name" in
     dvwa)
-      printf '%s' "${NOX_BENCHMARK_DVWA_URL:-http://127.0.0.1:${NOX_BENCHMARK_DVWA_PORT:-18080}}"
+      printf '%s' "${NYX_BENCHMARK_DVWA_URL:-http://127.0.0.1:${NYX_BENCHMARK_DVWA_PORT:-18080}}"
       ;;
     juice-shop)
-      printf '%s' "${NOX_BENCHMARK_JUICE_URL:-http://127.0.0.1:${NOX_BENCHMARK_JUICE_PORT:-13000}}"
+      printf '%s' "${NYX_BENCHMARK_JUICE_URL:-http://127.0.0.1:${NYX_BENCHMARK_JUICE_PORT:-13000}}"
       ;;
     *)
       fail "unknown benchmark target $name"
@@ -305,7 +305,7 @@ run_one() {
   else
     scan_prefix=""
   fi
-  if ! $scan_prefix env NOX_SESSION_DIR="$sessions_root" $go_cmd scan \
+  if ! $scan_prefix env NYX_SESSION_DIR="$sessions_root" $go_cmd scan \
     --target "$target_url" \
     --tools "$tools" \
     --route-seed-file "benchmarks/$name/routes.txt" \
@@ -324,14 +324,14 @@ run_one() {
   db_path="$(session_db_for "$session_id")"
   assert_session_persistence "$db_path" "$session_id"
 
-  env NOX_SESSION_DIR="$sessions_root" $go_cmd report "$session_id" \
+  env NYX_SESSION_DIR="$sessions_root" $go_cmd report "$session_id" \
     --format md \
     --mode technical \
     --output "$report_md" \
     --config /dev/null >>"$log" 2>&1 || fail "$name markdown report failed"
   assert_report_artifact "$report_md"
 
-  env NOX_SESSION_DIR="$sessions_root" $go_cmd report "$session_id" \
+  env NYX_SESSION_DIR="$sessions_root" $go_cmd report "$session_id" \
     --format sarif \
     --output "$report_sarif" \
     --config /dev/null >>"$log" 2>&1 || fail "$name SARIF report failed"

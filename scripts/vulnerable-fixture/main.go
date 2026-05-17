@@ -18,7 +18,7 @@ func main() {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintln(w, `<html><head><title>Nox vulnerable fixture</title></head><body><a href="/admin">admin</a><a href="/upload">upload</a><script src="/static/app.js"></script></body></html>`)
+		fmt.Fprintln(w, `<html><head><title>Nyx vulnerable fixture</title></head><body><a href="/admin">admin</a><a href="/upload">upload</a><script src="/static/app.js"></script></body></html>`)
 	})
 	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -57,7 +57,7 @@ func main() {
 	})
 	mux.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"openapi":"3.0.3","info":{"title":"Nox vulnerable fixture","version":"1.0.0"},"paths":{"/api/search":{"get":{"parameters":[{"name":"q","in":"query","schema":{"type":"string"}}],"responses":{"200":{"description":"ok"}}}},"/upload":{"post":{"responses":{"200":{"description":"ok"}}}}}}`)
+		fmt.Fprintln(w, `{"openapi":"3.0.3","info":{"title":"Nyx vulnerable fixture","version":"1.0.0"},"paths":{"/api/search":{"get":{"parameters":[{"name":"q","in":"query","schema":{"type":"string"}}],"responses":{"200":{"description":"ok"}}}},"/upload":{"post":{"responses":{"200":{"description":"ok"}}}}}}`)
 	})
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseMultipartForm(1 << 20)
@@ -125,8 +125,8 @@ func main() {
 	mux.HandleFunc("/xxe", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
 		text := string(body)
-		if strings.Contains(text, `<!ENTITY nox "`) {
-			start := strings.Index(text, `<!ENTITY nox "`) + len(`<!ENTITY nox "`)
+		if strings.Contains(text, `<!ENTITY nyx "`) {
+			start := strings.Index(text, `<!ENTITY nyx "`) + len(`<!ENTITY nyx "`)
 			rest := text[start:]
 			end := strings.Index(rest, `"`)
 			if end > 0 {
@@ -140,7 +140,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/javascript")
 		fmt.Fprintf(w, `const apiKey = %q; fetch("/api/search?q=test"); fetch("/graphql", {method: "POST"});`, api_key)
 	})
-	addr := first(os.Getenv("NOX_FIXTURE_ADDR"), "127.0.0.1:18081")
+	addr := first(os.Getenv("NYX_FIXTURE_ADDR"), "127.0.0.1:18081")
 	fmt.Println("fixture listening on http://" + addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		fmt.Fprintln(os.Stderr, err)

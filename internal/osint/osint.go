@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/pridhvi/nox/internal/config"
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	appconfig "github.com/pridhvi/nyx/internal/config"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type RunRequest struct {
@@ -43,7 +43,7 @@ func RunWithConfig(ctx context.Context, store *db.Store, session models.Session,
 			SessionID:  session.ID,
 			Kind:       "domain",
 			Value:      value,
-			Source:     "nox-scope",
+			Source:     "nyx-scope",
 			Confidence: 0.8,
 			Metadata:   map[string]any{"provider_status": "local_scope_seed"},
 			CreatedAt:  now,

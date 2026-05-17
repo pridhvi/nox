@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 	_ "modernc.org/sqlite"
 )
 
@@ -24,7 +24,7 @@ type MonitorRunFilter struct {
 }
 
 func DBPath(stateDir string) string {
-	return filepath.Join(stateDir, "nox-state.db")
+	return filepath.Join(stateDir, "nyx-state.db")
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {

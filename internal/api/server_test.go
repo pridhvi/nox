@@ -14,16 +14,16 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	appconfig "github.com/pridhvi/nox/internal/config"
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/engine"
-	"github.com/pridhvi/nox/internal/models"
+	appconfig "github.com/pridhvi/nyx/internal/config"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/engine"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestSessionAPI(t *testing.T) {
 	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte("<title>Nox Test</title>"))
+		_, _ = w.Write([]byte("<title>Nyx Test</title>"))
 	}))
 	defer targetServer.Close()
 
@@ -196,7 +196,7 @@ func TestAPIKeyAuth(t *testing.T) {
 	}
 	allowed := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
-	req.Header.Set("X-Nox-API-Key", "secret")
+	req.Header.Set("X-Nyx-API-Key", "secret")
 	handler.ServeHTTP(allowed, req)
 	if allowed.Code != http.StatusOK {
 		t.Fatalf("expected authorized health, got %d", allowed.Code)
@@ -687,7 +687,7 @@ func TestOperatorConsoleAPI(t *testing.T) {
 
 func apiKeyRequest(method, target string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, target, body)
-	req.Header.Set("X-Nox-API-Key", "secret")
+	req.Header.Set("X-Nyx-API-Key", "secret")
 	return req
 }
 
@@ -713,7 +713,7 @@ func waitForScanStatusWithKey(t *testing.T, handler http.Handler, sessionID stri
 		status := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/scan/"+sessionID+"/status", nil)
 		if apiKey != "" {
-			req.Header.Set("X-Nox-API-Key", apiKey)
+			req.Header.Set("X-Nyx-API-Key", apiKey)
 		}
 		handler.ServeHTTP(status, req)
 		if status.Code != http.StatusOK {
@@ -736,7 +736,7 @@ func waitForScanStatusWithKey(t *testing.T, handler http.Handler, sessionID stri
 func TestScanEventsWebSocketReplaysLifecycle(t *testing.T) {
 	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte("<title>Nox Test</title>"))
+		_, _ = w.Write([]byte("<title>Nyx Test</title>"))
 	}))
 	defer targetServer.Close()
 

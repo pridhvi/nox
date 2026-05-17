@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestParseStaticOutputToolSpecificFindings(t *testing.T) {

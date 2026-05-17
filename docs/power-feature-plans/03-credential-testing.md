@@ -9,7 +9,7 @@ adapters, lockout-aware spraying, curated defaults, and report summaries.
 
 Add explicit credential testing for discovered web services and login endpoints:
 default credential checks, cautious password spraying, and correlation of
-credentials found by other Nox modules. The feature must be useful for
+credentials found by other Nyx modules. The feature must be useful for
 authorized tests while making lockout and abuse risks visible.
 
 Done means:
@@ -123,9 +123,9 @@ API:
 
 CLI:
 
-- `nox creds test <session-id> --mode defaults|spray|correlate`
-- `nox creds list <session-id> [--valid-only] [--format json]`
-- `nox creds redact <session-id> --id <credential-id>`
+- `nyx creds test <session-id> --mode defaults|spray|correlate`
+- `nyx creds list <session-id> [--valid-only] [--format json]`
+- `nyx creds redact <session-id> --id <credential-id>`
 
 CLI should print redacted passwords unless `store_plaintext=true`.
 

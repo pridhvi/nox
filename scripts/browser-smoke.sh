@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-if [ "${NOX_RUN_BROWSER_SMOKE:-}" != "1" ]; then
-  echo "Browser smoke is opt-in. Set NOX_RUN_BROWSER_SMOKE=1 to run it."
+if [ "${NYX_RUN_BROWSER_SMOKE:-}" != "1" ]; then
+  echo "Browser smoke is opt-in. Set NYX_RUN_BROWSER_SMOKE=1 to run it."
   exit 0
 fi
 
@@ -13,13 +13,13 @@ fi
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 root_dir="$(mktemp -d)"
-fixture_log="/tmp/nox-browser-fixture.log"
-scan_log="/tmp/nox-browser-scan.log"
-serve_log="/tmp/nox-browser-serve.log"
+fixture_log="/tmp/nyx-browser-fixture.log"
+scan_log="/tmp/nyx-browser-scan.log"
+serve_log="/tmp/nyx-browser-serve.log"
 script_path="$repo_root/web/.tmp-browser-smoke.mjs"
 fixture_pid=""
 serve_pid=""
-port="${NOX_BROWSER_SMOKE_PORT:-16768}"
+port="${NYX_BROWSER_SMOKE_PORT:-16768}"
 
 cleanup() {
   if [ -n "$serve_pid" ]; then
@@ -28,7 +28,7 @@ cleanup() {
   if [ -n "$fixture_pid" ]; then
     kill "$fixture_pid" >/dev/null 2>&1 || true
   fi
-  if [ "${NOX_KEEP_BROWSER_SMOKE_ARTIFACTS:-}" != "1" ]; then
+  if [ "${NYX_KEEP_BROWSER_SMOKE_ARTIFACTS:-}" != "1" ]; then
     rm -rf "$root_dir"
   else
     echo "Keeping browser smoke sessions under $root_dir"
@@ -63,10 +63,10 @@ session_id_for() {
   printf '%s' "$found"
 }
 
-fixture_addr="${NOX_FIXTURE_ADDR:-127.0.0.1:18083}"
+fixture_addr="${NYX_FIXTURE_ADDR:-127.0.0.1:18083}"
 target="http://$fixture_addr"
 : >"$fixture_log"
-NOX_FIXTURE_ADDR="$fixture_addr" go run ./scripts/vulnerable-fixture >"$fixture_log" 2>&1 &
+NYX_FIXTURE_ADDR="$fixture_addr" go run ./scripts/vulnerable-fixture >"$fixture_log" 2>&1 &
 fixture_pid="$!"
 i=0
 until curl -fsS "$target" >/dev/null 2>&1; do
@@ -79,17 +79,17 @@ done
 
 session_dir="$root_dir/sessions"
 mkdir -p "$session_dir"
-NOX_SESSION_DIR="$session_dir" go run . scan --target "$target" --tools security-headers,graphql-introspection,openapi-discovery,js-secret-scan,cors-check --no-llm --config /dev/null >"$scan_log" 2>&1
+NYX_SESSION_DIR="$session_dir" go run . scan --target "$target" --tools security-headers,graphql-introspection,openapi-discovery,js-secret-scan,cors-check --no-llm --config /dev/null >"$scan_log" 2>&1
 session_id="$(session_id_for "$session_dir")"
 
 : >"$serve_log"
-NOX_SESSION_DIR="$session_dir" go run . serve --host 127.0.0.1 --port "$port" --config /dev/null >"$serve_log" 2>&1 &
+NYX_SESSION_DIR="$session_dir" go run . serve --host 127.0.0.1 --port "$port" --config /dev/null >"$serve_log" 2>&1 &
 serve_pid="$!"
 i=0
 until curl -fsS "http://127.0.0.1:$port/api/health" >/dev/null 2>&1; do
   i=$((i + 1))
   if [ "$i" -gt 40 ]; then
-    fail "nox serve did not become ready on port $port"
+    fail "nyx serve did not become ready on port $port"
   fi
   sleep 1
 done
@@ -98,9 +98,9 @@ cat >"$script_path" <<'JS'
 import { chromium } from "playwright";
 import { writeFile } from "node:fs/promises";
 
-const baseURL = process.env.NOX_BROWSER_SMOKE_BASE_URL;
-const sessionID = process.env.NOX_BROWSER_SMOKE_SESSION_ID;
-const screenshotDir = process.env.NOX_BROWSER_SMOKE_SCREENSHOT_DIR || "/tmp";
+const baseURL = process.env.NYX_BROWSER_SMOKE_BASE_URL;
+const sessionID = process.env.NYX_BROWSER_SMOKE_SESSION_ID;
+const screenshotDir = process.env.NYX_BROWSER_SMOKE_SCREENSHOT_DIR || "/tmp";
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 const consoleErrors = [];
@@ -120,7 +120,7 @@ async function visit(name, path, expectedText) {
   if (/Checking API access|Loading$/.test(body.trim())) {
     throw new Error(`${name} stayed in a loading state`);
   }
-  await page.screenshot({ path: `${screenshotDir}/nox-browser-${name}.png`, fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/nyx-browser-${name}.png`, fullPage: false });
 }
 
 await visit("dashboard", `/sessions/${sessionID}`, "Command Center");
@@ -129,7 +129,7 @@ await page.getByRole("button", { name: "credentials" }).click();
 if (!(await page.locator("text=Credential Testing").isVisible())) {
   throw new Error("Power credentials tab did not render");
 }
-await page.screenshot({ path: `${screenshotDir}/nox-browser-power-credentials.png`, fullPage: false });
+await page.screenshot({ path: `${screenshotDir}/nyx-browser-power-credentials.png`, fullPage: false });
 await page.getByRole("button", { name: "callbacks" }).click();
 if (!(await page.locator("text=Callback Evidence").isVisible())) {
   throw new Error("Power callbacks tab did not render");
@@ -145,13 +145,13 @@ await browser.close();
 if (consoleErrors.length) {
   throw new Error(`Console errors observed:\n${consoleErrors.join("\n")}`);
 }
-await writeFile(`${screenshotDir}/nox-browser-smoke-summary.txt`, `Browser smoke passed for ${baseURL}/sessions/${sessionID}\n`);
+await writeFile(`${screenshotDir}/nyx-browser-smoke-summary.txt`, `Browser smoke passed for ${baseURL}/sessions/${sessionID}\n`);
 JS
 
-export NOX_BROWSER_SMOKE_BASE_URL="http://127.0.0.1:$port"
-export NOX_BROWSER_SMOKE_SESSION_ID="$session_id"
-export NOX_BROWSER_SMOKE_SCREENSHOT_DIR="/tmp"
-if [ "${NOX_BROWSER_SMOKE_SKIP_INSTALL:-}" != "1" ]; then
+export NYX_BROWSER_SMOKE_BASE_URL="http://127.0.0.1:$port"
+export NYX_BROWSER_SMOKE_SESSION_ID="$session_id"
+export NYX_BROWSER_SMOKE_SCREENSHOT_DIR="/tmp"
+if [ "${NYX_BROWSER_SMOKE_SKIP_INSTALL:-}" != "1" ]; then
   (cd "$repo_root/web" && npx playwright install chromium >/dev/null)
 fi
 
@@ -159,4 +159,4 @@ fi
 
 echo "Browser smoke passed"
 echo "session: $session_id"
-echo "screenshots: /tmp/nox-browser-*.png"
+echo "screenshots: /tmp/nyx-browser-*.png"

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestAnalyseExtractsSupportedLanguagesWithoutExecutingCode(t *testing.T) {

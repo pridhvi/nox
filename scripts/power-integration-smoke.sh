@@ -1,26 +1,26 @@
 #!/usr/bin/env sh
 set -eu
 
-if [ "${NOX_RUN_POWER_INTEGRATION:-}" != "1" ]; then
-  echo "Power integration smoke is opt-in. Set NOX_RUN_POWER_INTEGRATION=1 to run it."
+if [ "${NYX_RUN_POWER_INTEGRATION:-}" != "1" ]; then
+  echo "Power integration smoke is opt-in. Set NYX_RUN_POWER_INTEGRATION=1 to run it."
   exit 0
 fi
 
 root_dir="$(mktemp -d)"
-fixture_log="/tmp/nox-power-fixture.log"
-scan_log="/tmp/nox-power-scan.log"
-payload_log="/tmp/nox-power-payloads.log"
-creds_log="/tmp/nox-power-creds.log"
-osint_log="/tmp/nox-power-osint.log"
-poc_log="/tmp/nox-power-poc.log"
-report_file="/tmp/nox-power-report.md"
+fixture_log="/tmp/nyx-power-fixture.log"
+scan_log="/tmp/nyx-power-scan.log"
+payload_log="/tmp/nyx-power-payloads.log"
+creds_log="/tmp/nyx-power-creds.log"
+osint_log="/tmp/nyx-power-osint.log"
+poc_log="/tmp/nyx-power-poc.log"
+report_file="/tmp/nyx-power-report.md"
 fixture_pid=""
 
 cleanup() {
   if [ -n "$fixture_pid" ]; then
     kill "$fixture_pid" >/dev/null 2>&1 || true
   fi
-  if [ "${NOX_KEEP_INTEGRATION_ARTIFACTS:-}" != "1" ]; then
+  if [ "${NYX_KEEP_INTEGRATION_ARTIFACTS:-}" != "1" ]; then
     rm -rf "$root_dir"
   else
     echo "Keeping power integration sessions under $root_dir"
@@ -78,10 +78,10 @@ session_id_for() {
   printf '%s' "$found"
 }
 
-fixture_addr="${NOX_FIXTURE_ADDR:-127.0.0.1:18082}"
+fixture_addr="${NYX_FIXTURE_ADDR:-127.0.0.1:18082}"
 target="http://$fixture_addr"
 : >"$fixture_log"
-NOX_FIXTURE_ADDR="$fixture_addr" go run ./scripts/vulnerable-fixture >"$fixture_log" 2>&1 &
+NYX_FIXTURE_ADDR="$fixture_addr" go run ./scripts/vulnerable-fixture >"$fixture_log" 2>&1 &
 fixture_pid="$!"
 i=0
 until curl -fsS "$target" >/dev/null 2>&1; do
@@ -94,7 +94,7 @@ done
 
 session_dir="$root_dir/sessions"
 mkdir -p "$session_dir"
-NOX_SESSION_DIR="$session_dir" go run . scan --target "$target" --tools security-headers --no-llm --config /dev/null >"$scan_log" 2>&1
+NYX_SESSION_DIR="$session_dir" go run . scan --target "$target" --tools security-headers --no-llm --config /dev/null >"$scan_log" 2>&1
 session_id="$(session_id_for "$session_dir")"
 db_path="$session_dir/$session_id/session.db"
 target_id="$(query "$db_path" "SELECT id FROM targets LIMIT 1;")"
@@ -104,24 +104,24 @@ fi
 
 query "$db_path" "INSERT INTO findings (id, session_id, target_id, tool_id, type, severity, confidence, cvss_score, title, description, remediation, url, parameter, method, evidence_raw, evidence_normalized, code_context, flow_summary, status, notes, tags, created_at) VALUES ('power-xss-1', '$session_id', '$target_id', 'fixture', 'vulnerability', 'high', 0.9, 0, 'Reflected XSS marker', 'Fixture reflected input sink for safe validation.', 'Escape reflected output.', '$target/api/search?q=x', 'q', 'GET', '', '', '', '', 'pending', '', '[\"xss\"]', CURRENT_TIMESTAMP);"
 
-NOX_SESSION_DIR="$session_dir" go run . payloads generate "$session_id" --finding power-xss-1 --force >"$payload_log" 2>&1
+NYX_SESSION_DIR="$session_dir" go run . payloads generate "$session_id" --finding power-xss-1 --force >"$payload_log" 2>&1
 payload_id="$(query "$db_path" "SELECT id FROM payloads WHERE finding_id = 'power-xss-1' ORDER BY rank LIMIT 1;")"
 if [ -z "$payload_id" ]; then
   fail "payload generation did not persist a payload"
 fi
-NOX_SESSION_DIR="$session_dir" NOX_POWER_ACTIVE_VALIDATION_ENABLED=true go run . payloads validate "$session_id" --payload "$payload_id" --confirm --enabled=true >>"$payload_log" 2>&1
+NYX_SESSION_DIR="$session_dir" NYX_POWER_ACTIVE_VALIDATION_ENABLED=true go run . payloads validate "$session_id" --payload "$payload_id" --confirm --enabled=true >>"$payload_log" 2>&1
 assert_count_at_least "$db_path" "SELECT COUNT(*) FROM payloads WHERE id = '$payload_id' AND validated = 1;" 1 "validated payload"
 
-NOX_SESSION_DIR="$session_dir" go run . creds test "$session_id" --mode defaults --url "$target/login" --username admin --password password --confirm --max-attempts 1 --delay-ms 0 >"$creds_log" 2>&1
+NYX_SESSION_DIR="$session_dir" go run . creds test "$session_id" --mode defaults --url "$target/login" --username admin --password password --confirm --max-attempts 1 --delay-ms 0 >"$creds_log" 2>&1
 assert_count_at_least "$db_path" "SELECT COUNT(*) FROM credential_findings WHERE valid = 1 AND password = '********';" 1 "redacted valid credential finding"
 
-NOX_SESSION_DIR="$session_dir" go run . osint run "$session_id" --providers github,shodan,securitytrails >"$osint_log" 2>&1
+NYX_SESSION_DIR="$session_dir" go run . osint run "$session_id" --providers github,shodan,securitytrails >"$osint_log" 2>&1
 assert_count_at_least "$db_path" "SELECT COUNT(*) FROM provider_statuses WHERE status = 'skipped';" 2 "skipped provider status records"
 
-NOX_SESSION_DIR="$session_dir" NOX_POWER_ACTIVE_VALIDATION_ENABLED=true go run . poc run "$session_id" --finding power-xss-1 --confirm --active=true >"$poc_log" 2>&1
+NYX_SESSION_DIR="$session_dir" NYX_POWER_ACTIVE_VALIDATION_ENABLED=true go run . poc run "$session_id" --finding power-xss-1 --confirm --active=true >"$poc_log" 2>&1
 assert_count_at_least "$db_path" "SELECT COUNT(*) FROM poc_results WHERE finding_id = 'power-xss-1';" 1 "PoC result"
 
-NOX_SESSION_DIR="$session_dir" go run . report "$session_id" --format md --mode technical --config /dev/null --output "$report_file" >>"$scan_log" 2>&1
+NYX_SESSION_DIR="$session_dir" go run . report "$session_id" --format md --mode technical --config /dev/null --output "$report_file" >>"$scan_log" 2>&1
 assert_file_contains "$report_file" "Power Feature Evidence" "power report section"
 assert_file_contains "$report_file" "Generated payloads|Credential findings|OSINT findings|PoC results|Provider statuses" "power report evidence"
 

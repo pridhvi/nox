@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestScanContextAppliesAuthAndSeedRoutes(t *testing.T) {
@@ -17,13 +17,13 @@ func TestScanContextAppliesAuthAndSeedRoutes(t *testing.T) {
 	input.Session.TargetInput = "https://example.com"
 	input.Session.ToolParameters = map[string]map[string]any{
 		models.SessionScanOptionsKey: {
-			"route_seeds":        []any{"/search?q=nox", "https://example.com/profile?id=1", "https://evil.test/nope?q=1"},
+			"route_seeds":        []any{"/search?q=nyx", "https://example.com/profile?id=1", "https://evil.test/nope?q=1"},
 			"auth_headers":       map[string]any{"Authorization": "Bearer test-token"},
 			"auth_cookie_header": "session=abc",
 		},
 	}
 
-	req, err := newHTTPRequestWithAuth(context.Background(), input, http.MethodGet, "https://example.com/search", nil, "nox-test")
+	req, err := newHTTPRequestWithAuth(context.Background(), input, http.MethodGet, "https://example.com/search", nil, "nyx-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,11 +33,11 @@ func TestScanContextAppliesAuthAndSeedRoutes(t *testing.T) {
 	if got := req.Header.Get("Cookie"); got != "session=abc" {
 		t.Fatalf("expected cookie header to be applied, got %q", got)
 	}
-	if got := vulnerabilityTargetURL(input); got != "https://example.com/search?q=nox" {
+	if got := vulnerabilityTargetURL(input); got != "https://example.com/search?q=nyx" {
 		t.Fatalf("expected query seed to become vulnerability target, got %q", got)
 	}
 	paths := seededPathValues(input)
-	if len(paths) != 2 || paths[0] != "search?q=nox" || paths[1] != "profile?id=1" {
+	if len(paths) != 2 || paths[0] != "search?q=nyx" || paths[1] != "profile?id=1" {
 		t.Fatalf("expected only in-scope seed paths, got %#v", paths)
 	}
 	args := authCommandArgs(input, "ffuf")

@@ -20,22 +20,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pridhvi/nox/internal/activedirectory"
-	"github.com/pridhvi/nox/internal/adapters"
-	"github.com/pridhvi/nox/internal/burp"
-	appconfig "github.com/pridhvi/nox/internal/config"
-	"github.com/pridhvi/nox/internal/creds"
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/engine"
-	"github.com/pridhvi/nox/internal/evasion"
-	llmintel "github.com/pridhvi/nox/internal/llm"
-	"github.com/pridhvi/nox/internal/models"
-	"github.com/pridhvi/nox/internal/monitor"
-	"github.com/pridhvi/nox/internal/osint"
-	"github.com/pridhvi/nox/internal/payload"
-	"github.com/pridhvi/nox/internal/poc"
-	"github.com/pridhvi/nox/internal/report"
-	"github.com/pridhvi/nox/internal/state"
+	"github.com/pridhvi/nyx/internal/activedirectory"
+	"github.com/pridhvi/nyx/internal/adapters"
+	"github.com/pridhvi/nyx/internal/burp"
+	appconfig "github.com/pridhvi/nyx/internal/config"
+	"github.com/pridhvi/nyx/internal/creds"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/engine"
+	"github.com/pridhvi/nyx/internal/evasion"
+	llmintel "github.com/pridhvi/nyx/internal/llm"
+	"github.com/pridhvi/nyx/internal/models"
+	"github.com/pridhvi/nyx/internal/monitor"
+	"github.com/pridhvi/nyx/internal/osint"
+	"github.com/pridhvi/nyx/internal/payload"
+	"github.com/pridhvi/nyx/internal/poc"
+	"github.com/pridhvi/nyx/internal/report"
+	"github.com/pridhvi/nyx/internal/state"
 )
 
 type Config struct {
@@ -70,11 +70,11 @@ func NewServer(cfg Config) *Server {
 	cfg.SessionDir = absolutePath(cfg.SessionDir)
 	cfg.AppConfig.Database.SessionDir = cfg.SessionDir
 	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("NOX_API_KEY")
+		cfg.APIKey = os.Getenv("NYX_API_KEY")
 	}
 	cfg.AppConfig.Server.APIKey = cfg.APIKey
-	cfg.SourceRoots = append(cfg.SourceRoots, splitEnvList(os.Getenv("NOX_SOURCE_ROOTS"))...)
-	cfg.LLMAllowedHosts = append(cfg.LLMAllowedHosts, splitEnvList(os.Getenv("NOX_LLM_ALLOWED_HOSTS"))...)
+	cfg.SourceRoots = append(cfg.SourceRoots, splitEnvList(os.Getenv("NYX_SOURCE_ROOTS"))...)
+	cfg.LLMAllowedHosts = append(cfg.LLMAllowedHosts, splitEnvList(os.Getenv("NYX_LLM_ALLOWED_HOSTS"))...)
 	server := &Server{
 		cfg:          cfg,
 		scanManager:  NewScanManager(cfg.SessionDir, cfg.HTTPClient),
@@ -117,7 +117,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("nox api listening", "address", server.Addr)
+		slog.Info("nyx api listening", "address", server.Addr)
 		errCh <- server.ListenAndServe()
 	}()
 	select {
@@ -139,14 +139,14 @@ func (s *Server) validateExposure() error {
 	}
 	host := strings.TrimSpace(s.cfg.Host)
 	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
-		return fmt.Errorf("NOX_API_KEY or server.api_key is required when binding Nox to a non-loopback interface")
+		return fmt.Errorf("NYX_API_KEY or server.api_key is required when binding Nyx to a non-loopback interface")
 	}
 	if strings.EqualFold(host, "localhost") {
 		return nil
 	}
 	ip := net.ParseIP(strings.Trim(host, "[]"))
 	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("NOX_API_KEY or server.api_key is required when binding Nox to %s", host)
+		return fmt.Errorf("NYX_API_KEY or server.api_key is required when binding Nyx to %s", host)
 	}
 	return nil
 }
@@ -271,7 +271,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"sessions_dir":       s.cfg.SessionDir,
 		"db_dir_ready":       dirReady,
 		"auth_enabled":       s.cfg.APIKey != "",
-		"llm_configured":     os.Getenv("NOX_LLM_BASE_URL") != "",
+		"llm_configured":     os.Getenv("NYX_LLM_BASE_URL") != "",
 		"registered_tools":   len(tools),
 		"session_dir_status": readiness(dirReady),
 	})
@@ -2332,7 +2332,7 @@ func (s *Server) llmModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	apiKey := firstNonEmpty(req.APIKey, s.cfg.AppConfig.LLM.APIKey, os.Getenv("NOX_LLM_API_KEY"))
+	apiKey := firstNonEmpty(req.APIKey, s.cfg.AppConfig.LLM.APIKey, os.Getenv("NYX_LLM_API_KEY"))
 	if apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}
@@ -2683,7 +2683,7 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			writeError(w, http.StatusTooManyRequests, fmt.Errorf("too many failed authentication attempts"))
 			return
 		}
-		token := r.Header.Get("X-Nox-API-Key")
+		token := r.Header.Get("X-Nyx-API-Key")
 		if token == "" {
 			token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
@@ -2710,7 +2710,7 @@ const (
 	authFailureWindow     = time.Minute
 	authFailureLimit      = 8
 	authSessionTTL        = 12 * time.Hour
-	authSessionCookieName = "nox_session"
+	authSessionCookieName = "nyx_session"
 )
 
 func (s *Server) createAuthSession() (string, time.Time) {
@@ -3086,9 +3086,9 @@ func binaryNameForTool(id string) string {
 
 func installHintForTool(id, binary string) string {
 	if binary == "" {
-		return "Built into Nox."
+		return "Built into Nyx."
 	}
-	return "Install " + binary + " or configure tools." + id + " in the Nox config."
+	return "Install " + binary + " or configure tools." + id + " in the Nyx config."
 }
 
 func descriptionForTool(id string) string {

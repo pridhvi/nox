@@ -1,6 +1,6 @@
-# NOX Subprocess Plugin Contract
+# NYX Subprocess Plugin Contract
 
-NOX plugins are executables that read one JSON request from stdin and write one JSON response to stdout.
+NYX plugins are executables that read one JSON request from stdin and write one JSON response to stdout.
 
 ## Request
 
@@ -33,5 +33,5 @@ NOX plugins are executables that read one JSON request from stdin and write one 
 }
 ```
 
-Plugins must not scan outside the target or scope context passed by NOX. Findings should include enough evidence to reproduce and validate the issue.
+Plugins must not scan outside the target or scope context passed by NYX. Findings should include enough evidence to reproduce and validate the issue.
 

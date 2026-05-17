@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pridhvi/nox/internal/models"
-	"github.com/pridhvi/nox/internal/state"
+	"github.com/pridhvi/nyx/internal/models"
+	"github.com/pridhvi/nyx/internal/state"
 )
 
 func Alert(ctx context.Context, store *state.Store, config models.MonitorConfig, changes []models.SurfaceChange) error {
@@ -17,7 +17,7 @@ func Alert(ctx context.Context, store *state.Store, config models.MonitorConfig,
 	if len(selected) == 0 {
 		return nil
 	}
-	message := fmt.Sprintf("Nox monitor %q observed %d attack-surface change(s).", config.Name, len(selected))
+	message := fmt.Sprintf("Nyx monitor %q observed %d attack-surface change(s).", config.Name, len(selected))
 	if config.NotificationConfig.SlackWebhookURL != "" {
 		if err := postWebhook(ctx, config.NotificationConfig.SlackWebhookURL, map[string]string{"text": message}); err != nil {
 			return err

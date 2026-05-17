@@ -9,7 +9,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/install-linux-tools.sh [--execute] [--minimal]
 
-Print a Linux VM tool installation plan for Nox. By default the script is
+Print a Linux VM tool installation plan for Nyx. By default the script is
 dry-run only. Pass --execute to run supported package-manager and Go install
 commands on the current host.
 
@@ -49,7 +49,7 @@ run() {
   fi
 }
 
-echo "# Nox Linux tool setup"
+echo "# Nyx Linux tool setup"
 if [ "$execute" != "1" ]; then
   echo "# Dry run. Re-run with --execute to apply supported commands."
 fi
@@ -154,5 +154,5 @@ export PATH="$HOME/go/bin:$HOME/.local/bin:$HOME/.config/composer/vendor/bin:$(r
 scripts/tool-version-smoke.sh linux-full
 
 # For a strict acceptance gate where recommended audit tools must be present:
-NOX_TOOL_SMOKE_STRICT=1 scripts/tool-version-smoke.sh linux-full
+NYX_TOOL_SMOKE_STRICT=1 scripts/tool-version-smoke.sh linux-full
 NEXT

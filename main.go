@@ -1,7 +1,7 @@
 package main
 
-import "github.com/pridhvi/nox/cmd/nox"
+import "github.com/pridhvi/nyx/cmd/nyx"
 
 func main() {
-	nox.Execute()
+	nyx.Execute()
 }

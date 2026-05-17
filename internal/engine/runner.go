@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pridhvi/nox/internal/adapters"
-	cveintel "github.com/pridhvi/nox/internal/cve"
-	"github.com/pridhvi/nox/internal/db"
-	llmintel "github.com/pridhvi/nox/internal/llm"
-	"github.com/pridhvi/nox/internal/models"
-	"github.com/pridhvi/nox/internal/source"
-	"github.com/pridhvi/nox/internal/vectors"
+	"github.com/pridhvi/nyx/internal/adapters"
+	cveintel "github.com/pridhvi/nyx/internal/cve"
+	"github.com/pridhvi/nyx/internal/db"
+	llmintel "github.com/pridhvi/nyx/internal/llm"
+	"github.com/pridhvi/nyx/internal/models"
+	"github.com/pridhvi/nyx/internal/source"
+	"github.com/pridhvi/nyx/internal/vectors"
 )
 
 type Runner struct {

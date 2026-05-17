@@ -1,13 +1,13 @@
-# Nox Implementation Plan
+# Nyx Implementation Plan
 
 This plan is the execution roadmap for the canonical product specification in
-`docs/nox-project-spec.md`. It intentionally preserves the current MVP work and
+`docs/nyx-project-spec.md`. It intentionally preserves the current MVP work and
 builds on top of it. Existing code should be extended, not discarded, unless a
 specific implementation is proven incompatible with the spec.
 
 ## Planning Rules
 
-- `docs/nox-project-spec.md` is the source of truth for product behavior,
+- `docs/nyx-project-spec.md` is the source of truth for product behavior,
   architecture, API surface, data models, scanner coverage, UI pages, packaging,
   and safety expectations.
 - `README.md`, `AGENTS.md`, and this plan must be updated after every major
@@ -61,15 +61,15 @@ for built-in HTTP checks plus `ffuf`, `sqlmap`, and `dalfox`.
 ## Current Baseline
 
 The current repo is not greenfield. Sessions use `<session-id>/session.db` with
-tool run sidecar logs in `<session-id>/runs/`; `nox scan --lean` deletes those
-logs after normalization, and `nox sessions export` packages the directory.
-Cross-session monitor state uses `<state-dir>/nox-state.db` for recurring
+tool run sidecar logs in `<session-id>/runs/`; `nyx scan --lean` deletes those
+logs after normalization, and `nyx sessions export` packages the directory.
+Cross-session monitor state uses `<state-dir>/nyx-state.db` for recurring
 monitor configs, monitor runs, and persisted attack-surface changes.
 Sessions preserve `mode` for scan aggressiveness and use `workload_mode` for
 `dynamic`, `static`, and `combined` workloads. These items are valuable baseline
 work and must be carried forward:
 
-- **Foundation:** Buildable Go module at `github.com/pridhvi/nox` and CLI
+- **Foundation:** Buildable Go module at `github.com/pridhvi/nyx` and CLI
   entrypoint with `scan`, `audit`, `serve`, `sessions`, `plugins`, `report`,
   and `version` command surfaces.
 - **Models and persistence:** Canonical model structs for sessions, targets,
@@ -77,7 +77,7 @@ work and must be carried forward:
   report metadata, LLM analyses, and plugin records, plus per-session SQLite
   migrations and typed store methods.
 - **Session store:** Per-session SQLite persistence defaults to the absolute
-  state path `$HOME/.nox/sessions`, with create/list/show/delete support and
+  state path `$HOME/.nyx/sessions`, with create/list/show/delete support and
   config-relative resolution for explicit relative paths.
 - **Scope safety:** Scope checker for hosts, URLs, and CIDRs.
 - **Adapters:** Adapter interface, registry, plugin JSON contract, subprocess
@@ -103,9 +103,9 @@ work and must be carried forward:
   findings, global plugin loading, cancellation, and cooperative pause/resume
   before starting the next tool. This should keep evolving incrementally into
   the full spec DAG scheduler instead of being thrown away.
-- **Continuous monitoring:** `nox monitor` and `/api/monitor/*` manage
+- **Continuous monitoring:** `nyx monitor` and `/api/monitor/*` manage
   host-privileged recurring scan configs, immediate monitor runs, scheduler
-  registration during `nox serve`, baseline comparison, Slack/Discord webhook
+  registration during `nyx serve`, baseline comparison, Slack/Discord webhook
   notification dispatch, and `surface_changes` persistence for target,
   technology, and finding drift.
 - **Power-feature modules:** Payload generation now supports optional
@@ -122,10 +122,10 @@ work and must be carried forward:
 - **Audit and source-aware mode:** Static extractors cover Python,
   JavaScript/TypeScript, Go, PHP, Ruby, and Java for routes, parameters, SQL
   sinks, file uploads, auth middleware, secrets, SSRF sinks, deserialization
-  sinks, and unprotected routes. `nox audit` runs built-in and optional
-  `audit/<tool>` adapters with `.nox-audit-ignore` suppression, sidecar logs,
+  sinks, and unprotected routes. `nyx audit` runs built-in and optional
+  `audit/<tool>` adapters with `.nyx-audit-ignore` suppression, sidecar logs,
   optional LLM triage/dataflow/narrative passes, and terminal/JSON/SARIF/HTML/MD
-  output. `nox scan --source` runs static-only without a target and combined
+  output. `nyx scan --source` runs static-only without a target and combined
   source-aware mode with a target; combined orchestration runs source/audit
   first for SQLite reliability, then dynamic adapters consume persisted source
   hints, then a shared correlation phase generates CVEs, graph edges, attack
@@ -152,7 +152,7 @@ work and must be carried forward:
   a compatibility alias.
 - **Reporting and UI:** Markdown/HTML/SARIF/paginated-PDF report generation,
   CLI/API/UI report access, and React/Vite dark-default operator console with a
-  Nox logo/favicon, dashboard controls and live terminal feed, responsive mobile
+  Nyx logo/favicon, dashboard controls and live terminal feed, responsive mobile
   topbar actions, multi-target scan and source scan builder with a
   non-overlapping launch review, per-tool configuration modals, profile
   import/export, Recharts severity chart with theme-aware surfaces, simplified
@@ -179,7 +179,7 @@ work and must be carried forward:
 
 ### Existing Baseline
 
-- Go module path is `github.com/pridhvi/nox`.
+- Go module path is `github.com/pridhvi/nyx`.
 - CLI exists.
 - React/Vite frontend exists and builds into embedded assets.
 - Repository guidance exists in `AGENTS.md`.
@@ -188,12 +188,12 @@ work and must be carried forward:
 - Makefile targets exist for build, dev, test, opt-in integration smoke, tool
   version smoke, lint, web, sqlc placeholder, migration placeholder, cleanup,
   and release snapshot.
-- Dockerfile and docker-compose exist for Nox plus Ollama services.
+- Dockerfile and docker-compose exist for Nyx plus Ollama services.
 - GoReleaser snapshot configuration exists for embedded-frontend single-binary
   release artifacts.
 - GitHub Actions CI runs Makefile test/web/build workflows, Docker image build,
   Compose config validation, and GoReleaser snapshot release.
-- Local Docker validation now covers image build, `nox version`, bundled scanner
+- Local Docker validation now covers image build, `nyx version`, bundled scanner
   version checks, CLI help, docker-compose startup, `/api/health`, and
   `/api/tools` with writable session storage.
 
@@ -213,11 +213,11 @@ work and must be carried forward:
 
 ### Acceptance Criteria
 
-- README and CLI visibly warn that Nox is for authorized testing only.
+- README and CLI visibly warn that Nyx is for authorized testing only.
 - `make build`, `make test`, and `make web` work.
 - CI validates that the Docker image builds.
-- CI validates Docker Compose configuration for Nox and Ollama services.
-- Local Docker smoke validation can start Nox and Ollama and report API health
+- CI validates Docker Compose configuration for Nyx and Ollama services.
+- Local Docker smoke validation can start Nyx and Ollama and report API health
   with `db_dir_ready: true`.
 - CI validates release snapshot generation for embedded-frontend single-binary
   artifacts.
@@ -381,10 +381,10 @@ work and must be carried forward:
 - Direct subprocess command helper exists for scanner CLIs.
 - MVP external adapters record `tool_runs` for missing binaries, timeouts,
   non-zero exits, and parser-normalized findings.
-- CLI plugin management supports `nox plugins list` and
-  `nox plugins install --name <name> --phase <phase> <path>`.
+- CLI plugin management supports `nyx plugins list` and
+  `nyx plugins install --name <name> --phase <phase> <path>`.
 - Configured plugin metadata persists in the global plugin registry under the
-  Nox state directory. Legacy session plugin rows remain readable for old
+  Nyx state directory. Legacy session plugin rows remain readable for old
   sessions.
 - Enabled configured plugins load into the scan runner alongside built-in
   adapters.
@@ -406,7 +406,7 @@ work and must be carried forward:
 
 ### Acceptance Criteria
 
-- `nox plugins list` reports built-in adapters and configured plugins.
+- `nyx plugins list` reports built-in adapters and configured plugins.
 - Plugin binaries can be configured and invoked through the adapter contract.
 - Missing or failing plugin binaries produce persisted `tool_runs`.
 - Adapter tests prove output normalization is deterministic.
@@ -700,8 +700,8 @@ work and must be carried forward:
   offline JSON source support, embedded advisory fallback data, and HTTP client
   scaffolding for NVD, OSV.dev, CIRCL, vulners.com, and GitHub Security
   Advisories.
-- `NOX_CVE_OFFLINE_PATH` enables local offline advisory data.
-- `NOX_CVE_ENABLE_REMOTE=true` opts in to remote CVE clients; default operation
+- `NYX_CVE_OFFLINE_PATH` enables local offline advisory data.
+- `NYX_CVE_ENABLE_REMOTE=true` opts in to remote CVE clients; default operation
   remains local/offline-friendly.
 - Runner invokes CVE correlation after scan phases complete and before final
   session counts/status are updated.
@@ -953,12 +953,12 @@ work and must be carried forward:
   - `--output`
   - `--mode executive|technical`
 - Added LLM commands:
-  - `nox llm chat <session-id>`
-  - `nox llm analyse <session-id>`
+  - `nyx llm chat <session-id>`
+  - `nyx llm analyse <session-id>`
 - Added config commands:
-  - `nox config init`
-  - `nox config show`
-- Implemented config file at `~/.nox/config.yaml` with:
+  - `nyx config init`
+  - `nyx config show`
+- Implemented config file at `~/.nyx/config.yaml` with:
   - LLM settings
   - database settings
   - server settings
@@ -975,7 +975,7 @@ work and must be carried forward:
 ### Spec Alignment Follow-ups
 
 - Preserve current simple CLI behavior while expanding flags and config.
-- Keep zero-config `nox scan --target example.com` working.
+- Keep zero-config `nyx scan --target example.com` working.
 - `--tools` and `--rate-limit` are accepted and config-backed; deeper
   scheduler/tool filtering semantics can be tightened with future scheduler
   refinements.
@@ -1027,7 +1027,7 @@ work and must be carried forward:
 
 ### Acceptance Criteria
 
-- `nox report <session-id> --format md|html|pdf` works.
+- `nyx report <session-id> --format md|html|pdf` works.
 - Report API returns requested format.
 - Reports include persisted evidence and no fabricated conclusions.
 
@@ -1159,7 +1159,7 @@ work and must be carried forward:
 - Frontend build embeds assets into the Go binary.
 - Dockerfile builds the frontend, compiles the Go binary, and produces a Kali
   runtime image with common optional scanner tools installed.
-- docker-compose starts Nox and Ollama with persistent volumes.
+- docker-compose starts Nyx and Ollama with persistent volumes.
 - Makefile covers build, dev, test, web build, lint, opt-in integration tests,
   tool-version smoke, placeholder migrations/sqlc, cleanup, and release
   snapshots.
@@ -1170,12 +1170,12 @@ work and must be carried forward:
 - Added `make ci` to run the core CI sequence locally.
 - Added `make compose-config` for Docker Compose validation.
 - Added `make docker-smoke` and `scripts/docker-smoke.sh` to build the image,
-  start Nox, verify `/api/health`, verify `/api/tools`, and run `nox version`
+  start Nyx, verify `/api/health`, verify `/api/tools`, and run `nyx version`
   inside the container.
 - Added `scripts/tool-version-smoke.sh` and `make tool-version-smoke` to verify
   Docker-bundled baseline scanners and report optional scanner versions.
 - Replaced the placeholder `test-integration` target with an opt-in
-  `scripts/integration-smoke.sh` flow guarded by `NOX_RUN_INTEGRATION=1`.
+  `scripts/integration-smoke.sh` flow guarded by `NYX_RUN_INTEGRATION=1`.
   The suite starts a deterministic vulnerable app, then validates dynamic,
   static audit, combined source-aware correlation, report generation, sidecar
   log retention, and `--lean` sidecar removal against directory-based sessions.
@@ -1197,7 +1197,7 @@ work and must be carried forward:
 ### Acceptance Criteria
 
 - Docker image can serve the UI and pass API health checks.
-- docker-compose starts Nox and Ollama.
+- docker-compose starts Nyx and Ollama.
 - Makefile targets work locally and in CI.
 - Release artifacts include embedded frontend.
 - An opt-in fixture-backed smoke test verifies local scan, static audit,
@@ -1239,7 +1239,7 @@ work and must be carried forward:
 - Frontend build verification is part of CI.
 - Lint target runs Go lint when `golangci-lint` is installed and always runs
   the frontend build/typecheck.
-- Opt-in integration smoke is documented and guarded by `NOX_RUN_INTEGRATION=1`.
+- Opt-in integration smoke is documented and guarded by `NYX_RUN_INTEGRATION=1`.
   It runs manually/nightly in a dedicated GitHub Actions workflow and uploads
   fixture logs, scan logs, SARIF, and Markdown reports on failure.
 - Docker smoke is part of CI.
@@ -1253,7 +1253,7 @@ work and must be carried forward:
 - Full external scanner validation should remain a manual acceptance path until
   tool installation/runtime variance is low enough for CI.
 - Add more fixture coverage for future adapters as they become richer.
-- Future feature planning should use `docs/nox-power-features-spec.md` as the
+- Future feature planning should use `docs/nyx-power-features-spec.md` as the
   enhancement backlog and `docs/power-feature-plans/` for implementation
   handoff.
 
@@ -1312,9 +1312,9 @@ greenfield assumptions:
 | 13. REST API Surface | Phase 13 | Implemented | Spec endpoints for sessions, scans, findings, finding updates, vectors, CVEs, LLM, reports, health, tools, auth, monitor configs/runs/changes, power-feature records/actions, provider statuses, callbacks, Burp REST helpers, and WebSocket alias exist. |
 | 14. CLI Commands | Phase 14 | Implemented | Scan flags, monitor/payload/creds/osint/ad/poc/burp commands including safe validation/provider/credential/Burp actions, report generation, LLM commands, config init/show, plugins, sessions, serve, and version exist. |
 | 15. Web UI Pages | Phase 16 | Implemented | Dashboard, monitor route, power features workspace, session route, Cytoscape graph, Recharts severity chart, finding evidence/edit workflow, LLM, and reports pages use real API data. |
-| 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nox/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, logging settings, tool path maps, plugin directories, CVE settings, power provider/callback/credential/validation settings with redaction, and CLI override paths exist. |
+| 16. Configuration File | Phase 14 | Implemented | Viper-backed `~/.nyx/config.yaml` defaults, YAML/TOML/JSON parsing, config init/show, env overrides, logging settings, tool path maps, plugin directories, CVE settings, power provider/callback/credential/validation settings with redaction, and CLI override paths exist. |
 | 17. Scope Validation | Phase 3 | Implemented | Checker, adapter boundary tests, cancellation, lifecycle status coverage, and privileged API source/LLM allowlist controls exist. |
-| 18. Error Handling & Logging | Phases 3, 4, 5 | Implemented | Tool failures persist without failing scans; structured slog configuration supports `NOX_LOG_LEVEL` and `NOX_LOG_FORMAT`, and non-fatal adapter failures are logged. |
+| 18. Error Handling & Logging | Phases 3, 4, 5 | Implemented | Tool failures persist without failing scans; structured slog configuration supports `NYX_LOG_LEVEL` and `NYX_LOG_FORMAT`, and non-fatal adapter failures are logged. |
 | 19. Testing Strategy | Phase 18 | Implemented | Go/API/adapter/config/report/LLM/power tests, frontend CI build, Docker smoke, scheduled/manual fixture-backed integration smoke, opt-in power integration smoke, opt-in browser smoke with screenshot capture and console-error checks, and opt-in Linux full-tool fixture validation scripts exist. |
 | 20. Docker Setup | Phase 17 | Implemented | Dockerfile, healthcheck, compose, deployment docs, bundled scanner version smoke, and Docker smoke exist. |
 | 21. Makefile | Phase 17 | Implemented | Build, CI, test, integration smoke, power integration smoke, browser smoke, tool-version smoke, Linux full smoke, lint, web, compose, Docker smoke, migration, cleanup, and release snapshot targets exist. |
@@ -1329,7 +1329,7 @@ gracefully, active validation is explicit and fixture-safe, callbacks are
 correlated without exfiltration, credentials are paced and redacted by default,
 and reports/UI expose power evidence. Remaining work is provider breadth and
 Linux-tool hardening based on real operator feedback, not new required roadmap
-phases. The complete target states remain in `docs/nox-power-features-spec.md`
+phases. The complete target states remain in `docs/nyx-power-features-spec.md`
 and `docs/power-feature-plans/`.
 
 ## Coverage Check Terms

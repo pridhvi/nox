@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func testExternalInput() AdapterInput {
@@ -373,7 +373,7 @@ func TestParseCORSFindings(t *testing.T) {
 		"access-control-allow-origin":      "*",
 		"access-control-allow-credentials": "true",
 	}
-	findings := parseCORSFindings(testExternalInput(), "https://example.com/", "https://nox.invalid", headers, `{"access-control-allow-origin":"*"}`)
+	findings := parseCORSFindings(testExternalInput(), "https://example.com/", "https://nyx.invalid", headers, `{"access-control-allow-origin":"*"}`)
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(findings))
 	}
@@ -387,9 +387,9 @@ func TestParseCORSFindings(t *testing.T) {
 
 func TestParseCORSFindingsReflectedOriginWithoutCredentials(t *testing.T) {
 	headers := map[string]string{
-		"access-control-allow-origin": "https://nox.invalid",
+		"access-control-allow-origin": "https://nyx.invalid",
 	}
-	findings := parseCORSFindings(testExternalInput(), "https://example.com/", "https://nox.invalid", headers, `{"access-control-allow-origin":"https://nox.invalid"}`)
+	findings := parseCORSFindings(testExternalInput(), "https://example.com/", "https://nyx.invalid", headers, `{"access-control-allow-origin":"https://nyx.invalid"}`)
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(findings))
 	}
@@ -421,7 +421,7 @@ func TestVulnerabilityTargetURLUsesHiddenParameter(t *testing.T) {
 		Tags:      []string{"arjun", "hidden-parameter"},
 	}}
 	got := vulnerabilityTargetURL(input)
-	if got != "https://example.com/?debug=nox" {
+	if got != "https://example.com/?debug=nyx" {
 		t.Fatalf("unexpected vulnerability target URL: %s", got)
 	}
 }
@@ -460,7 +460,7 @@ func TestParseJWTToolFindings(t *testing.T) {
 }
 
 func TestParseOAuthFindings(t *testing.T) {
-	findings := parseOAuthFindings(testExternalInput(), "https://example.com/oauth?redirect_uri=https://nox.invalid/callback", 302, "https://nox.invalid/callback", "")
+	findings := parseOAuthFindings(testExternalInput(), "https://example.com/oauth?redirect_uri=https://nyx.invalid/callback", 302, "https://nyx.invalid/callback", "")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(findings))
 	}
@@ -859,7 +859,7 @@ func testHTTPAdapterInput(t *testing.T, baseURL string, seeds ...string) Adapter
 }
 
 func TestParseXXEFindings(t *testing.T) {
-	findings := parseXXEFindings(testExternalInput(), "https://example.com/", "nox-xxe-marker", "resolved nox-xxe-marker")
+	findings := parseXXEFindings(testExternalInput(), "https://example.com/", "nyx-xxe-marker", "resolved nyx-xxe-marker")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(findings))
 	}

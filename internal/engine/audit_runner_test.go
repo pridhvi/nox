@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pridhvi/nox/internal/adapters"
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/adapters"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestAuditRunnerSuppressionDiffAndSidecarLogs(t *testing.T) {
@@ -18,7 +18,7 @@ func TestAuditRunnerSuppressionDiffAndSidecarLogs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "app.py"), []byte("@app.get(\"/admin\")\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ".nox-audit-ignore"), []byte("fixture:suppress:app.py\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".nyx-audit-ignore"), []byte("fixture:suppress:app.py\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	session, store := testAuditStore(t, ctx, repo)

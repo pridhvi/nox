@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func InternalSession(session models.Session, targets []models.Target) bool {
@@ -97,7 +97,7 @@ func RecordKerberoastRequest(ctx context.Context, store *db.Store, session model
 		ID:           models.NewID(),
 		SessionID:    session.ID,
 		ArtifactType: "kerberoast_request",
-		Summary:      "Kerberoast request recorded. Hash extraction and cracking are not performed automatically by Nox.",
+		Summary:      "Kerberoast request recorded. Hash extraction and cracking are not performed automatically by Nyx.",
 		CreatedAt:    now,
 	}
 	if req.Domain != "" || req.Username != "" {

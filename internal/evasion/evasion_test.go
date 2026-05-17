@@ -3,7 +3,7 @@ package evasion
 import (
 	"testing"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 func TestNormalizeStealthProfile(t *testing.T) {

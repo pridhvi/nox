@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type Phase string

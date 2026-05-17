@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type FFUF struct{}
@@ -37,7 +37,7 @@ func (a FFUF) Run(ctx context.Context, input AdapterInput) (AdapterOutput, error
 	var tempWordlist string
 	routes := append(sourceValues(input.SourceFindings, models.SourceKindRoute), seededPathValues(input)...)
 	if len(routes) > 0 {
-		file, err := os.CreateTemp("", "nox-routes-*.txt")
+		file, err := os.CreateTemp("", "nyx-routes-*.txt")
 		if err == nil {
 			for _, route := range routes {
 				_, _ = fmt.Fprintln(file, strings.TrimPrefix(route, "/"))

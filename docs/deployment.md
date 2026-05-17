@@ -1,14 +1,14 @@
-# Nox Deployment Notes
+# Nyx Deployment Notes
 
 ## Docker
 
 Build and run the container locally:
 
 ```sh
-docker build -t nox:local .
-NOX_API_KEY=$(openssl rand -hex 24)
-docker run --rm -p 127.0.0.1:8080:8080 -e NOX_API_KEY="$NOX_API_KEY" -v nox-data:/home/nox/.nox nox:local serve --host 0.0.0.0 --port 8080
-curl -H "X-Nox-API-Key: $NOX_API_KEY" http://127.0.0.1:8080/api/health
+docker build -t nyx:local .
+NYX_API_KEY=$(openssl rand -hex 24)
+docker run --rm -p 127.0.0.1:8080:8080 -e NYX_API_KEY="$NYX_API_KEY" -v nyx-data:/home/nyx/.nyx nyx:local serve --host 0.0.0.0 --port 8080
+curl -H "X-Nyx-API-Key: $NYX_API_KEY" http://127.0.0.1:8080/api/health
 ```
 
 The web console prompts for the same API key when auth is enabled and stores only an opaque HttpOnly session cookie. Do not put API keys in URLs; query-string API keys are rejected.
@@ -19,31 +19,31 @@ Run the packaged smoke check:
 make docker-smoke
 ```
 
-The smoke check builds the image, starts Nox, verifies `/api/health`, verifies
-`/api/tools`, and runs `nox version` inside the container.
+The smoke check builds the image, starts Nyx, verifies `/api/health`, verifies
+`/api/tools`, and runs `nyx version` inside the container.
 
 ## Compose
 
-`docker-compose.yml` starts Nox and Ollama with persistent volumes:
+`docker-compose.yml` starts Nyx and Ollama with persistent volumes:
 
 ```sh
-export NOX_API_KEY=$(openssl rand -hex 24)
+export NYX_API_KEY=$(openssl rand -hex 24)
 docker compose up --build
 ```
 
-Compose publishes Nox on `127.0.0.1:6767` and requires `NOX_API_KEY`. Nox refuses to bind to non-loopback interfaces without an API key.
+Compose publishes Nyx on `127.0.0.1:6767` and requires `NYX_API_KEY`. Nyx refuses to bind to non-loopback interfaces without an API key.
 
 For containerized custom config, create a config file and mount it at
-`/home/nox/.nox/config.yaml`:
+`/home/nyx/.nyx/config.yaml`:
 
 ```sh
 mkdir -p config
-nox config init --path config/nox.yaml
+nyx config init --path config/nyx.yaml
 docker run --rm -p 127.0.0.1:8080:8080 \
-  -e NOX_API_KEY="$NOX_API_KEY" \
-  -v nox-data:/home/nox/.nox \
-  -v "$PWD/config/nox.yaml:/config/nox.yaml:ro" \
-  nox:local serve --config /config/nox.yaml --host 0.0.0.0 --port 8080
+  -e NYX_API_KEY="$NYX_API_KEY" \
+  -v nyx-data:/home/nyx/.nyx \
+  -v "$PWD/config/nyx.yaml:/config/nyx.yaml:ro" \
+  nyx:local serve --config /config/nyx.yaml --host 0.0.0.0 --port 8080
 ```
 
 LLM settings can be provided through the config file or environment variables:
@@ -59,8 +59,8 @@ llm:
 For tighter host deployments, constrain source scans and LLM model probing:
 
 ```sh
-export NOX_SOURCE_ROOTS=/srv/audits,/work/repos
-export NOX_LLM_ALLOWED_HOSTS=127.0.0.1,localhost,ollama
+export NYX_SOURCE_ROOTS=/srv/audits,/work/repos
+export NYX_LLM_ALLOWED_HOSTS=127.0.0.1,localhost,ollama
 ```
 
 Single-binary local mode remains supported. Optional external tools degrade

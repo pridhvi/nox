@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type TestRequest struct {
@@ -159,7 +159,7 @@ func tryCredential(ctx context.Context, client interface {
 		return false, false, err.Error()
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "nox/0.1 credential-check")
+	req.Header.Set("User-Agent", "nyx/0.1 credential-check")
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, false, err.Error()

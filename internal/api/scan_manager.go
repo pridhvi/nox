@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pridhvi/nox/internal/adapters"
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/engine"
-	llmintel "github.com/pridhvi/nox/internal/llm"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/adapters"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/engine"
+	llmintel "github.com/pridhvi/nyx/internal/llm"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type ScanManager struct {

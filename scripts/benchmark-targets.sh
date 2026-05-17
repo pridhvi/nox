@@ -3,12 +3,12 @@ set -eu
 
 command_name="${1:-up}"
 
-dvwa_name="${NOX_BENCHMARK_DVWA_CONTAINER:-nox-benchmark-dvwa}"
-juice_name="${NOX_BENCHMARK_JUICE_CONTAINER:-nox-benchmark-juice-shop}"
-dvwa_port="${NOX_BENCHMARK_DVWA_PORT:-18080}"
-juice_port="${NOX_BENCHMARK_JUICE_PORT:-13000}"
-dvwa_url="${NOX_BENCHMARK_DVWA_URL:-http://127.0.0.1:$dvwa_port}"
-juice_url="${NOX_BENCHMARK_JUICE_URL:-http://127.0.0.1:$juice_port}"
+dvwa_name="${NYX_BENCHMARK_DVWA_CONTAINER:-nyx-benchmark-dvwa}"
+juice_name="${NYX_BENCHMARK_JUICE_CONTAINER:-nyx-benchmark-juice-shop}"
+dvwa_port="${NYX_BENCHMARK_DVWA_PORT:-18080}"
+juice_port="${NYX_BENCHMARK_JUICE_PORT:-13000}"
+dvwa_url="${NYX_BENCHMARK_DVWA_URL:-http://127.0.0.1:$dvwa_port}"
+juice_url="${NYX_BENCHMARK_JUICE_URL:-http://127.0.0.1:$juice_port}"
 
 require_docker() {
   command -v docker >/dev/null 2>&1 || {
@@ -54,7 +54,7 @@ start_or_create_juice() {
     docker start "$juice_name" >/dev/null
   else
     docker run -d --name "$juice_name" \
-      -e NODE_OPTIONS="${NOX_BENCHMARK_JUICE_NODE_OPTIONS:---max-old-space-size=8192}" \
+      -e NODE_OPTIONS="${NYX_BENCHMARK_JUICE_NODE_OPTIONS:---max-old-space-size=8192}" \
       -p "127.0.0.1:$juice_port:3000" \
       bkimminich/juice-shop >/dev/null
   fi
@@ -62,7 +62,7 @@ start_or_create_juice() {
 }
 
 status() {
-  docker ps -a --filter "name=nox-benchmark-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+  docker ps -a --filter "name=nyx-benchmark-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
   for url in "$dvwa_url" "$juice_url"; do
     code="$(curl -m 2 -s -o /dev/null -w '%{http_code}' "$url/" || true)"
     echo "$url status=$code"

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/adapters"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/adapters"
+	"github.com/pridhvi/nyx/internal/models"
 	"github.com/robfig/cron/v3"
 )
 

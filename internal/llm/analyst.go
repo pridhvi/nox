@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 	openai "github.com/sashabaranov/go-openai"
 )
 
 var ErrNotConfigured = errors.New("llm is not configured")
 
-const SystemPrompt = `You are the Nox local security analyst. Use only the structured session context and tool results provided to you. Deterministic findings, CVE matches, and attack-vector rules are authoritative; do not invent vulnerabilities, targets, CVEs, exploitability, or scan results. You may summarize evidence, explain risk, suggest safe follow-up checks, and call available tools. Follow-up scan requests must remain constrained to the current session scope and are audit records only.`
+const SystemPrompt = `You are the Nyx local security analyst. Use only the structured session context and tool results provided to you. Deterministic findings, CVE matches, and attack-vector rules are authoritative; do not invent vulnerabilities, targets, CVEs, exploitability, or scan results. You may summarize evidence, explain risk, suggest safe follow-up checks, and call available tools. Follow-up scan requests must remain constrained to the current session scope and are audit records only.`
 
 type Analyst struct {
 	store  Store

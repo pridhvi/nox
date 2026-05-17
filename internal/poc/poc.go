@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pridhvi/nox/internal/db"
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/db"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 type RunRequest struct {
@@ -95,13 +95,13 @@ func safeValidate(ctx context.Context, req RunRequest, finding models.Finding, p
 	query := parsed.Query()
 	switch pocType {
 	case "xss":
-		query.Set(firstNonEmpty(finding.Parameter, "q"), `"><span>nox-poc</span>`)
+		query.Set(firstNonEmpty(finding.Parameter, "q"), `"><span>nyx-poc</span>`)
 	case "ssti":
 		query.Set(firstNonEmpty(finding.Parameter, "q"), "{{7*7}}")
 	case "xxe":
-		query.Set(firstNonEmpty(finding.Parameter, "q"), `<!DOCTYPE x [<!ENTITY nox "nox">]>`)
+		query.Set(firstNonEmpty(finding.Parameter, "q"), `<!DOCTYPE x [<!ENTITY nyx "nyx">]>`)
 	case "redirect", "open_redirect":
-		query.Set(firstNonEmpty(finding.Parameter, "next"), "https://example.com/nox-redirect-marker")
+		query.Set(firstNonEmpty(finding.Parameter, "next"), "https://example.com/nyx-redirect-marker")
 	default:
 		return "", "", 0
 	}
@@ -114,7 +114,7 @@ func safeValidate(ctx context.Context, req RunRequest, finding models.Finding, p
 	if err != nil {
 		return "", "", 0
 	}
-	httpReq.Header.Set("User-Agent", "nox/0.1 safe-poc")
+	httpReq.Header.Set("User-Agent", "nyx/0.1 safe-poc")
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return err.Error(), models.PoCStatusFailed, 0
@@ -123,7 +123,7 @@ func safeValidate(ctx context.Context, req RunRequest, finding models.Finding, p
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	body := strings.ToLower(string(bodyBytes))
 	switch {
-	case pocType == "xss" && strings.Contains(body, "nox-poc"):
+	case pocType == "xss" && strings.Contains(body, "nyx-poc"):
 		return fmt.Sprintf("Reflected marker observed with HTTP %d.", resp.StatusCode), models.PoCStatusConfirmed, resp.StatusCode
 	case pocType == "ssti" && strings.Contains(string(bodyBytes), "49"):
 		return fmt.Sprintf("SSTI arithmetic marker evaluated with HTTP %d.", resp.StatusCode), models.PoCStatusConfirmed, resp.StatusCode

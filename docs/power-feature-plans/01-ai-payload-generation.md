@@ -8,7 +8,7 @@ report appendices.
 
 ## Goal And Success Criteria
 
-Add operator-triggered payload generation for confirmed findings. Nox should
+Add operator-triggered payload generation for confirmed findings. Nyx should
 assemble target context, generate ranked payloads through the configured
 OpenAI-compatible LLM, persist them in the session DB, expose them through API,
 CLI, reports, and the finding detail UI, and optionally validate a payload
@@ -145,10 +145,10 @@ API endpoints:
 
 CLI commands:
 
-- `nox payloads generate <session-id> --finding <finding-id> [--force]`
-- `nox payloads generate <session-id> --all [--force]`
-- `nox payloads list <session-id> [--finding <id>] [--validated-only]`
-- `nox payloads validate <session-id> --payload <payload-id>`
+- `nyx payloads generate <session-id> --finding <finding-id> [--force]`
+- `nyx payloads generate <session-id> --all [--force]`
+- `nyx payloads list <session-id> [--finding <id>] [--validated-only]`
+- `nyx payloads validate <session-id> --payload <payload-id>`
 
 CLI output defaults to terminal table and supports `--format json`.
 

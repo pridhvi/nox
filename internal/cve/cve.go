@@ -13,12 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
 const (
-	EnvOfflinePath  = "NOX_CVE_OFFLINE_PATH"
-	EnvEnableRemote = "NOX_CVE_ENABLE_REMOTE"
+	EnvOfflinePath  = "NYX_CVE_OFFLINE_PATH"
+	EnvEnableRemote = "NYX_CVE_ENABLE_REMOTE"
 	DefaultCacheTTL = 24 * time.Hour
 )
 
@@ -74,7 +74,7 @@ func NewDefaultCorrelator() *Correlator {
 			NewGitHubAdvisoryClient(client, ""),
 		)
 	}
-	if path := strings.TrimSpace(os.Getenv("NOX_CVE_EXPLOITDB_PATH")); path != "" {
+	if path := strings.TrimSpace(os.Getenv("NYX_CVE_EXPLOITDB_PATH")); path != "" {
 		sources = append(sources, NewExploitDBSource(path))
 	}
 	return NewCorrelator(sources, NewCache(DefaultCacheTTL))

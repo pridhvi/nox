@@ -2,12 +2,12 @@
 
 build:
 	cd web && npm run build
-	go build -o bin/nox .
+	go build -o bin/nyx .
 
 ci: test web build compose-config
 
 dev:
-	@echo "Starting Nox API on http://127.0.0.1:6767"
+	@echo "Starting Nyx API on http://127.0.0.1:6767"
 	go run . serve --host 127.0.0.1 --port 6767
 
 test:
@@ -69,7 +69,7 @@ docker-smoke:
 	./scripts/docker-smoke.sh
 
 compose-config:
-	NOX_API_KEY=nox-compose-config docker compose config >/dev/null
+	NYX_API_KEY=nyx-compose-config docker compose config >/dev/null
 
 clean:
 	rm -rf bin coverage web/dist

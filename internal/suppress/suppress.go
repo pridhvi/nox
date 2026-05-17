@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pridhvi/nox/internal/adapters"
+	"github.com/pridhvi/nyx/internal/adapters"
 )
 
 type Rule = adapters.SuppressionRule
 
 func Parse(repoRoot string) ([]Rule, error) {
-	body, err := os.ReadFile(filepath.Join(repoRoot, ".nox-audit-ignore"))
+	body, err := os.ReadFile(filepath.Join(repoRoot, ".nyx-audit-ignore"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil

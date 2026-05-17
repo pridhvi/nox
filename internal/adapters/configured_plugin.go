@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pridhvi/nox/internal/models"
+	"github.com/pridhvi/nyx/internal/models"
 )
 
-const pluginProtocolVersion = "nox.plugin.v1"
+const pluginProtocolVersion = "nyx.plugin.v1"
 
 type ConfiguredPlugin struct {
 	record models.PluginRecord
