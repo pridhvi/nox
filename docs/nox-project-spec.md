@@ -895,6 +895,7 @@ Any process that speaks this JSON contract over stdin/stdout is a valid Nox plug
 | `jwt_tool` | subprocess | JWT: alg:none, weak secret, key confusion |
 | OAuth checks | Go stdlib HTTP | Open redirect in OAuth callbacks, CSRF |
 | Reflected XSS check | Go stdlib HTTP | Marker reflection in seeded query parameters |
+| SQL injection check | Go stdlib HTTP | Bounded boolean/error canaries in seeded query parameters |
 | Open redirect check | Go stdlib HTTP | Controlled external redirects in seeded redirect-like parameters |
 | SSTI detection | Go stdlib HTTP | Server-side template injection |
 | XXE fuzzing | Go stdlib HTTP | XML external entity injection |

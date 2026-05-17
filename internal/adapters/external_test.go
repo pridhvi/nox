@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -531,6 +532,75 @@ func TestOpenRedirectCheckIgnoresNonRedirectParameters(t *testing.T) {
 	input := testHTTPAdapterInput(t, "http://example.test", "/search?q=seed")
 	if NewOpenRedirectCheck().ShouldRun(input) {
 		t.Fatal("expected open redirect check to skip non-redirect parameters")
+	}
+}
+
+func TestSQLICheckConfirmsBooleanDifferential(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		switch {
+		case strings.Contains(id, "1=2"):
+			_, _ = w.Write([]byte("no rows"))
+		case id == "1" || strings.Contains(id, "1=1"):
+			_, _ = w.Write([]byte("user: alice"))
+		default:
+			_, _ = w.Write([]byte("no rows"))
+		}
+	}))
+	defer server.Close()
+	input := testHTTPAdapterInput(t, server.URL, "/item?id=1")
+	adapter := NewSQLICheck()
+	if !adapter.ShouldRun(input) {
+		t.Fatal("expected SQLi check to run with seeded query route")
+	}
+	out, err := adapter.Run(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d; stdout=%s", len(out.Findings), out.ToolRun.RawStdout)
+	}
+	finding := out.Findings[0]
+	if finding.ToolID != "sqli-check" || finding.Parameter != "id" || finding.Status != "confirmed" || finding.Severity != models.SeverityHigh {
+		t.Fatalf("unexpected finding: %#v", finding)
+	}
+}
+
+func TestSQLICheckReportsSQLErrorAsSuspected(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Query().Get("id"), "'") {
+			_, _ = w.Write([]byte("You have an error in your SQL syntax near \"'\""))
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+	input := testHTTPAdapterInput(t, server.URL, "/item?id=1")
+	out, err := NewSQLICheck().Run(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d; stdout=%s", len(out.Findings), out.ToolRun.RawStdout)
+	}
+	finding := out.Findings[0]
+	if finding.ToolID != "sqli-check" || finding.Parameter != "id" || finding.Status != "suspected" || finding.Severity != models.SeverityMedium {
+		t.Fatalf("unexpected finding: %#v", finding)
+	}
+}
+
+func TestSQLICheckDoesNotReportStableLiteralHandling(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("literal:" + r.URL.Query().Get("id")))
+	}))
+	defer server.Close()
+	input := testHTTPAdapterInput(t, server.URL, "/item?id=1")
+	out, err := NewSQLICheck().Run(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Findings) != 0 {
+		t.Fatalf("expected no findings, got %#v", out.Findings)
 	}
 }
 

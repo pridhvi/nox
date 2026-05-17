@@ -81,6 +81,7 @@ func DefaultSafeAdapters() []adapters.Adapter {
 		adapters.NewOAuthCheck(),
 		adapters.NewReflectedXSSCheck(),
 		adapters.NewOpenRedirectCheck(),
+		adapters.NewSQLICheck(),
 		adapters.NewSSTICheck(),
 		adapters.NewXXEFuzz(),
 		adapters.NewNikto(),

@@ -235,7 +235,8 @@ Add generic, bounded validators for common classes:
 - stored XSS marker recall where a read-back route is known or discovered
 - DOM XSS candidate detection with browser-assisted confirmation as a later
   enhancement
-- SQL injection boolean/error/time validation with strict limits
+- SQL injection boolean/error validation with strict limits (implemented for
+  seeded query routes; time-based probing remains deferred)
 - open redirect validation with controlled marker URLs (implemented for seeded
   redirect-like query parameters without following external redirects)
 - command injection marker checks only when the configured profile marks the
@@ -252,7 +253,10 @@ Acceptance criteria:
 - Validators only run in active mode and honor scope/auth context.
 - External redirect markers are never followed by the built-in validator.
 - Confirmed findings are emitted only when a raw XSS canary tag is reflected or
-  a unique marker is returned in a redirect `Location`.
+  a unique marker is returned in a redirect `Location`, or when SQL true/false
+  predicates produce a repeatable differential response.
+- SQL error indicators are recorded as suspected findings, not confirmed
+  exploitation.
 - Tool-run sidecar logs record tested candidates without persisting secrets.
 - Validators produce normalized findings with request/response evidence.
 - Validators record inconclusive and skipped states instead of over-claiming.
@@ -383,9 +387,9 @@ Strong target:
 3. Generic auth profile support.
 4. DVWA authenticated seeded scan.
 5. Generic route/parameter seeding into dynamic adapters.
-6. Safe reflected XSS and open redirect validators.
+6. Safe reflected XSS, SQL injection, and open redirect validators.
 7. Juice Shop profile and authenticated API route seeding.
-8. SQL injection, upload, CORS, XXE, and weak-session validators.
+8. Upload, CORS, XXE, and weak-session validators.
 9. Differential authorization and IDOR framework.
 10. Benchmark coverage reports.
 11. Manual/nightly benchmark CI.

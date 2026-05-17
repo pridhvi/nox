@@ -632,6 +632,9 @@ work and must be carried forward:
   a unique marker and only reports confirmed reflection.
 - Built-in open redirect validator mutates seeded redirect-like query
   parameters with a controlled external marker and never follows the redirect.
+- Built-in SQL injection validator mutates seeded/query/hidden parameters with
+  bounded boolean predicates and a quote canary; boolean differentials are
+  confirmed, while SQL error indicators are suspected findings.
 - Built-in SSTI check sends a bounded arithmetic template probe against query or
   hidden-parameter targets.
 - Built-in XXE fuzz check sends a bounded XML payload and only reports direct
@@ -640,7 +643,7 @@ work and must be carried forward:
 - Existing `sqlmap` and `dalfox` wrappers now use Phase 8 hidden-parameter
   discoveries when the initial target URL has no query string.
 - Parser and adapter tests cover nuclei vulnerability output, SSRFmap, JWT,
-  OAuth, reflected XSS, open redirect, SSTI, XXE, Nikto, and
+  OAuth, reflected XSS, open redirect, SQL injection validation, SSTI, XXE, Nikto, and
   hidden-parameter target handoff.
 
 ### Remaining Work

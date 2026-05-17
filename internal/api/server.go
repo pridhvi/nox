@@ -3115,6 +3115,7 @@ func descriptionForTool(id string) string {
 		"oauth-check":           "Checks OAuth and OIDC metadata for common misconfigurations.",
 		"reflected-xss-check":   "Safely validates seeded query parameters for reflected XSS markers.",
 		"open-redirect-check":   "Safely validates seeded redirect-like parameters without following external redirects.",
+		"sqli-check":            "Safely validates seeded query parameters for SQL injection with bounded boolean and error canaries.",
 		"ssti-check":            "Performs safe server-side template injection checks.",
 		"xxe-check":             "Performs safe XML external entity exposure checks.",
 		"nikto":                 "Runs Nikto web server checks against scoped HTTP services.",
