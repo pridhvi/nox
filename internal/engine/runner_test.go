@@ -167,7 +167,7 @@ func TestRunnerLoadsConfiguredPlugins(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	runner := NewRunnerWithHTTPClient(store, nil)
+	runner := NewRunnerWithOptions(store, nil, nil, RunnerOptions{GlobalConcurrency: 1, PerToolConcurrency: 1})
 	if err := runner.Run(ctx, session); err != nil {
 		t.Fatal(err)
 	}

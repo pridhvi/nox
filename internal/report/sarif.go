@@ -55,9 +55,9 @@ func renderSARIF(report models.Report) []byte {
 	var findings []models.Finding
 	_ = json.Unmarshal([]byte(report.Summary), &findings)
 	rules := map[string]sarifRule{}
-	var results []sarifResult
+	results := make([]sarifResult, 0, len(findings))
 	for _, finding := range findings {
-		if finding.Status != "" && finding.Status != "confirmed" {
+		if finding.Status == "suppressed" || finding.Status == "dismissed" {
 			continue
 		}
 		ruleID := finding.ToolID + "/" + string(finding.Type)

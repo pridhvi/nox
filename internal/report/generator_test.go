@@ -49,6 +49,7 @@ func TestGenerateMarkdownHTMLAndPDFReports(t *testing.T) {
 		URL:                "https://example.com",
 		EvidenceRaw:        "raw evidence",
 		EvidenceNormalized: "normalized evidence",
+		Status:             "open",
 		CreatedAt:          time.Now().UTC(),
 	}
 	if err := store.InsertFinding(ctx, finding); err != nil {
@@ -127,7 +128,7 @@ func TestGenerateMarkdownHTMLAndPDFReports(t *testing.T) {
 		}
 		if format == models.ReportFormatSARIF {
 			body := string(artifact.Content)
-			if !strings.Contains(body, `"version": "2.1.0"`) || strings.Contains(body, "Suppressed finding") {
+			if !strings.Contains(body, `"version": "2.1.0"`) || !strings.Contains(body, "High report finding") || strings.Contains(body, "Suppressed finding") {
 				t.Fatalf("unexpected sarif body: %s", body)
 			}
 		}
