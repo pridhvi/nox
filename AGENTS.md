@@ -19,9 +19,9 @@ This repo has a buildable backend with module path `github.com/pridhvi/nox`, abs
 
 The phase roadmap in `docs/implementation-plan.md` is complete from the repository perspective. Future enhancement modules are tracked in `docs/nox-power-features-spec.md`, with agent-ready implementation plans in `docs/power-feature-plans/`. Benchmark-driven scanner depth is tracked in `docs/benchmark-driven-scanner-depth.md`; DVWA and OWASP Juice Shop should be used as repeatable ground-truth benchmarks for generic scanner improvements, not as app-specific detection shortcuts. App-specific credentials, seed routes, setup, and expected mappings belong in benchmark profiles only. Next tasks should be hardening and depth rather than new roadmap phases:
 
-1. Extend authenticated scan profiles with cookie-jar refresh/re-login and richer auth failure events.
+1. Extend authenticated scan profiles with cookie-jar refresh/re-login during long scans and richer auth failure events.
 2. Add safe validation engines for weak session IDs and CSRF; do not hardcode benchmark app logic into adapters.
-3. Turn Linux full-tool acceptance findings into parser/timeout/install fixes.
+3. Turn remaining Linux full-tool acceptance findings into parser/timeout/install fixes, using `scripts/install-linux-tools.sh --execute` plus strict tool smoke as the readiness loop.
 4. Add optional code-splitting for any remaining large frontend graph/chart bundle paths.
 5. Add more vulnerable fixture scenarios as new deterministic adapters are introduced.
 6. Use `NOX_RUN_BROWSER_SMOKE=1 make browser-smoke` for UI regression checks after operator-console changes.

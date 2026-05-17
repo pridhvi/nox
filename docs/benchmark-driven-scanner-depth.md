@@ -108,6 +108,8 @@ Acceptance criteria:
 
 - One command starts both targets and verifies health.
 - One command runs each benchmark and writes a summary JSON.
+- Benchmark setup validates DVWA authentication plus low security level and
+  creates or reuses the Juice Shop benchmark user before scans start.
 - Benchmark commands are opt-in and do not run in normal push CI.
 - Failure artifacts are preserved.
 
@@ -138,6 +140,12 @@ Expected mappings should use generic classes:
 - `idor`
 - `broken_authentication`
 - `sensitive_data_exposure`
+
+Mappings can use `match` for legacy "any matching field is enough" behavior, or
+`all_match` when a benchmark item should only count if every specified field
+matches the same finding. Use `all_match` for high-signal validations such as
+tool plus seeded route plus title/status so broad misconfiguration findings do
+not inflate benchmark coverage.
 - `security_misconfiguration`
 - `vulnerable_component`
 - `xxe`

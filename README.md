@@ -109,7 +109,7 @@ All external tools are optional. Missing tools are recorded as tool runs and the
 
 Static audit tools are registered as `audit/<id>`. Built-in source analyzers always run; optional tools such as `semgrep`, `bandit`, `gosec`, `govulncheck`, `npm audit`, `retire.js`, `safety`, `brakeman`, `spotbugs`, `psalm`, `trufflehog`, `gitleaks`, and `grype` run when installed. Their native outputs are parsed into normalized findings or package CVEs where possible, with a generic JSON fallback for future adapter shapes.
 
-The Docker image bundles a baseline scanner set (`curl`, `dig`, `ffuf`, `nikto`, `nmap`, `python3`, `sqlmap`, `whatweb`, and `whois`) and verifies those tools during Docker smoke tests. Other external scanners remain optional user-installed tools in single-binary mode and are reported by the tool-version smoke script when present. ProjectDiscovery tools currently run as subprocess adapters; native Go-library integrations are intentionally deferred until they prove worth the added dependency and in-process resource risk.
+The Docker image bundles a baseline scanner set (`curl`, `dig`, `ffuf`, `nikto`, `nmap`, `python3`, `sqlmap`, `whatweb`, and `whois`) and verifies those tools during Docker smoke tests. Other external scanners remain optional user-installed tools in single-binary mode and are reported by the tool-version smoke script when present. `scripts/install-linux-tools.sh` prints a dry-run Linux setup plan by default and can install the supported tool set with `--execute`; it prepends user-local Go, Python, Composer, and Ruby paths so broken system shims do not mask working user installs. ProjectDiscovery tools currently run as subprocess adapters; native Go-library integrations are intentionally deferred until they prove worth the added dependency and in-process resource risk.
 
 ## Configuration
 
@@ -208,13 +208,16 @@ dispatch; the power and browser suites are local opt-in for now.
 
 Benchmark-driven scanner depth uses DVWA and OWASP Juice Shop as repeatable
 ground-truth targets for generic scanner improvements. App-specific credentials,
-route seeds, and expected coverage mappings live under `benchmarks/`; scanner
-adapters must remain target-agnostic. Active-mode scans now include bounded,
-auth-aware built-in validators for reflected XSS markers, SQL injection
-boolean/error canaries, harmless file uploads, non-exfiltrating XML entity
-markers, and open redirects on seeded query routes; they do not follow external
-redirects and only report confirmed validation when the marker or predicate
-behavior is observed.
+target setup, route seeds, and expected coverage mappings live under
+`benchmarks/`; scanner adapters must remain target-agnostic. The benchmark
+harness preflights DVWA login plus low security level and creates/reuses the
+Juice Shop benchmark user before scanning, so authentication failures are
+reported as setup failures instead of noisy low-coverage scans. Active-mode
+scans now include bounded, auth-aware built-in validators for reflected XSS
+markers, SQL injection boolean/error canaries, harmless file uploads,
+non-exfiltrating XML entity markers, and open redirects on seeded query routes;
+they do not follow external redirects and only report confirmed validation when
+the marker or predicate behavior is observed.
 
 ```sh
 make benchmark-targets-up

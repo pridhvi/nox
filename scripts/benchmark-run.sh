@@ -104,6 +104,171 @@ PY
   printf '%s' "$output"
 }
 
+setup_benchmark_target() {
+  name="$1"
+  target_url="$2"
+  setup_log="$artifact_root/$name/setup.log"
+  python3 - "$name" "$target_url" "$setup_log" <<'PY'
+import html
+import http.cookiejar
+import json
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+name = sys.argv[1]
+target_url = sys.argv[2].rstrip("/") + "/"
+log_path = Path(sys.argv[3])
+log_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def log(message: str) -> None:
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(message.rstrip() + "\n")
+
+
+def absolute(path: str) -> str:
+    return urllib.parse.urljoin(target_url, path.lstrip("/"))
+
+
+jar = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+
+def request(method: str, path: str, *, form=None, json_body=None, headers=None) -> tuple[int, str]:
+    payload = None
+    req_headers = dict(headers or {})
+    if form is not None:
+        payload = urllib.parse.urlencode(form).encode("utf-8")
+        req_headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if json_body is not None:
+        payload = json.dumps(json_body).encode("utf-8")
+        req_headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(absolute(path), data=payload, headers=req_headers, method=method)
+    try:
+        with opener.open(req, timeout=20) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            return int(response.status), body
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        return int(exc.code), body
+
+
+def csrf_token(body: str) -> str:
+    match = re.search(r"name=[\"']user_token[\"'][^>]*value=[\"']([^\"']+)", body, re.I)
+    if not match:
+        match = re.search(r"value=[\"']([^\"']+)[\"'][^>]*name=[\"']user_token[\"']", body, re.I)
+    if not match:
+        raise SystemExit("DVWA CSRF token not found during benchmark setup")
+    return html.unescape(match.group(1))
+
+
+def cookie_value(cookie_name: str) -> str:
+    for cookie in jar:
+        if cookie.name == cookie_name:
+            return cookie.value
+    return ""
+
+
+def setup_dvwa() -> None:
+    log(f"preparing DVWA benchmark at {target_url}")
+    status, login_page = request("GET", "/login.php")
+    log(f"GET /login.php status={status}")
+    if status >= 400:
+        raise SystemExit(f"DVWA login page returned HTTP {status}")
+
+    try:
+        token = csrf_token(login_page)
+    except SystemExit:
+        setup_status, _ = request("POST", "/setup.php", form={"create_db": "Create / Reset Database"})
+        log(f"POST /setup.php create_db status={setup_status}")
+        status, login_page = request("GET", "/login.php")
+        log(f"GET /login.php after setup status={status}")
+        token = csrf_token(login_page)
+
+    login_status, body = request(
+        "POST",
+        "/login.php",
+        form={
+            "username": "admin",
+            "password": "password",
+            "Login": "Login",
+            "user_token": token,
+        },
+    )
+    log(f"POST /login.php status={login_status}")
+    if login_status >= 400 or "Login failed" in body:
+        raise SystemExit(f"DVWA login failed with HTTP {login_status}")
+
+    security_status, security_page = request("GET", "/security.php")
+    log(f"GET /security.php status={security_status}")
+    security_token = csrf_token(security_page)
+    set_status, _ = request(
+        "POST",
+        "/security.php",
+        form={
+            "security": "low",
+            "seclev_submit": "Submit",
+            "user_token": security_token,
+        },
+    )
+    log(f"POST /security.php low status={set_status}")
+    verify_status, verify_page = request("GET", "/security.php")
+    security_cookie = cookie_value("security")
+    selected_low = bool(re.search(r"<option[^>]+value=[\"']low[\"'][^>]+selected", verify_page, re.I))
+    log(f"GET /security.php verify status={verify_status} security_cookie={security_cookie or 'missing'} selected_low={selected_low}")
+    if security_cookie != "low" and not selected_low:
+        raise SystemExit("DVWA security level did not verify as low")
+
+
+def setup_juice_shop() -> None:
+    log(f"preparing Juice Shop benchmark at {target_url}")
+    email = "nox-benchmark@example.test"
+    password = "NoxBenchmark!12345"
+    registration = {
+        "email": email,
+        "password": password,
+        "passwordRepeat": password,
+        "securityQuestion": {
+            "id": 1,
+            "question": "Your eldest siblings middle name?",
+            "answer": "nox",
+        },
+    }
+    status, body = request("POST", "/api/Users/", json_body=registration)
+    log(f"POST /api/Users/ status={status}")
+    if status not in (200, 201, 400, 409):
+        raise SystemExit(f"Juice Shop user registration failed with HTTP {status}: {body[:240]}")
+    login_status, login_body = request(
+        "POST",
+        "/rest/user/login",
+        json_body={"email": email, "password": password},
+    )
+    log(f"POST /rest/user/login status={login_status}")
+    if login_status >= 400:
+        raise SystemExit(f"Juice Shop benchmark login failed with HTTP {login_status}: {login_body[:240]}")
+    try:
+        parsed = json.loads(login_body)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Juice Shop login response was not JSON: {exc}") from exc
+    token = parsed.get("authentication", {}).get("token")
+    if not token:
+        raise SystemExit("Juice Shop benchmark login response did not contain authentication.token")
+
+
+if name == "dvwa":
+    setup_dvwa()
+elif name == "juice-shop":
+    setup_juice_shop()
+else:
+    log(f"no benchmark setup defined for {name}")
+log("benchmark setup completed")
+PY
+}
+
 target_url_for() {
   name="$1"
   case "$name" in
@@ -130,6 +295,10 @@ run_one() {
 
   copy_profile_artifacts "$name"
   auth_profile="$(auth_profile_for "$name")"
+  setup_benchmark_target "$name" "$target_url" || {
+    sed -n '1,220p' "$artifact_root/$name/setup.log" >&2 || true
+    fail "$name benchmark setup failed"
+  }
   echo "Running $name benchmark against $target_url"
   if command -v timeout >/dev/null 2>&1; then
     scan_prefix="timeout $scan_timeout"

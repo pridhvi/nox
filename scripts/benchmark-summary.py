@@ -73,22 +73,52 @@ def exact_any(value: str, expected: list[str]) -> bool:
     return any(lowered == text(item) for item in expected)
 
 
-def finding_matches(item: dict[str, Any], finding: dict[str, Any]) -> bool:
-    match = item.get("match") or {}
+TEXT_FIELDS = ("title", "description", "url", "parameter", "evidence_normalized")
+EXACT_FIELDS = ("tool", "type", "severity", "status")
+
+
+def field_matches(field: str, values: list[str], finding: dict[str, Any]) -> bool:
+    db_field = "tool_id" if field == "tool" else field
+    if field in TEXT_FIELDS:
+        return contains_any(text(finding.get(db_field)), values)
+    return exact_any(text(finding.get(db_field)), values)
+
+
+def finding_matches_any(match: dict[str, Any], finding: dict[str, Any]) -> bool:
     checks = 0
-    matched = False
     for field in ("title", "description", "url", "parameter", "evidence_normalized"):
         values = match.get(field) or []
         if values:
             checks += 1
-            matched = matched or contains_any(text(finding.get(field)), values)
+            if field_matches(field, values, finding):
+                return True
     for field in ("tool", "type", "severity", "status"):
         values = match.get(field) or []
         if values:
             checks += 1
-            db_field = "tool_id" if field == "tool" else field
-            matched = matched or exact_any(text(finding.get(db_field)), values)
-    return checks > 0 and matched
+            if field_matches(field, values, finding):
+                return True
+    return checks > 0 and False
+
+
+def finding_matches_all(match: dict[str, Any], finding: dict[str, Any]) -> bool:
+    checks = 0
+    for field in (*TEXT_FIELDS, *EXACT_FIELDS):
+        values = match.get(field) or []
+        if not values:
+            continue
+        checks += 1
+        if not field_matches(field, values, finding):
+            return False
+    return checks > 0
+
+
+def finding_matches(item: dict[str, Any], finding: dict[str, Any]) -> bool:
+    all_match = item.get("all_match") or {}
+    if all_match:
+        return finding_matches_all(all_match, finding)
+    match = item.get("match") or {}
+    return finding_matches_any(match, finding)
 
 
 def item_status(item: dict[str, Any], matches: list[dict[str, Any]]) -> str:

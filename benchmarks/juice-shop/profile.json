@@ -23,6 +23,13 @@
     "auth_header": "Authorization",
     "auth_header_prefix": "Bearer "
   },
+  "setup": {
+    "register_user": true,
+    "security_question_id": 1,
+    "security_question": "Your eldest siblings middle name?",
+    "security_answer": "nox",
+    "login_preflight": true
+  },
   "notes": [
     "Juice Shop benchmark setup may create or reuse a benchmark user.",
     "Core scanner adapters must not hardcode Juice Shop challenge names or routes."

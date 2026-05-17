@@ -48,11 +48,14 @@ capabilities. App-specific setup and expected mappings belong in benchmark
 profiles only; scanner adapters must remain target-agnostic.
 
 Current benchmark-depth implementation includes the opt-in DVWA/Juice Shop
-harness, benchmark profile/expected mapping files, CLI/API/UI route seed
-inputs, static auth header/cookie scan context, generic form and JSON login auth
-profiles with CSRF/token extraction and validation requests, redacted session
-JSON/tool-run arguments for auth material, and first adapter consumers for
-built-in HTTP checks plus `ffuf`, `sqlmap`, and `dalfox`.
+harness, benchmark profile/expected mapping files, benchmark-only target
+preflight setup for DVWA low-security mode and Juice Shop user registration,
+strict `all_match` coverage mappings where tool plus route/title evidence must
+line up, CLI/API/UI route seed inputs, static auth header/cookie scan context,
+generic form and JSON login auth profiles with CSRF/token extraction and
+validation requests, redacted session JSON/tool-run arguments for auth material,
+and first adapter consumers for built-in HTTP checks plus `ffuf`, `sqlmap`, and
+`dalfox`.
 
 ## Current Baseline
 

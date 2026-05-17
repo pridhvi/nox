@@ -36,6 +36,11 @@
       }
     ]
   },
+  "setup": {
+    "validate_login": true,
+    "security_level": "low",
+    "fail_if_security_level_mismatch": true
+  },
   "notes": [
     "Auth, CSRF extraction, and security-level setup are benchmark profile data.",
     "Core scanner adapters must not hardcode DVWA route or cookie behavior."

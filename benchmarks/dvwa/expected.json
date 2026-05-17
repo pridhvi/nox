@@ -79,7 +79,7 @@
       "route": "/vulnerabilities/upload/",
       "automation_suitable": true,
       "confirmation_strategy": "harmless marker file upload and retrieval",
-      "match": {
+      "all_match": {
         "url": [
           "/vulnerabilities/upload/"
         ],
@@ -151,7 +151,7 @@
       "route": "/vulnerabilities/sqli/",
       "automation_suitable": true,
       "confirmation_strategy": "safe boolean/error/time SQL injection validation with tight limits",
-      "match": {
+      "all_match": {
         "url": [
           "/vulnerabilities/sqli/"
         ],
@@ -174,7 +174,7 @@
       "route": "/vulnerabilities/sqli_blind/",
       "automation_suitable": true,
       "confirmation_strategy": "safe boolean/time SQL injection validation with tight limits",
-      "match": {
+      "all_match": {
         "url": [
           "/vulnerabilities/sqli_blind/"
         ],
@@ -197,7 +197,7 @@
       "route": "/vulnerabilities/xss_r/",
       "automation_suitable": true,
       "confirmation_strategy": "unique marker reflection and context validation",
-      "match": {
+      "all_match": {
         "url": [
           "/vulnerabilities/xss_r/"
         ],

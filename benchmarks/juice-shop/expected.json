@@ -88,7 +88,7 @@
       "label": "Injection",
       "automation_suitable": true,
       "confirmation_strategy": "safe SQL/NoSQL/command/SSTI marker validation with strict limits",
-      "match": {
+      "all_match": {
         "tool": [
           "sqlmap",
           "sqli-check"
@@ -140,7 +140,7 @@
       "label": "Security Misconfiguration",
       "automation_suitable": true,
       "confirmation_strategy": "header, CORS, exposed docs, and server configuration checks",
-      "match": {
+      "all_match": {
         "type": [
           "misconfiguration"
         ],
@@ -193,7 +193,7 @@
       "label": "Unvalidated Redirects",
       "automation_suitable": true,
       "confirmation_strategy": "controlled marker redirect validation",
-      "match": {
+      "all_match": {
         "url": [
           "/redirect"
         ],
@@ -231,7 +231,7 @@
       "label": "XSS",
       "automation_suitable": true,
       "confirmation_strategy": "reflected/stored/DOM marker validation",
-      "match": {
+      "all_match": {
         "tool": [
           "dalfox",
           "reflected-xss-check"

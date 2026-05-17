@@ -5,6 +5,29 @@ mode="${1:-host}"
 strict="${NOX_TOOL_SMOKE_STRICT:-0}"
 missing_recommended=0
 
+version_output() {
+  set +e
+  output="$("$@" 2>&1)"
+  status="$?"
+  set -e
+  if [ "$status" -eq 0 ]; then
+    first_line="$(printf '%s\n' "$output" | sed -n '/[^[:space:]]/{p;q;}')"
+    if [ -n "$first_line" ]; then
+      echo "$first_line"
+    else
+      echo "available"
+    fi
+    return 0
+  fi
+  first_line="$(printf '%s\n' "$output" | sed -n '/[^[:space:]]/{p;q;}')"
+  if [ -n "$first_line" ]; then
+    echo "failed (${status}): $first_line"
+  else
+    echo "failed (${status})"
+  fi
+  return "$status"
+}
+
 check_required() {
   name="$1"
   shift
@@ -13,10 +36,10 @@ check_required() {
     return 1
   fi
   printf '%s: ' "$name"
-  if "$@" 2>&1 | head -n 1; then
+  if version_output "$@"; then
     return 0
   fi
-  echo "available"
+  return 1
 }
 
 check_optional() {
@@ -27,10 +50,10 @@ check_optional() {
     return 0
   fi
   printf '%s: ' "$name"
-  if "$@" 2>&1 | head -n 1; then
+  if version_output "$@"; then
     return 0
   fi
-  echo "available"
+  return 0
 }
 
 check_recommended() {
@@ -42,10 +65,11 @@ check_recommended() {
     return 0
   fi
   printf '%s: ' "$name"
-  if "$@" 2>&1 | head -n 1; then
+  if version_output "$@"; then
     return 0
   fi
-  echo "available"
+  missing_recommended=$((missing_recommended + 1))
+  return 0
 }
 
 check_required curl curl --version
@@ -58,7 +82,7 @@ check_required sqlmap sqlmap --version
 check_required whatweb whatweb --version
 check_required whois whois --version
 
-check_optional arjun arjun --version
+check_optional arjun arjun -h
 check_optional dalfox dalfox version
 check_optional dnsx dnsx -version
 check_optional droopescan droopescan --version
