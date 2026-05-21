@@ -335,9 +335,9 @@ func TestRunnerPropagatesPriorFindingsAndTechnologies(t *testing.T) {
 func TestRunnerFiltersSelectedToolsAndPassesToolParameters(t *testing.T) {
 	ctx := context.Background()
 	session, store := testRunnerStore(t, ctx)
-	session.EnabledTools = []string{"selected"}
+	session.EnabledTools = []string{"sqlmap"}
 	session.ToolParameters = map[string]map[string]any{
-		"selected": {"level": float64(3), "extra_args": []any{"--safe"}},
+		"sqlmap": {"level": float64(3), "extra_args": []any{"--technique", "B"}},
 	}
 	ran := map[string]bool{}
 	var selectedInput adapters.AdapterInput
@@ -350,12 +350,12 @@ func TestRunnerFiltersSelectedToolsAndPassesToolParameters(t *testing.T) {
 			},
 		},
 		fakeRunnerAdapter{
-			id:   "selected",
+			id:   "sqlmap",
 			deps: []string{"dependency"},
 			runFunc: func(ctx context.Context, input adapters.AdapterInput) (adapters.AdapterOutput, error) {
-				ran["selected"] = true
+				ran["sqlmap"] = true
 				selectedInput = input
-				return adapters.AdapterOutput{ToolRun: models.ToolRun{ID: models.NewID(), SessionID: input.Session.ID, TargetID: input.Target.ID, ToolID: "selected", StartedAt: time.Now().UTC()}}, nil
+				return adapters.AdapterOutput{ToolRun: models.ToolRun{ID: models.NewID(), SessionID: input.Session.ID, TargetID: input.Target.ID, ToolID: "sqlmap", StartedAt: time.Now().UTC()}}, nil
 			},
 		},
 		fakeRunnerAdapter{
@@ -369,11 +369,50 @@ func TestRunnerFiltersSelectedToolsAndPassesToolParameters(t *testing.T) {
 	if err := runner.Run(ctx, session); err != nil {
 		t.Fatal(err)
 	}
-	if !ran["dependency"] || !ran["selected"] || ran["unselected"] {
+	if !ran["dependency"] || !ran["sqlmap"] || ran["unselected"] {
 		t.Fatalf("unexpected selected tool execution: %#v", ran)
 	}
 	if selectedInput.ToolParameters["level"] != float64(3) {
 		t.Fatalf("expected selected tool parameters, got %#v", selectedInput.ToolParameters)
+	}
+}
+
+func TestRunnerRejectsInvalidPersistedToolParametersBeforeAdapterRun(t *testing.T) {
+	ctx := context.Background()
+	session, store := testRunnerStore(t, ctx)
+	session.EnabledTools = []string{"sqlmap"}
+	session.ToolParameters = map[string]map[string]any{
+		"sqlmap": {"extra_args": []any{"--os-shell"}},
+	}
+	ran := false
+	runner := NewRunnerWithOptions(store, []adapters.Adapter{
+		fakeRunnerAdapter{
+			id: "sqlmap",
+			runFunc: func(ctx context.Context, input adapters.AdapterInput) (adapters.AdapterOutput, error) {
+				ran = true
+				return adapters.AdapterOutput{ToolRun: models.ToolRun{ID: models.NewID(), SessionID: input.Session.ID, TargetID: input.Target.ID, ToolID: "sqlmap", StartedAt: time.Now().UTC()}}, nil
+			},
+		},
+	}, nil, RunnerOptions{GlobalConcurrency: 1, PerToolConcurrency: 1})
+	if err := runner.Run(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	if ran {
+		t.Fatal("expected adapter not to run with invalid persisted tool parameters")
+	}
+	runs, err := store.ListToolRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].ToolID != "sqlmap" || runs[0].ExitCode == 0 {
+		t.Fatalf("expected failed invalid-parameter tool run, got %#v", runs)
+	}
+	body, err := os.ReadFile(runs[0].StderrPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "invalid tool parameters") {
+		t.Fatalf("expected invalid-parameter stderr sidecar, got %q", string(body))
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jung-kurt/gofpdf"
+	"github.com/go-pdf/fpdf"
 	"github.com/pridhvi/nyx/internal/db"
 	"github.com/pridhvi/nyx/internal/models"
 )
@@ -520,7 +520,7 @@ func renderHTML(report models.Report) string {
 }
 
 func renderPDF(text string) []byte {
-	pdf := gofpdf.New("P", "mm", "Letter", "")
+	pdf := fpdf.New("P", "mm", "Letter", "")
 	pdf.SetTitle("Nyx Security Report", false)
 	pdf.SetAuthor("nyx", false)
 	pdf.SetMargins(18, 16, 18)

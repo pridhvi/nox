@@ -19,8 +19,11 @@ Run the packaged smoke check:
 make docker-smoke
 ```
 
-The smoke check builds the image, starts Nyx, verifies `/api/health`, verifies
-`/api/tools`, and runs `nyx version` inside the container.
+The image uses a pinned Debian 13 slim runtime digest, enables Debian's non-free
+component for `nikto`, and installs the baseline scanner set documented in the
+README. The smoke check builds the image, starts Nyx, verifies `/api/health`,
+verifies `/api/tools`, runs `nyx version`, and checks bundled scanner versions
+inside the container.
 
 ## Compose
 

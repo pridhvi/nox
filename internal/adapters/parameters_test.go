@@ -1,0 +1,47 @@
+package adapters
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestValidateToolParametersAllowsSafeExtraArgs(t *testing.T) {
+	err := ValidateToolParameters(map[string]map[string]any{
+		"ffuf": {
+			"wordlist":        "/tmp/words.txt",
+			"timeout_seconds": 5,
+			"extra_args":      []any{"-mc", "200,204", "-rate", "10"},
+		},
+		"sqlmap": {
+			"level":      1,
+			"risk":       1,
+			"extra_args": []string{"--technique", "B"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected safe extra args to validate: %v", err)
+	}
+}
+
+func TestValidateToolParametersRejectsUnsafeExtraArgs(t *testing.T) {
+	err := ValidateToolParameters(map[string]map[string]any{
+		"sqlmap": {"extra_args": []any{"--os-shell"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "safe allow-list") {
+		t.Fatalf("expected unsafe arg rejection, got %v", err)
+	}
+}
+
+func TestValidateToolParametersRejectsUnknownParameter(t *testing.T) {
+	err := ValidateToolParameterValues("ffuf", map[string]any{"shell": "nope"})
+	if err == nil || !strings.Contains(err.Error(), "does not support parameter") {
+		t.Fatalf("expected unsupported parameter rejection, got %v", err)
+	}
+}
+
+func TestValidateToolParametersRejectsControlCharacters(t *testing.T) {
+	err := ValidateExtraArgs("ffuf", []string{"-mc", "200\n--bad"})
+	if err == nil || !strings.Contains(err.Error(), "invalid argument") {
+		t.Fatalf("expected control-character rejection, got %v", err)
+	}
+}

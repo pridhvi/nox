@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/pridhvi/nyx/internal/adapters"
 	"github.com/pridhvi/nyx/internal/models"
@@ -16,23 +17,29 @@ type Scheduler struct {
 	sessionDir string
 	httpClient adapters.HTTPDoer
 	cron       *cron.Cron
+	runNow     func(context.Context, string) (models.MonitorRun, []models.SurfaceChange, error)
 	mu         sync.Mutex
 	stopOnce   sync.Once
 	jobs       map[string]cron.EntryID
 }
 
 func NewScheduler(store *state.Store, sessionDir string, httpClient adapters.HTTPDoer) *Scheduler {
-	return &Scheduler{
+	scheduler := &Scheduler{
 		store:      store,
 		sessionDir: sessionDir,
 		httpClient: httpClient,
 		cron:       cron.New(cron.WithParser(cronParser)),
 		jobs:       map[string]cron.EntryID{},
 	}
+	scheduler.runNow = func(ctx context.Context, configID string) (models.MonitorRun, []models.SurfaceChange, error) {
+		runner := Runner{State: scheduler.store, SessionDir: scheduler.sessionDir, HTTPClient: scheduler.httpClient}
+		return runner.RunNow(ctx, configID)
+	}
+	return scheduler
 }
 
 func (s *Scheduler) Start(ctx context.Context) error {
-	if err := s.Reload(ctx); err != nil {
+	if err := s.reload(ctx, true); err != nil {
 		return err
 	}
 	s.cron.Start()
@@ -52,10 +59,16 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) Reload(ctx context.Context) error {
+	return s.reload(ctx, false)
+}
+
+func (s *Scheduler) reload(ctx context.Context, catchUpOverdue bool) error {
 	configs, err := s.store.ListMonitorConfigs(ctx)
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
+	var overdue []string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, id := range s.jobs {
@@ -75,17 +88,25 @@ func (s *Scheduler) Reload(ctx context.Context) error {
 			continue
 		}
 		s.jobs[config.ID] = entryID
+		isOverdue := catchUpOverdue && config.NextRunAt != nil && !config.NextRunAt.After(now)
+		if isOverdue {
+			overdue = append(overdue, config.ID)
+			continue
+		}
 		if entry := s.cron.Entry(entryID); !entry.Next.IsZero() {
 			_ = s.store.UpdateMonitorRunMetadata(context.Background(), config.ID, "", nil, &entry.Next)
 		}
+	}
+	for _, configID := range overdue {
+		configID := configID
+		go s.runScheduled(configID)
 	}
 	return nil
 }
 
 func (s *Scheduler) runScheduled(configID string) {
 	ctx := context.Background()
-	runner := Runner{State: s.store, SessionDir: s.sessionDir, HTTPClient: s.httpClient}
-	run, changes, err := runner.RunNow(ctx, configID)
+	run, changes, err := s.runNow(ctx, configID)
 	if err != nil {
 		slog.Warn("scheduled monitor run failed", "config_id", configID, "run_id", run.ID, "error", err)
 		return

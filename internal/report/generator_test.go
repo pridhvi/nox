@@ -55,6 +55,22 @@ func TestGenerateMarkdownHTMLAndPDFReports(t *testing.T) {
 	if err := store.InsertFinding(ctx, finding); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.InsertFinding(ctx, models.Finding{
+		ID:          models.NewID(),
+		SessionID:   session.ID,
+		TargetID:    target.ID,
+		ToolID:      "html-escape-test",
+		Type:        models.FindingTypeVulnerability,
+		Severity:    models.SeverityMedium,
+		Confidence:  0.6,
+		Title:       `<script>alert("title")</script>`,
+		Description: `<img src=x onerror=alert("description")>`,
+		URL:         "https://example.com/unsafe",
+		Status:      "open",
+		CreatedAt:   time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	sourceFinding := models.SourceFinding{
 		ID:                 models.NewID(),
 		SessionID:          session.ID,
@@ -124,6 +140,12 @@ func TestGenerateMarkdownHTMLAndPDFReports(t *testing.T) {
 				if !strings.Contains(body, expected) {
 					t.Fatalf("expected markdown report to contain %q, got %s", expected, body)
 				}
+			}
+		}
+		if format == models.ReportFormatHTML {
+			body := string(artifact.Content)
+			if strings.Contains(body, "<script>") || strings.Contains(body, "<img src=x") || !strings.Contains(body, "&lt;script&gt;") {
+				t.Fatalf("expected HTML report to escape finding content, got %s", body)
 			}
 		}
 		if format == models.ReportFormatSARIF {

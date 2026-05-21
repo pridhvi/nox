@@ -100,8 +100,8 @@ log/slog                                # stdlib
 # viper handles YAML/TOML/JSON/env
 
 # Report generation
-github.com/jung-kurt/gofpdf             # PDF reports
-html/template                           # stdlib, HTML reports
+github.com/go-pdf/fpdf                  # PDF reports
+html                                    # stdlib, escaped HTML reports
 
 # Testing
 github.com/stretchr/testify
@@ -142,7 +142,7 @@ ProjectDiscovery tools (`nuclei`, `httpx`, `subfinder`, `naabu`, `dnsx`) are sub
 
 ### 3.6 Packaging
 
-- **Docker:** Multi-stage build. Stage 1 builds the frontend (`node:20-alpine`). Stage 2 builds the Go binary (`golang:1.26-alpine`). Stage 3 runs on `kalilinux/kali-rolling` with baseline external tools installed and a tool-version smoke script for bundled scanner checks.
+- **Docker:** Multi-stage build. Stage 1 builds the frontend (`node:20-alpine`). Stage 2 builds the Go binary (`golang:1.26-alpine`). Stage 3 runs on a pinned Debian 13 slim runtime digest with baseline external tools installed and a tool-version smoke script for bundled scanner checks.
 - **Single binary option:** `goreleaser` for cross-platform binary releases. The binary embeds the frontend. External tools (nmap etc.) must be installed separately in this mode.
 
 ### 3.7 Current V1 Architecture Notes
@@ -227,7 +227,7 @@ nyx/
 │   └── report/
 │       ├── generator.go     # Report orchestration
 │       ├── html.go          # HTML template rendering
-│       ├── pdf.go           # PDF generation via gofpdf
+│       ├── pdf.go           # PDF generation via go-pdf/fpdf
 │       └── templates/       # Go HTML templates
 │
 ├── web/                     # React + TypeScript frontend
@@ -1739,8 +1739,11 @@ COPY . .
 COPY --from=frontend /src/internal/api/web/dist ./internal/api/web/dist
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/nyx .
 
-FROM kalilinux/kali-rolling
-RUN apt-get update && apt-get install -y --no-install-recommends \
+FROM debian:13-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e51af8883bf8
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i 's/Components: main/Components: main contrib non-free non-free-firmware/g' /etc/apt/sources.list.d/debian.sources; \
+    fi \
+  && apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl dnsutils ffuf nikto nmap python3 python3-pip \
     sqlmap whatweb whois \
   && apt-get clean \

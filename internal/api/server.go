@@ -779,7 +779,7 @@ func monitorConfigFromRequest(req monitorConfigRequest, id string, createdAt tim
 	if err := validateTools(req.EnabledTools); err != nil {
 		return models.MonitorConfig{}, err
 	}
-	if err := validateToolParameters(req.ToolParameters); err != nil {
+	if err := adapters.ValidateToolParameters(req.ToolParameters); err != nil {
 		return models.MonitorConfig{}, err
 	}
 	if err := monitor.ValidateAlertTriggers(req.AlertOn); err != nil {
@@ -1487,7 +1487,7 @@ func (s *Server) createScanProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := validateToolParameters(req.Request.ToolParameters); err != nil {
+	if err := adapters.ValidateToolParameters(req.Request.ToolParameters); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -2542,7 +2542,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := validateToolParameters(req.ToolParameters); err != nil {
+	if err := adapters.ValidateToolParameters(req.ToolParameters); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -2932,107 +2932,6 @@ func validateTools(toolIDs []string) error {
 		}
 	}
 	return nil
-}
-
-func validateToolParameters(parameters map[string]map[string]any) error {
-	for toolID, values := range parameters {
-		toolID = strings.TrimSpace(toolID)
-		if toolID == "" {
-			return fmt.Errorf("tool parameter entry is missing a tool id")
-		}
-		if strings.HasPrefix(toolID, "plugin:") {
-			continue
-		}
-		if _, ok := adapters.Get(toolID); !ok {
-			return fmt.Errorf("tool parameters reference unknown tool %q", toolID)
-		}
-		allowed := toolParameterSet(toolID)
-		for name, value := range values {
-			if !allowed[name] {
-				return fmt.Errorf("tool %q does not support parameter %q", toolID, name)
-			}
-			if name == "extra_args" {
-				if err := validateExtraArgs(toolID, value); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func toolParameterSet(toolID string) map[string]bool {
-	out := map[string]bool{}
-	for _, parameter := range parametersForTool(toolID) {
-		out[parameter.Name] = true
-	}
-	return out
-}
-
-func validateExtraArgs(toolID string, value any) error {
-	args := parameterStringList(value)
-	allowedFlags := safeExtraArgFlags(toolID)
-	if len(allowedFlags) == 0 && len(args) > 0 {
-		return fmt.Errorf("tool %q does not accept extra args", toolID)
-	}
-	for _, arg := range args {
-		if len(arg) > 200 || strings.ContainsAny(arg, "\x00\r\n") {
-			return fmt.Errorf("tool %q extra args contain an invalid argument", toolID)
-		}
-		if strings.HasPrefix(arg, "-") && !allowedFlags[arg] {
-			return fmt.Errorf("tool %q extra arg %q is not in the safe allow-list", toolID, arg)
-		}
-	}
-	return nil
-}
-
-func parameterStringList(value any) []string {
-	switch typed := value.(type) {
-	case []string:
-		return compactParameterStrings(typed)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
-				out = append(out, text)
-			}
-		}
-		return out
-	case string:
-		return compactParameterStrings(strings.Fields(typed))
-	default:
-		text := strings.TrimSpace(fmt.Sprint(typed))
-		if text == "" {
-			return nil
-		}
-		return []string{text}
-	}
-}
-
-func compactParameterStrings(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			out = append(out, value)
-		}
-	}
-	return out
-}
-
-func safeExtraArgFlags(toolID string) map[string]bool {
-	flags := map[string][]string{
-		"ffuf":        {"-ac", "-b", "-fc", "-fl", "-fs", "-fw", "-H", "-mc", "-rate", "-recursion", "-recursion-depth", "-t", "-timeout"},
-		"nuclei-tech": {"-c", "-exclude-tags", "-headless", "-retries", "-rl", "-tags", "-timeout"},
-		"nuclei-vuln": {"-c", "-exclude-tags", "-headless", "-retries", "-rl", "-tags", "-timeout"},
-		"sqlmap":      {"--delay", "--param-filter", "--random-agent", "--technique", "--threads", "--timeout"},
-		"dalfox":      {"--delay", "--follow-redirects", "--only-poc", "--timeout", "--worker"},
-	}
-	out := map[string]bool{}
-	for _, flag := range flags[toolID] {
-		out[flag] = true
-	}
-	return out
 }
 
 func binaryNameForTool(id string) string {

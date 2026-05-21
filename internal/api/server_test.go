@@ -247,6 +247,16 @@ func TestAPIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestStartScanRejectsUnsafeExtraArgs(t *testing.T) {
+	handler := NewServer(Config{SessionDir: t.TempDir()}).Handler()
+	body := bytes.NewBufferString(`{"target":"http://127.0.0.1:1","tools":["sqlmap"],"tool_parameters":{"sqlmap":{"extra_args":["--os-shell"]}}}`)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/scan/start", body))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "safe allow-list") {
+		t.Fatalf("expected unsafe extra args rejection, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPrivilegedOperationsRequireConfiguredAPIKey(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "app.py"), []byte("api_key = \"FAKE_SECRET\"\n"), 0o644); err != nil {
@@ -370,6 +380,11 @@ func TestMonitorConfigAPIRequiresConfiguredAPIKeyAndRedactsSecrets(t *testing.T)
 	}
 
 	handler := NewServer(Config{SessionDir: t.TempDir(), APIKey: "secret"}).Handler()
+	invalid := httptest.NewRecorder()
+	handler.ServeHTTP(invalid, apiKeyRequest(http.MethodPost, "/api/monitor/configs", bytes.NewBufferString(`{"name":"bad","target_input":"http://127.0.0.1:1","schedule":"@daily","enabled_tools":["sqlmap"],"tool_parameters":{"sqlmap":{"extra_args":["--os-shell"]}}}`)))
+	if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), "safe allow-list") {
+		t.Fatalf("expected unsafe monitor extra args rejection, got %d body=%s", invalid.Code, invalid.Body.String())
+	}
 	create := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"name":"fixture","target_input":"http://127.0.0.1:1","schedule":"@daily","notification_config":{"slack_webhook_url":"https://hooks.slack.test/secret"}}`)
 	handler.ServeHTTP(create, apiKeyRequest(http.MethodPost, "/api/monitor/configs", body))

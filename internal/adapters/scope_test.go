@@ -47,6 +47,39 @@ func TestHTTPAdaptersRejectOutOfScopeBeforeNetwork(t *testing.T) {
 	}
 }
 
+func TestSubprocessAdapterRejectsOutOfScopeBeforeBinaryLookup(t *testing.T) {
+	session := models.Session{
+		ID:          "session-1",
+		Mode:        models.ScanModeActive,
+		TargetInput: "https://blocked.example.com/search?q=test",
+		CreatedAt:   time.Now().UTC(),
+	}
+	target := models.Target{
+		ID:        "target-1",
+		SessionID: session.ID,
+		Host:      "blocked.example.com",
+		Protocol:  "https",
+		Port:      443,
+		IsAlive:   true,
+	}
+
+	output, err := NewSQLMap().Run(context.Background(), AdapterInput{
+		SessionID: session.ID,
+		Session:   session,
+		Target:    target,
+		Scope:     rejectingScope{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.ToolRun.ID == "" || output.ToolRun.ExitCode == 0 {
+		t.Fatalf("expected failed out-of-scope tool run, got %#v", output.ToolRun)
+	}
+	if output.ToolRun.RawStderr != "blocked by test scope" {
+		t.Fatalf("expected scope rejection before subprocess lookup, got stderr %q", output.ToolRun.RawStderr)
+	}
+}
+
 type rejectingScope struct{}
 
 func (rejectingScope) IsInScope(string) (bool, string) {

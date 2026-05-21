@@ -6,7 +6,7 @@ A local-first web application penetration testing framework that chains 20+ secu
 
 nyx is for pentesters, bug bounty hunters, and security researchers who want one local workspace for web app reconnaissance, fingerprinting, enumeration, vulnerability checks, source-aware audit, evidence review, and reporting. It keeps each engagement scoped, stores the scan state in SQLite, keeps full tool stdout/stderr as sidecar logs beside the session database, and lets optional external tools contribute findings without making those tools mandatory.
 
-At a high level, nyx creates a scoped session, runs a dependency-aware tool pipeline, normalizes tool output into common target/finding/evidence models, correlates CVEs, builds deterministic and graph-derived attack vectors, lets a local OpenAI-compatible model annotate the results, and generates Markdown, HTML, SARIF, or PDF reports.
+At a high level, nyx creates a scoped session, runs a dependency-aware tool pipeline, normalizes tool output into common target/finding/evidence models, correlates CVEs, builds deterministic and graph-derived attack vectors, lets a local OpenAI-compatible model annotate the results, and generates Markdown, escaped HTML, SARIF, or PDF reports.
 
 It runs entirely locally by default. There is no telemetry, no required cloud service, and no required hosted LLM. Ollama, LM Studio, llama.cpp, and OpenAI-compatible endpoints can be used when LLM analysis is enabled.
 
@@ -102,7 +102,7 @@ JSON login profiles can extract a token into an auth header:
 - **Findings & evidence:** Normalized findings, sidecar stdout/stderr retention, HTTP request/response evidence, technologies, CVE correlation, and tool-run history.
 - **Attack vector engine:** Rule-based and graph-derived chains with confidence scoring, ordered steps, labelled edges, prerequisite findings, and OWASP mapping.
 - **LLM analysis:** OpenAI-compatible local model support, constrained tool calling, persisted audit trail, post-scan analysis, and interactive chat.
-- **Reporting:** Markdown, HTML, SARIF 2.1.0, and PDF output with source findings, tool coverage, dependency CVEs, suppressed findings, and cross-confirmed evidence.
+- **Reporting:** Markdown, escaped HTML, SARIF 2.1.0, and PDF output with source findings, tool coverage, dependency CVEs, suppressed findings, and cross-confirmed evidence.
 - **Continuous monitoring:** `nyx monitor` stores recurring scan configs in the global state DB, creates normal session runs, diffs each run against a baseline, and records attack-surface changes.
 - **Power-feature modules:** Operator-triggered workspace for LLM-assisted payloads with safe fixture validation, lockout-aware credential checks, provider-backed OSINT status, AD/BloodHound records, evasion/block events, callback-backed PoC evidence, and Burp XML/REST bridge actions.
 - **Plugin system:** Subprocess JSON contract so adapters can be written in any language.
@@ -121,7 +121,7 @@ All external tools are optional. Missing tools are recorded as tool runs and the
 
 Static audit tools are registered as `audit/<id>`. Built-in source analyzers always run; optional tools such as `semgrep`, `bandit`, `gosec`, `govulncheck`, `npm audit`, `retire.js`, `safety`, `brakeman`, `spotbugs`, `psalm`, `trufflehog`, `gitleaks`, and `grype` run when installed. Their native outputs are parsed into normalized findings or package CVEs where possible, with a generic JSON fallback for future adapter shapes.
 
-The Docker image bundles a baseline scanner set (`curl`, `dig`, `ffuf`, `nikto`, `nmap`, `python3`, `sqlmap`, `whatweb`, and `whois`) and verifies those tools during Docker smoke tests. Other external scanners remain optional user-installed tools in single-binary mode and are reported by the tool-version smoke script when present. `scripts/install-linux-tools.sh` prints a dry-run Linux setup plan by default and can install the supported tool set with `--execute`; it prepends user-local Go, Python, Composer, and Ruby paths so broken system shims do not mask working user installs. ProjectDiscovery tools currently run as subprocess adapters; native Go-library integrations are intentionally deferred until they prove worth the added dependency and in-process resource risk.
+The Docker image uses a pinned Debian 13 slim runtime digest, enables Debian's non-free component for `nikto`, bundles a baseline scanner set (`curl`, `dig`, `ffuf`, `nikto`, `nmap`, `python3`, `sqlmap`, `whatweb`, and `whois`), and verifies those tools during Docker smoke tests. Other external scanners remain optional user-installed tools in single-binary mode and are reported by the tool-version smoke script when present. `scripts/install-linux-tools.sh` prints a dry-run Linux setup plan by default and can install the supported tool set with `--execute`; it prepends user-local Go, Python, Composer, and Ruby paths so broken system shims do not mask working user installs. ProjectDiscovery tools currently run as subprocess adapters with shared allow-list validation for extra subprocess arguments; native Go-library integrations are intentionally deferred until they prove worth the added dependency and in-process resource risk.
 
 ## Configuration
 
@@ -169,7 +169,7 @@ tools:
 
 Sessions are stored as directories under `database.session_dir`: `<session-id>/session.db` plus optional `<session-id>/runs/*.log` sidecars. Use `./bin/nyx scan --lean` to discard raw sidecar logs after normalization, or `./bin/nyx sessions export <session-id> --output session.zip` to package the database and logs together.
 
-Monitoring state is global rather than per-session. Monitor configs, runs, and `surface_changes` live in `<state-dir>/nyx-state.db`, where `<state-dir>` is the parent of `database.session_dir` when that directory is named `sessions`. Scheduled monitor runs execute only while `nyx serve` is running; manual runs are available from both CLI and UI:
+Monitoring state is global rather than per-session. Monitor configs, runs, and `surface_changes` live in `<state-dir>/nyx-state.db`, where `<state-dir>` is the parent of `database.session_dir` when that directory is named `sessions`. Scheduled monitor runs execute while `nyx serve` is running; on startup, one overdue catch-up run is queued for each enabled monitor whose persisted `next_run_at` is in the past. Manual runs are available from both CLI and UI:
 
 ```sh
 ./bin/nyx monitor create --target https://example.com --schedule '@daily' --name example

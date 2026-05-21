@@ -639,6 +639,32 @@ func (r *Runner) runLevel(ctx context.Context, session models.Session, level []a
 			if !adapter.ShouldRun(input) {
 				continue
 			}
+			if err := adapters.ValidateToolParameterValues(adapter.ID(), input.ToolParameters); err != nil {
+				output := invalidToolParameterOutput(session, target, adapter, err)
+				r.emit(ScanEvent{
+					Type:      ScanEventToolError,
+					SessionID: session.ID,
+					TargetID:  target.ID,
+					ToolID:    adapter.ID(),
+					Phase:     string(adapter.Phase()),
+					Status:    "failed",
+					Message:   err.Error(),
+					At:        time.Now().UTC(),
+				})
+				r.emit(ScanEvent{
+					Type:       ScanEventToolCompleted,
+					SessionID:  session.ID,
+					TargetID:   target.ID,
+					ToolID:     adapter.ID(),
+					Phase:      string(adapter.Phase()),
+					Status:     "failed",
+					Message:    err.Error(),
+					DurationMS: output.ToolRun.DurationMS,
+					At:         time.Now().UTC(),
+				})
+				results <- adapterRunResult{output: output}
+				continue
+			}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -731,6 +757,22 @@ func (r *Runner) runLevel(ctx context.Context, session models.Session, level []a
 		out = append(out, result)
 	}
 	return out
+}
+
+func invalidToolParameterOutput(session models.Session, target models.Target, adapter adapters.Adapter, err error) adapters.AdapterOutput {
+	now := time.Now().UTC()
+	return adapters.AdapterOutput{ToolRun: models.ToolRun{
+		ID:           models.NewID(),
+		SessionID:    session.ID,
+		TargetID:     target.ID,
+		ToolID:       adapter.ID(),
+		Args:         []string{},
+		RawStderr:    "invalid tool parameters: " + err.Error(),
+		ExitCode:     1,
+		DurationMS:   0,
+		NormalizedAt: &now,
+		StartedAt:    now,
+	}}
 }
 
 func acquire(ctx context.Context, sem chan struct{}) error {
