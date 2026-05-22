@@ -55,12 +55,7 @@ func runScan(args []string) error {
 		return fmt.Errorf("--target or --source is required")
 	}
 	selectedMode := firstNonEmpty(*mode, cfg.Scan.Mode, string(models.ScanModeActive))
-	selectedLLMURL := firstNonEmpty(*llmURL, cfg.LLM.BaseURL)
-	selectedLLMModel := firstNonEmpty(*llmModel, cfg.LLM.Model)
-	if *noLLM || !cfg.LLM.Enabled {
-		selectedLLMURL = ""
-		selectedLLMModel = ""
-	}
+	selectedLLMURL, selectedLLMModel, _ := selectLLMSettings(*noLLM, cfg.LLM.Enabled, *llmURL, *llmModel, cfg.LLM.BaseURL, cfg.LLM.Model)
 	selectedPhases := splitCSV(firstNonEmpty(*phases, strings.Join(cfg.Scan.Phases, ",")))
 	selectedTools := splitCSV(firstNonEmpty(*tools, strings.Join(cfg.Scan.Tools, ",")))
 	selectedRateLimit := firstNonEmpty(*rateLimit, cfg.Scan.RateLimit)

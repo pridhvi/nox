@@ -58,12 +58,7 @@ func auditRunCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	selectedLLMURL := firstNonEmpty(*llmURL, cfg.LLM.BaseURL)
-	selectedLLMModel := firstNonEmpty(*llmModel, cfg.LLM.Model)
-	if *noLLM || !cfg.LLM.Enabled {
-		selectedLLMURL = ""
-		selectedLLMModel = ""
-	}
+	selectedLLMURL, selectedLLMModel, llmDisabled := selectLLMSettings(*noLLM, cfg.LLM.Enabled, *llmURL, *llmModel, cfg.LLM.BaseURL, cfg.LLM.Model)
 	session, err := engine.NewPendingSourceSession(engine.NewSessionInput{
 		SourcePath:    sourcePath,
 		Name:          *name,
@@ -88,7 +83,7 @@ func auditRunCommand(args []string) error {
 	runner := engine.NewAuditRunner(store, engine.AuditOptions{
 		Tools:     session.EnabledTools,
 		DiffPaths: splitCSV(*diff),
-		NoLLM:     *noLLM || !cfg.LLM.Enabled,
+		NoLLM:     llmDisabled,
 		Offline:   *offline,
 		LLMConfig: llmintel.Config{
 			Provider: "openai-compatible",

@@ -49,6 +49,46 @@ run() {
   fi
 }
 
+install_linkfinder() {
+  linkfinder_ref="${NYX_LINKFINDER_REF:-master}"
+  if command -v linkfinder >/dev/null 2>&1; then
+    echo "# LinkFinder is already available; skipping source install."
+    return 0
+  fi
+  if [ "$execute" = "1" ]; then
+    echo "+ install LinkFinder $linkfinder_ref from source"
+    tmp_dir="$(mktemp -d)"
+    install_dir="$HOME/.local/share/nyx-linkfinder"
+    git clone --depth 1 --branch "$linkfinder_ref" https://github.com/GerbenJavado/LinkFinder.git "$tmp_dir/LinkFinder"
+    rm -rf "$install_dir/LinkFinder"
+    mkdir -p "$install_dir" "$HOME/.local/bin"
+    python3 -m venv "$install_dir/venv"
+    "$install_dir/venv/bin/python" -m pip install --upgrade pip
+    "$install_dir/venv/bin/python" -m pip install -r "$tmp_dir/LinkFinder/requirements.txt"
+    cp -R "$tmp_dir/LinkFinder" "$install_dir/LinkFinder"
+    cat >"$HOME/.local/bin/linkfinder" <<'SH'
+#!/usr/bin/env sh
+exec "$HOME/.local/share/nyx-linkfinder/venv/bin/python" "$HOME/.local/share/nyx-linkfinder/LinkFinder/linkfinder.py" "$@"
+SH
+    chmod 755 "$HOME/.local/bin/linkfinder"
+    rm -rf "$tmp_dir"
+  else
+    echo "tmp_dir=\"\$(mktemp -d)\""
+    echo "install_dir=\"\$HOME/.local/share/nyx-linkfinder\""
+    echo "git clone --depth 1 --branch \"$linkfinder_ref\" https://github.com/GerbenJavado/LinkFinder.git \"\$tmp_dir/LinkFinder\""
+    echo "python3 -m venv \"\$install_dir/venv\""
+    echo "\"\$install_dir/venv/bin/python\" -m pip install --upgrade pip"
+    echo "\"\$install_dir/venv/bin/python\" -m pip install -r \"\$tmp_dir/LinkFinder/requirements.txt\""
+    echo "cp -R \"\$tmp_dir/LinkFinder\" \"\$install_dir/LinkFinder\""
+    echo "cat >\"\$HOME/.local/bin/linkfinder\" <<'SH'"
+    echo '#!/usr/bin/env sh'
+    echo 'exec "$HOME/.local/share/nyx-linkfinder/venv/bin/python" "$HOME/.local/share/nyx-linkfinder/LinkFinder/linkfinder.py" "$@"'
+    echo "SH"
+    echo "chmod 755 \"\$HOME/.local/bin/linkfinder\""
+    echo "rm -rf \"\$tmp_dir\""
+  fi
+}
+
 echo "# Nyx Linux tool setup"
 if [ "$execute" != "1" ]; then
   echo "# Dry run. Re-run with --execute to apply supported commands."
@@ -58,7 +98,17 @@ echo "# export PATH=\"$user_path:\$PATH\""
 echo
 
 if command -v apt-get >/dev/null 2>&1; then
-  packages="ca-certificates curl git jq sqlite3 build-essential dnsutils ffuf nikto nmap python3 python3-pip python3-venv sqlmap whatweb whois ruby-full default-jre npm golang-go pipx"
+  packages="ca-certificates curl git jq sqlite3 build-essential dnsutils ffuf nikto nmap python3 python3-pip python3-venv sqlmap whatweb whois default-jre golang-go pipx"
+  if command -v npm >/dev/null 2>&1; then
+    echo "# npm is already available; skipping distro npm package to avoid NodeSource/Kali package conflicts."
+  else
+    packages="$packages npm"
+  fi
+  if command -v ruby >/dev/null 2>&1 && command -v gem >/dev/null 2>&1; then
+    echo "# ruby and gem are already available; skipping distro ruby-full package."
+  else
+    packages="$packages ruby-full"
+  fi
   run "sudo apt-get update"
   run "sudo apt-get install -y $packages"
   if apt-cache show arjun >/dev/null 2>&1; then
@@ -88,8 +138,22 @@ run "go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
 run "go install github.com/projectdiscovery/httpx/cmd/httpx@latest"
 run "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
 run "go install github.com/hahwul/dalfox/v2@latest"
-run "go install github.com/gitleaks/gitleaks/v8@latest"
-run "go install github.com/trufflesecurity/trufflehog/v3@latest"
+run "go install github.com/zricethezav/gitleaks/v8@latest"
+trufflehog_version="${NYX_TRUFFLEHOG_VERSION:-v3.95.3}"
+if command -v trufflehog >/dev/null 2>&1; then
+  echo "# trufflehog is already available; skipping source install."
+elif [ "$execute" = "1" ]; then
+  echo "+ install trufflehog $trufflehog_version from source"
+  tmp_dir="$(mktemp -d)"
+  git clone --depth 1 --branch "$trufflehog_version" https://github.com/trufflesecurity/trufflehog.git "$tmp_dir/trufflehog"
+  (cd "$tmp_dir/trufflehog" && GOBIN="$HOME/go/bin" go install .)
+  rm -rf "$tmp_dir"
+else
+  echo "tmp_dir=\"\$(mktemp -d)\""
+  echo "git clone --depth 1 --branch \"$trufflehog_version\" https://github.com/trufflesecurity/trufflehog.git \"\$tmp_dir/trufflehog\""
+  echo "(cd \"\$tmp_dir/trufflehog\" && GOBIN=\"\$HOME/go/bin\" go install .)"
+  echo "rm -rf \"\$tmp_dir\""
+fi
 
 if [ "$with_optional" = "1" ]; then
   echo
@@ -99,7 +163,7 @@ if [ "$with_optional" = "1" ]; then
     run "pipx install semgrep"
     run "pipx install bandit"
     run "pipx install safety"
-    run "pipx install linkfinder"
+    install_linkfinder
     python_major_minor="$(python3 - <<'PY'
 import sys
 print(f"{sys.version_info.major}.{sys.version_info.minor}")
@@ -115,12 +179,17 @@ PY
         ;;
     esac
   else
-    run "python3 -m pip install --user --upgrade semgrep bandit safety linkfinder"
+    run "python3 -m pip install --user --upgrade semgrep bandit safety"
+    install_linkfinder
     echo "# Install arjun from your package manager when available; avoid pip-installed droopescan on Python 3.12+."
   fi
   run "go install github.com/securego/gosec/v2/cmd/gosec@latest"
   run "go install golang.org/x/vuln/cmd/govulncheck@latest"
-  run "npm install -g retire"
+  if command -v retire >/dev/null 2>&1; then
+    echo "# retire is already available; skipping npm global install."
+  else
+    run "npm install -g --prefix \"\$HOME/.local\" retire"
+  fi
   run "gem install --user-install brakeman"
   if command -v composer >/dev/null 2>&1; then
     run "composer global require vimeo/psalm"
